@@ -3,6 +3,7 @@ import apiClient from "./services/api";
 import {
   listMatches,
   createMatch,
+  updateMatch,
   cancelMatch,
   joinMatch,
   leaveMatch,
@@ -77,6 +78,7 @@ const TennisMatchApp = () => {
   });
 
   const [matches, setMatches] = useState([]);
+  const [editMatch, setEditMatch] = useState(null);
 
   useEffect(() => {
     const tomorrow = new Date();
@@ -139,6 +141,7 @@ const TennisMatchApp = () => {
         location: m.location_text,
         format: m.match_format,
         skillLevel: m.skill_level_min,
+        notes: m.notes,
         players: m.players || [],
         spotsAvailable: m.player_limit,
       }));
@@ -547,7 +550,15 @@ const TennisMatchApp = () => {
             )}
           {isHosted && (
             <button
-              onClick={() => displayToast("Opening match management...")}
+              onClick={() => {
+                setEditMatch({
+                  id: match.id,
+                  dateTime: new Date(match.dateTime).toISOString().slice(0, 16),
+                  location: match.location,
+                  notes: match.notes || "",
+                });
+                setShowEditModal(true);
+              }}
               className="px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all shadow-lg"
             >
               MANAGE
@@ -585,7 +596,18 @@ const TennisMatchApp = () => {
           <>
             <button
               onClick={() => {
-                setShowEditModal(true);
+                const matchToEdit = matches.find((m) => m.id === matchId);
+                if (matchToEdit) {
+                  setEditMatch({
+                    id: matchToEdit.id,
+                    dateTime: new Date(matchToEdit.dateTime)
+                      .toISOString()
+                      .slice(0, 16),
+                    location: matchToEdit.location,
+                    notes: matchToEdit.notes || "",
+                  });
+                  setShowEditModal(true);
+                }
                 onClose();
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
@@ -2194,13 +2216,35 @@ const TennisMatchApp = () => {
   }; // FIX: Removed comma here
 
   const EditModal = () => {
-    if (!showEditModal) return null;
+    if (!showEditModal || !editMatch) return null;
+
+    const handleSave = async () => {
+      try {
+        await updateMatch(editMatch.id, {
+          start_date_time: new Date(editMatch.dateTime).toISOString(),
+          location_text: editMatch.location,
+          notes: editMatch.notes,
+        });
+        displayToast("Match updated successfully!");
+        setShowEditModal(false);
+        setEditMatch(null);
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message || "Failed to update match",
+          "error"
+        );
+      }
+    };
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
           <button
-            onClick={() => setShowEditModal(false)}
+            onClick={() => {
+              setShowEditModal(false);
+              setEditMatch(null);
+            }}
             className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -2218,7 +2262,10 @@ const TennisMatchApp = () => {
               <input
                 type="datetime-local"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                defaultValue={matchData.dateTime}
+                value={editMatch.dateTime}
+                onChange={(e) =>
+                  setEditMatch({ ...editMatch, dateTime: e.target.value })
+                }
               />
             </div>
 
@@ -2229,57 +2276,40 @@ const TennisMatchApp = () => {
               <input
                 type="text"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                defaultValue="Oceanside Tennis Center"
+                value={editMatch.location}
+                onChange={(e) =>
+                  setEditMatch({ ...editMatch, location: e.target.value })
+                }
               />
             </div>
 
             <div>
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Match Format
+                Notes
               </label>
-              <select
-                defaultValue="Doubles"
+              <textarea
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-              >
-                <option>Doubles</option>
-                <option>Singles</option>
-                <option>Mixed Doubles</option>
-                <option>Dingles</option>
-                <option>Round Robin</option>
-                <option>Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                NTRP Skill Level
-              </label>
-              <select
-                defaultValue="3.5 - Intermediate"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-              >
-                <option>2.5 - Beginner</option>
-                <option>3.0 - Adv. Beginner</option>
-                <option>3.5 - Intermediate</option>
-                <option>4.0 - Adv. Intermediate</option>
-                <option>4.5+ - Advanced</option>
-                <option>Any Level</option>
-              </select>
+                rows={3}
+                value={editMatch.notes}
+                onChange={(e) =>
+                  setEditMatch({ ...editMatch, notes: e.target.value })
+                }
+              />
             </div>
           </div>
 
           <div className="flex gap-3 mt-8">
             <button
-              onClick={() => setShowEditModal(false)}
+              onClick={() => {
+                setShowEditModal(false);
+                setEditMatch(null);
+              }}
               className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
             >
               CANCEL
             </button>
             <button
-              onClick={() => {
-                setShowEditModal(false);
-                displayToast("Match updated successfully!");
-              }}
+              onClick={handleSave}
               className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg"
             >
               SAVE CHANGES
