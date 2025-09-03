@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import apiClient from "./services/api";
 import {
   Calendar,
   MapPin,
@@ -48,6 +49,8 @@ const TennisMatchApp = () => {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
+  const [authMode, setAuthMode] = useState("signup");
+  const [password, setPassword] = useState("");
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -149,12 +152,7 @@ const TennisMatchApp = () => {
     },
   ];
 
-  const recentPlayers = [
-    { name: "Mike Chen", avatar: "MC", lastPlayed: "2 days ago" },
-    { name: "Sarah Johnson", avatar: "SJ", lastPlayed: "1 week ago" },
-    { name: "Alex Kim", avatar: "AK", lastPlayed: "2 weeks ago" },
-    { name: "Lisa Park", avatar: "LP", lastPlayed: "3 weeks ago" },
-  ];
+  // Removed static sample players; will fetch real player list in InviteScreen
 
   const Header = () => (
     <div className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/95">
@@ -869,7 +867,7 @@ const TennisMatchApp = () => {
                 <div className="relative">
                   <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
                   <input
-                    type="text"
+                    type="search"
                     placeholder="e.g., Oceanside Tennis Center"
                     value={matchData.location}
                     onChange={(e) =>
@@ -1229,10 +1227,13 @@ const TennisMatchApp = () => {
         </div>
       );
     }
+    return null; // Add a null return for completeness
   };
 
   const InviteScreen = () => {
+    const searchInputRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [players, setPlayers] = useState([]);
     const [copiedLink, setCopiedLink] = useState(false);
 
     const copyLink = () => {
@@ -1240,6 +1241,27 @@ const TennisMatchApp = () => {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     };
+
+    useEffect(() => {
+      if (searchTerm.length >= 2) {
+        apiClient
+          .get(`/players?search=${encodeURIComponent(searchTerm)}`)
+          .then((res) => setPlayers(res.data.players || []))
+          .catch((err) =>
+            displayToast(
+              err.response?.data?.message || "Failed to load players",
+              "error"
+            )
+          );
+      } else {
+        setPlayers([]);
+      }
+    }, [searchTerm]);
+
+    // Keep search input focused after each render when typing
+    useEffect(() => {
+      searchInputRef.current?.focus();
+    }, [searchTerm]);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 pb-20">
@@ -1265,6 +1287,19 @@ const TennisMatchApp = () => {
           </div>
 
           <div className="space-y-6">
+            {/* Search players to invite */}
+            <div>
+              <input
+                ref={searchInputRef}
+                type="search"
+                aria-label="Search players"
+                autoComplete="off"
+                placeholder="Search players..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
+              />
+            </div>
             {/* Quick Share */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">
@@ -1315,56 +1350,58 @@ const TennisMatchApp = () => {
               </div>
             </div>
 
-            {/* Recent Players */}
+            {/* Players list from backend */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <div className="flex justify-between items-center mb-5">
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
-                  Recent Players
+                  Players
                 </h3>
-                <span className="text-xs font-bold text-gray-500">
-                  LAST 30 DAYS
-                </span>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                {recentPlayers.map((player) => (
-                  <button
-                    key={player.name}
-                    onClick={() => {
-                      if (selectedPlayers.has(player.name)) {
+                {players.map((player) => {
+                  const name = player.full_name;
+                  return (
+                    <button
+                      key={player.id}
+                      onClick={() => {
                         setSelectedPlayers((prev) => {
                           const newSet = new Set(prev);
-                          newSet.delete(player.name);
+                          if (newSet.has(name)) {
+                            newSet.delete(name);
+                          } else {
+                            newSet.add(name);
+                          }
                           return newSet;
                         });
-                      } else {
-                        setSelectedPlayers((prev) =>
-                          new Set(prev).add(player.name)
-                        );
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
-                      selectedPlayers.has(player.name)
-                        ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
-                        : "border-gray-200 hover:border-gray-300 bg-white"
-                    }`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
-                        selectedPlayers.has(player.name)
-                          ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                          : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                      }}
+                      className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
+                        selectedPlayers.has(name)
+                          ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
+                          : "border-gray-200 hover:border-gray-300 bg-white"
                       }`}
                     >
-                      {player.avatar}
-                    </div>
-                    <span className="text-sm text-gray-700 font-bold">
-                      {player.name}
-                    </span>
-                    {selectedPlayers.has(player.name) && (
-                      <Check className="w-4 h-4 text-green-600 ml-auto" />
-                    )}
-                  </button>
-                ))}
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
+                          selectedPlayers.has(name)
+                            ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
+                            : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                        }`}
+                      >
+                        {name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .toUpperCase()}
+                      </div>
+                      <span className="text-sm text-gray-700 font-bold">
+                        {name}
+                      </span>
+                      {selectedPlayers.has(name) && (
+                        <Check className="w-4 h-4 text-green-600 ml-auto" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1593,6 +1630,100 @@ const TennisMatchApp = () => {
               By continuing, you agree to our Terms of Service and Privacy
               Policy
             </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Email/password login step
+    if (signInStep === "login") {
+      const handleLogin = () => {
+        apiClient
+          .post("/auth/login", { email: formData.email, password })
+          .then((res) => {
+            const token = res.data.token;
+            localStorage.setItem("authToken", token);
+            const user =
+              res.data.user ||
+              ({
+                name: formData.email,
+                email: formData.email,
+                avatar: formData.email
+                  .split(" @")[0]
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase(),
+              });
+            setCurrentUser(user);
+            setShowSignInModal(false);
+            setSignInStep("initial");
+            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setPassword("");
+            displayToast(
+              `Welcome back, ${user.name.split(" ")[0]}! 🎾`,
+              "success"
+            );
+          })
+          .catch((err) =>
+            displayToast(err.response?.data?.message || err.message, "error")
+          );
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+            <button
+              onClick={() => setSignInStep("initial")}
+              className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShowSignInModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-black text-gray-900 mb-2">Sign In</h2>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, email: e.target.value }))
+                  }
+                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                />
+              </div>
+              <button
+                onClick={handleLogin}
+                className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
+              >
+                SIGN IN
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -1863,7 +1994,10 @@ const TennisMatchApp = () => {
 
           <div className="space-y-3">
             <button
-              onClick={() => setSignInStep("form")}
+              onClick={() => {
+                setAuthMode("signup");
+                setSignInStep("form");
+              }}
               className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl transition-all flex items-center justify-center gap-2 shadow-lg"
             >
               <Mail className="w-5 h-5" />
@@ -1918,7 +2052,10 @@ const TennisMatchApp = () => {
           </div>
 
           <button
-            onClick={() => setSignInStep("form")}
+            onClick={() => {
+              setAuthMode("login");
+              setSignInStep("login");
+            }}
             className="w-full py-3.5 bg-gray-100 text-gray-700 rounded-xl font-black hover:bg-gray-200 transition-colors"
           >
             SIGN IN WITH EXISTING ACCOUNT
@@ -1938,7 +2075,7 @@ const TennisMatchApp = () => {
         </div>
       </div>
     );
-  };
+  }; // FIX: Removed comma here
 
   const EditModal = () => {
     if (!showEditModal) return null;
@@ -1984,8 +2121,11 @@ const TennisMatchApp = () => {
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
                 Match Format
               </label>
-              <select className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800">
-                <option selected>Doubles</option>
+              <select
+                defaultValue="Doubles"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+              >
+                <option>Doubles</option>
                 <option>Singles</option>
                 <option>Mixed Doubles</option>
                 <option>Dingles</option>
@@ -1998,10 +2138,13 @@ const TennisMatchApp = () => {
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
                 NTRP Skill Level
               </label>
-              <select className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800">
+              <select
+                defaultValue="3.5 - Intermediate"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+              >
                 <option>2.5 - Beginner</option>
                 <option>3.0 - Adv. Beginner</option>
-                <option selected>3.5 - Intermediate</option>
+                <option>3.5 - Intermediate</option>
                 <option>4.0 - Adv. Intermediate</option>
                 <option>4.5+ - Advanced</option>
                 <option>Any Level</option>
@@ -2029,7 +2172,7 @@ const TennisMatchApp = () => {
         </div>
       </div>
     );
-  };
+  }; // FIX: Removed comma here
 
   const Toast = () => {
     if (!showToast) return null;
@@ -2050,7 +2193,7 @@ const TennisMatchApp = () => {
         <span className="font-black">{showToast.message}</span>
       </div>
     );
-  };
+  }; // FIX: Removed comma here
 
   // Add the CSS animations
   const styles = `
