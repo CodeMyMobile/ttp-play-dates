@@ -77,6 +77,13 @@ const TennisMatchApp = () => {
     }));
   }, []);
 
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    }
+  }, []);
+
   const displayToast = (message, type = "success") => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
@@ -1517,25 +1524,27 @@ const TennisMatchApp = () => {
       setSignInStep("oauth-complete");
     };
 
-    const handleVerification = () => {
-      if (verificationCode.length === 6) {
-        setCurrentUser({
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          skillLevel: formData.skillLevel,
-          avatar: formData.name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase(),
-          rating: 4.2,
-        });
-        setShowSignInModal(false);
-        setSignInStep("initial");
-        setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-        setVerificationCode("");
-        displayToast(
+      const handleVerification = () => {
+        if (verificationCode.length === 6) {
+          const newUser = {
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            skillLevel: formData.skillLevel,
+            avatar: formData.name
+              .split(" ")
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase(),
+            rating: 4.2,
+          };
+          localStorage.setItem("user", JSON.stringify(newUser));
+          setCurrentUser(newUser);
+          setShowSignInModal(false);
+          setSignInStep("initial");
+          setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+          setVerificationCode("");
+          displayToast(
           `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
           "success"
         );
@@ -1666,47 +1675,79 @@ const TennisMatchApp = () => {
     }
 
     // Email/password login step
-    if (signInStep === "login") {
-      const handleLogin = () => {
-        apiClient
-          .post("/auth/login", { email: formData.email, password })
-          .then((res) => {
-            const {
-              access_token,
-              refresh_token,
-              profile,
-              user_id,
-              user_type,
-            } = res.data;
-            localStorage.setItem("authToken", access_token);
-            localStorage.setItem("refreshToken", refresh_token);
-            const name = profile?.full_name || formData.email;
-            const user = {
-              id: user_id,
-              type: user_type,
-              name,
+  if (signInStep === "login") {
+  const handleLogin = () => {
+    apiClient
+      .post("/auth/login", { email: formData.email, password })
+      .then((res) => {
+        // Support both payload shapes:
+        // 1) { access_token, refresh_token, profile, user_id, user_type }
+        // 2) { token, user: { ... } }
+        const {
+          access_token,
+          refresh_token,
+          profile,
+          user_id,
+          user_type,
+          token,
+          user: userFromApi,
+        } = res.data || {};
+
+        let user;
+
+        if (access_token) {
+          // Newer shape with profile & tokens
+          localStorage.setItem("authToken", access_token);
+          if (refresh_token) localStorage.setItem("refreshToken", refresh_token);
+
+          const name = profile?.full_name || formData.email;
+          user = {
+            id: user_id,
+            type: user_type,
+            name,
+            email: formData.email,
+            avatar: name
+              .split(" ")
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase(),
+            skillLevel: profile?.usta_rating || "",
+          };
+        } else {
+          // Legacy/alternative shape with single token + user object
+          if (token) localStorage.setItem("authToken", token);
+
+          const fallbackName = (userFromApi?.name || formData.email || "").trim();
+          user =
+            userFromApi ||
+            {
+              name: fallbackName,
               email: formData.email,
-              avatar: name
+              avatar: fallbackName
                 .split(" ")
                 .map((n) => n[0])
                 .join("")
                 .toUpperCase(),
-              skillLevel: profile?.usta_rating || "",
             };
-            setCurrentUser(user);
-            setShowSignInModal(false);
-            setSignInStep("initial");
-            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-            setPassword("");
-            displayToast(
-              `Welcome back, ${name.split(" ")[0]}! 🎾`,
-              "success"
-            );
-          })
-          .catch((err) =>
-            displayToast(err.response?.data?.message || err.message, "error")
-          );
-      };
+        }
+
+        // Persist user for session restore
+        localStorage.setItem("user", JSON.stringify(user));
+
+        setCurrentUser(user);
+        setShowSignInModal(false);
+        setSignInStep("initial");
+        setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+        setPassword("");
+
+        const safeFirst = (user.name || "").split(" ")[0] || "Player";
+        displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
+      })
+      .catch((err) =>
+        displayToast(err.response?.data?.message || err.message, "error")
+      );
+  };
+
 
       return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
