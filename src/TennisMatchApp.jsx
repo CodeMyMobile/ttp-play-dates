@@ -77,6 +77,13 @@ const TennisMatchApp = () => {
     }));
   }, []);
 
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    }
+  }, []);
+
   const displayToast = (message, type = "success") => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
@@ -1503,25 +1510,27 @@ const TennisMatchApp = () => {
       setSignInStep("oauth-complete");
     };
 
-    const handleVerification = () => {
-      if (verificationCode.length === 6) {
-        setCurrentUser({
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          skillLevel: formData.skillLevel,
-          avatar: formData.name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase(),
-          rating: 4.2,
-        });
-        setShowSignInModal(false);
-        setSignInStep("initial");
-        setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-        setVerificationCode("");
-        displayToast(
+      const handleVerification = () => {
+        if (verificationCode.length === 6) {
+          const newUser = {
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            skillLevel: formData.skillLevel,
+            avatar: formData.name
+              .split(" ")
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase(),
+            rating: 4.2,
+          };
+          localStorage.setItem("user", JSON.stringify(newUser));
+          setCurrentUser(newUser);
+          setShowSignInModal(false);
+          setSignInStep("initial");
+          setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+          setVerificationCode("");
+          displayToast(
           `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
           "success"
         );
@@ -1671,6 +1680,7 @@ const TennisMatchApp = () => {
                   .join("")
                   .toUpperCase(),
               });
+            localStorage.setItem("user", JSON.stringify(user));
             setCurrentUser(user);
             setShowSignInModal(false);
             setSignInStep("initial");
