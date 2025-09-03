@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import apiClient from "./services/api";
+import {
+  listMatches,
+  createMatch,
+  cancelMatch,
+  joinMatch,
+  leaveMatch,
+} from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import {
   Calendar,
@@ -69,6 +76,8 @@ const TennisMatchApp = () => {
     notes: "",
   });
 
+  const [matches, setMatches] = useState([]);
+
   useEffect(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -118,53 +127,33 @@ const TennisMatchApp = () => {
     displayToast("Logged out", "success");
   };
 
-  // Match data
-  const matches = [
-    {
-      id: 1,
-      type: "hosted",
-      status: "closed",
-      dateTime: matchData.dateTime,
-      location: "Oceanside Tennis Center",
-      format: "Doubles",
-      skillLevel: "3.5 - Intermediate",
-      players: [
-        { name: "You", avatar: "AT", confirmed: true },
-        { name: "Mike Chen", avatar: "MC", confirmed: true },
-        { name: "Sarah J.", avatar: "SJ", confirmed: true },
-        { name: "", avatar: "?", confirmed: false },
-      ],
-      spotsAvailable: 1,
-    },
-    {
-      id: 2,
-      type: "joined",
-      status: "open",
-      dateTime: new Date().toISOString(),
-      location: "Vista Courts",
-      format: "Singles",
-      skillLevel: "4.0 - Adv. Intermediate",
-      players: [
-        { name: "John Davis", avatar: "JD", confirmed: true },
-        { name: "You", avatar: "AT", confirmed: true },
-      ],
-      spotsAvailable: 0,
-    },
-    {
-      id: 3,
-      type: "available",
-      status: "open",
-      dateTime: new Date().toISOString(),
-      location: "Carlsbad Tennis Club",
-      format: "Doubles",
-      skillLevel: "2.5 - Beginner",
-      players: [
-        { name: "Sam J.", avatar: "SJ", confirmed: true },
-        { name: "Tom C.", avatar: "TC", confirmed: true },
-      ],
-      spotsAvailable: 2,
-    },
-  ];
+  const fetchMatches = useCallback(async () => {
+    try {
+      const data = await listMatches(activeFilter);
+      const rawMatches = data.matches || [];
+      const transformed = rawMatches.map((m) => ({
+        id: m.id,
+        type: m.host_id === currentUser?.id ? "hosted" : "available",
+        status: m.match_type === "private" ? "closed" : m.status || "open",
+        dateTime: m.start_date_time,
+        location: m.location_text,
+        format: m.match_format,
+        skillLevel: m.skill_level_min,
+        players: m.players || [],
+        spotsAvailable: m.player_limit,
+      }));
+      setMatches(transformed);
+    } catch (err) {
+      displayToast(
+        err.response?.data?.message || "Failed to load matches",
+        "error"
+      );
+    }
+  }, [activeFilter, currentUser]);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [fetchMatches]);
 
   // Removed static sample players; will fetch real player list in InviteScreen
 
@@ -448,12 +437,13 @@ const TennisMatchApp = () => {
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative opacity-0 group-hover:opacity-100"
             >
               <MoreVertical className="w-4 h-4 text-gray-400" />
-              {showMatchMenu === match.id && (
-                <MatchMenu
-                  type={isHosted ? "host" : "player"}
-                  onClose={() => setShowMatchMenu(null)}
-                />
-              )}
+                {showMatchMenu === match.id && (
+                  <MatchMenu
+                    type={isHosted ? "host" : "player"}
+                    matchId={match.id}
+                    onClose={() => setShowMatchMenu(null)}
+                  />
+                )}
             </button>
           )}
         </div>
@@ -531,21 +521,30 @@ const TennisMatchApp = () => {
             </span>
           </div>
 
-          {match.type === "available" && (
-            <button
-              onClick={() => {
-                if (!currentUser) {
-                  setShowSignInModal(true);
-                } else {
-                  displayToast("Successfully joined the match! 🎾");
-                }
-              }}
-              className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all flex items-center gap-1.5 shadow-lg"
-            >
-              <Zap className="w-4 h-4" />
-              JOIN
-            </button>
-          )}
+            {match.type === "available" && (
+              <button
+                onClick={async () => {
+                  if (!currentUser) {
+                    setShowSignInModal(true);
+                  } else {
+                    try {
+                      await joinMatch(match.id);
+                      displayToast("Successfully joined the match! 🎾");
+                      fetchMatches();
+                    } catch (err) {
+                      displayToast(
+                        err.response?.data?.message || "Failed to join match",
+                        "error"
+                      );
+                    }
+                  }
+                }}
+                className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all flex items-center gap-1.5 shadow-lg"
+              >
+                <Zap className="w-4 h-4" />
+                JOIN
+              </button>
+            )}
           {isHosted && (
             <button
               onClick={() => displayToast("Opening match management...")}
@@ -567,7 +566,7 @@ const TennisMatchApp = () => {
     );
   };
 
-  const MatchMenu = ({ type, onClose }) => {
+  const MatchMenu = ({ type, matchId, onClose }) => {
     useEffect(() => {
       const handleClickOutside = (e) => {
         if (!e.target.closest(".match-menu")) {
@@ -613,9 +612,18 @@ const TennisMatchApp = () => {
             </button>
             <div className="border-t border-gray-100" />
             <button
-              onClick={() => {
-                displayToast("Cancel feature coming soon!");
-                onClose();
+              onClick={async () => {
+                try {
+                  await cancelMatch(matchId);
+                  displayToast("Match cancelled");
+                  onClose();
+                  fetchMatches();
+                } catch (err) {
+                  displayToast(
+                    err.response?.data?.message || "Failed to cancel match",
+                    "error"
+                  );
+                }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
             >
@@ -644,9 +652,18 @@ const TennisMatchApp = () => {
             </button>
             <div className="border-t border-gray-100" />
             <button
-              onClick={() => {
-                displayToast("Leave feature coming soon!");
-                onClose();
+              onClick={async () => {
+                try {
+                  await leaveMatch(matchId);
+                  displayToast("Left match");
+                  onClose();
+                  fetchMatches();
+                } catch (err) {
+                  displayToast(
+                    err.response?.data?.message || "Failed to leave match",
+                    "error"
+                  );
+                }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-orange-600 hover:bg-orange-50 flex items-center gap-2 transition-colors"
             >
@@ -689,6 +706,31 @@ const TennisMatchApp = () => {
           ))}
       </div>
     );
+
+    const handlePublish = async () => {
+      try {
+        const payload = {
+          type: matchData.type === "closed" ? "private" : "open",
+          dateTime: new Date(matchData.dateTime).toISOString(),
+          location: matchData.location,
+          playerCount: matchData.playerCount,
+          skillLevel: matchData.skillLevel,
+          format: matchData.format,
+          notes: matchData.notes,
+        };
+        await createMatch(payload);
+        displayToast("Match published successfully! 🎾");
+        setCurrentScreen("browse");
+        setCreateStep(1);
+        setShowPreview(false);
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message || "Failed to publish match",
+          "error"
+        );
+      }
+    };
 
     // Preview Screen for Closed Matches
     if (showPreview && matchData.type === "closed") {
@@ -1250,12 +1292,7 @@ const TennisMatchApp = () => {
                   BACK
                 </button>
                 <button
-                  onClick={() => {
-                    displayToast("Match published successfully! 🎾");
-                    setCurrentScreen("browse");
-                    setCreateStep(1);
-                    setShowPreview(false);
-                  }}
+                  onClick={handlePublish}
                   className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
                 >
                   PUBLISH <Check className="w-6 h-6" />
