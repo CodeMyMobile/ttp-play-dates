@@ -18,6 +18,7 @@ export const ToastProvider = ({ children }) => {
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useToast = () => useContext(ToastContext);
 
 const Toast = ({ message, type }) => (
@@ -29,5 +30,3 @@ const Toast = ({ message, type }) => (
     <span className="font-black">{message}</span>
   </div>
 );
-
-export default ToastContext;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getMatches } from '../services/matchService';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../hooks/useToast.jsx';
 import MatchCard from '../components/match/MatchCard';
 
 const BrowsePage = ({ onNavigate }) => {

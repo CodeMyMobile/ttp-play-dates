@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useToast } from '../hooks/useToast';
+import { useToast } from '../hooks/useToast.jsx';
 import { searchPlayers, sendInvites } from '../services/matchService';
 
 const InvitePage = ({ matchData, onInviteComplete }) => {
