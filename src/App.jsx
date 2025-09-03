@@ -1,9 +1,7 @@
 import TennisMatchApp from './TennisMatchApp';
 
 function App() {
-  return (
-    <TennisMatchApp />
-  );
+  return <TennisMatchApp />;
 }
 
 export default App;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import apiClient from "./services/api";
+import ProfileManager from "./components/ProfileManager";
 import {
   Calendar,
   MapPin,
@@ -42,6 +43,7 @@ const TennisMatchApp = () => {
   const [activeFilter, setActiveFilter] = useState("my");
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showToast, setShowToast] = useState(null);
+  const [showProfileManager, setShowProfileManager] = useState(false);
   const [createStep, setCreateStep] = useState(1);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
@@ -186,7 +188,7 @@ const TennisMatchApp = () => {
                   <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 </button>
                 <button
-                  onClick={() => displayToast("Profile settings coming soon!")}
+                  onClick={() => setShowProfileManager(true)}
                   className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-all"
                 >
                   <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
@@ -2339,6 +2341,10 @@ const TennisMatchApp = () => {
       {SignInModal()}
       {EditModal()}
       {Toast()}
+      <ProfileManager
+        isOpen={showProfileManager}
+        onClose={() => setShowProfileManager(false)}
+      />
     </div>
   );
 };
