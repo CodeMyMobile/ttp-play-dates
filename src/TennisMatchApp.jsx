@@ -34,6 +34,7 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import Autocomplete from "react-google-autocomplete";
 
 const TennisMatchApp = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -863,7 +864,8 @@ const TennisMatchApp = () => {
                 </label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-                  <input
+                  <Autocomplete
+                    apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
                     type="search"
                     placeholder="e.g., Oceanside Tennis Center"
                     value={matchData.location}
@@ -873,6 +875,23 @@ const TennisMatchApp = () => {
                         location: e.target.value,
                       }))
                     }
+                    onPlaceSelected={(place) => {
+                      const address =
+                        place.formatted_address || place.name || "";
+                      setMatchData((prev) => ({
+                        ...prev,
+                        location: address,
+                      }));
+                    }}
+                    options={{
+                      types: ["geocode", "establishment"],
+                      fields: [
+                        "formatted_address",
+                        "geometry",
+                        "name",
+                        "address_components",
+                      ],
+                    }}
                     className="w-full pl-11 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800 placeholder:font-semibold"
                   />
                 </div>
