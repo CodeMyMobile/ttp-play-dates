@@ -78,6 +78,13 @@ const TennisMatchApp = () => {
   });
 
   const [matches, setMatches] = useState([]);
+  const [matchCounts, setMatchCounts] = useState({
+    my: 0,
+    open: 0,
+    today: 0,
+    tomorrow: 0,
+    weekend: 0,
+  });
   const [editMatch, setEditMatch] = useState(null);
 
   useEffect(() => {
@@ -133,6 +140,7 @@ const TennisMatchApp = () => {
     try {
       const data = await listMatches(activeFilter);
       const rawMatches = data.matches || [];
+      setMatchCounts(data.counts || {});
       const transformed = rawMatches.map((m) => ({
         id: m.id,
         type: m.host_id === currentUser?.id ? "hosted" : "available",
@@ -286,39 +294,39 @@ const TennisMatchApp = () => {
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
-            {[
+            {[ 
               {
                 id: "my",
                 label: "My Matches",
-                count: 2,
+                count: matchCounts.my || 0,
                 color: "violet",
                 icon: "⭐",
               },
               {
                 id: "open",
                 label: "Open Matches",
-                count: 8,
+                count: matchCounts.open || 0,
                 color: "green",
                 icon: "🔥",
               },
               {
                 id: "today",
                 label: "Today",
-                count: 3,
+                count: matchCounts.today || 0,
                 color: "blue",
                 icon: "📅",
               },
               {
                 id: "tomorrow",
                 label: "Tomorrow",
-                count: 5,
+                count: matchCounts.tomorrow || 0,
                 color: "amber",
                 icon: "⏰",
               },
               {
                 id: "weekend",
                 label: "Weekend",
-                count: 7,
+                count: matchCounts.weekend || 0,
                 color: "purple",
                 icon: "🎉",
               },
