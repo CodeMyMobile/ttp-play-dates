@@ -1,8 +1,12 @@
 import TennisMatchApp from './TennisMatchApp';
+import ProfileManager from './components/ProfileManager';
 
 function App() {
   return (
-    <TennisMatchApp />
+    <>
+      <ProfileManager />
+      <TennisMatchApp />
+    </>
   );
 }
 
