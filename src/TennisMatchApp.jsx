@@ -102,6 +102,13 @@ const TennisMatchApp = () => {
       : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("refreshToken");
+    setCurrentUser(null);
+    displayToast("Logged out", "success");
+  };
+
   // Match data
   const matches = [
     {
@@ -188,6 +195,13 @@ const TennisMatchApp = () => {
                       </span>
                     )}
                   </div>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-all"
+                >
+                  <LogOut className="w-5 h-5 text-gray-600" />
+                  <span className="text-sm font-bold text-gray-800">Log Out</span>
                 </button>
               </div>
             ) : (
@@ -1657,27 +1671,35 @@ const TennisMatchApp = () => {
         apiClient
           .post("/auth/login", { email: formData.email, password })
           .then((res) => {
-            const token = res.data.token;
-            localStorage.setItem("authToken", token);
-            const user =
-              res.data.user ||
-              ({
-                name: formData.email,
-                email: formData.email,
-                avatar: formData.email
-                  .split(" @")[0]
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase(),
-              });
+            const {
+              access_token,
+              refresh_token,
+              profile,
+              user_id,
+              user_type,
+            } = res.data;
+            localStorage.setItem("authToken", access_token);
+            localStorage.setItem("refreshToken", refresh_token);
+            const name = profile?.full_name || formData.email;
+            const user = {
+              id: user_id,
+              type: user_type,
+              name,
+              email: formData.email,
+              avatar: name
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase(),
+              skillLevel: profile?.usta_rating || "",
+            };
             setCurrentUser(user);
             setShowSignInModal(false);
             setSignInStep("initial");
             setFormData({ name: "", email: "", phone: "", skillLevel: "" });
             setPassword("");
             displayToast(
-              `Welcome back, ${user.name.split(" ")[0]}! 🎾`,
+              `Welcome back, ${name.split(" ")[0]}! 🎾`,
               "success"
             );
           })
