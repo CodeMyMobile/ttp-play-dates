@@ -109,6 +109,13 @@ const TennisMatchApp = () => {
       : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("refreshToken");
+    setCurrentUser(null);
+    displayToast("Logged out", "success");
+  };
+
   // Match data
   const matches = [
     {
@@ -195,6 +202,13 @@ const TennisMatchApp = () => {
                       </span>
                     )}
                   </div>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-all"
+                >
+                  <LogOut className="w-5 h-5 text-gray-600" />
+                  <span className="text-sm font-bold text-gray-800">Log Out</span>
                 </button>
               </div>
             ) : (
@@ -1661,40 +1675,79 @@ const TennisMatchApp = () => {
     }
 
     // Email/password login step
-    if (signInStep === "login") {
-      const handleLogin = () => {
-        apiClient
-          .post("/auth/login", { email: formData.email, password })
-          .then((res) => {
-            const token = res.data.token;
-            localStorage.setItem("authToken", token);
-            const user =
-              res.data.user ||
-              ({
-                name: formData.email,
-                email: formData.email,
-                avatar: formData.email
-                  .split(" @")[0]
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase(),
-              });
-            localStorage.setItem("user", JSON.stringify(user));
-            setCurrentUser(user);
-            setShowSignInModal(false);
-            setSignInStep("initial");
-            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-            setPassword("");
-            displayToast(
-              `Welcome back, ${user.name.split(" ")[0]}! 🎾`,
-              "success"
-            );
-          })
-          .catch((err) =>
-            displayToast(err.response?.data?.message || err.message, "error")
-          );
-      };
+  if (signInStep === "login") {
+  const handleLogin = () => {
+    apiClient
+      .post("/auth/login", { email: formData.email, password })
+      .then((res) => {
+        // Support both payload shapes:
+        // 1) { access_token, refresh_token, profile, user_id, user_type }
+        // 2) { token, user: { ... } }
+        const {
+          access_token,
+          refresh_token,
+          profile,
+          user_id,
+          user_type,
+          token,
+          user: userFromApi,
+        } = res.data || {};
+
+        let user;
+
+        if (access_token) {
+          // Newer shape with profile & tokens
+          localStorage.setItem("authToken", access_token);
+          if (refresh_token) localStorage.setItem("refreshToken", refresh_token);
+
+          const name = profile?.full_name || formData.email;
+          user = {
+            id: user_id,
+            type: user_type,
+            name,
+            email: formData.email,
+            avatar: name
+              .split(" ")
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase(),
+            skillLevel: profile?.usta_rating || "",
+          };
+        } else {
+          // Legacy/alternative shape with single token + user object
+          if (token) localStorage.setItem("authToken", token);
+
+          const fallbackName = (userFromApi?.name || formData.email || "").trim();
+          user =
+            userFromApi ||
+            {
+              name: fallbackName,
+              email: formData.email,
+              avatar: fallbackName
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase(),
+            };
+        }
+
+        // Persist user for session restore
+        localStorage.setItem("user", JSON.stringify(user));
+
+        setCurrentUser(user);
+        setShowSignInModal(false);
+        setSignInStep("initial");
+        setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+        setPassword("");
+
+        const safeFirst = (user.name || "").split(" ")[0] || "Player";
+        displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
+      })
+      .catch((err) =>
+        displayToast(err.response?.data?.message || err.message, "error")
+      );
+  };
+
 
       return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
