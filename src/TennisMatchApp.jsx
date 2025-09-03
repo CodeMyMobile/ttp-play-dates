@@ -45,11 +45,8 @@ const TennisMatchApp = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
-  const [authMode, setAuthMode] = useState("signup");
   const [password, setPassword] = useState("");
   const [formData, setFormData] = useState({
     name: "",
@@ -593,7 +590,7 @@ const TennisMatchApp = () => {
             <div className="border-t border-gray-100" />
             <button
               onClick={() => {
-                setShowCancelModal(true);
+                displayToast("Cancel feature coming soon!");
                 onClose();
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
@@ -624,7 +621,7 @@ const TennisMatchApp = () => {
             <div className="border-t border-gray-100" />
             <button
               onClick={() => {
-                setShowLeaveModal(true);
+                displayToast("Leave feature coming soon!");
                 onClose();
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-orange-600 hover:bg-orange-50 flex items-center gap-2 transition-colors"
@@ -1995,7 +1992,6 @@ const TennisMatchApp = () => {
           <div className="space-y-3">
             <button
               onClick={() => {
-                setAuthMode("signup");
                 setSignInStep("form");
               }}
               className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl transition-all flex items-center justify-center gap-2 shadow-lg"
@@ -2053,7 +2049,6 @@ const TennisMatchApp = () => {
 
           <button
             onClick={() => {
-              setAuthMode("login");
               setSignInStep("login");
             }}
             className="w-full py-3.5 bg-gray-100 text-gray-700 rounded-xl font-black hover:bg-gray-200 transition-colors"
@@ -2253,15 +2248,15 @@ const TennisMatchApp = () => {
     <div className="min-h-screen bg-gray-50">
       <style>{styles}</style>
 
-      <Header />
+      {Header()}
 
-      {currentScreen === "browse" && <BrowseScreen />}
-      {currentScreen === "create" && <CreateMatchScreen />}
+      {currentScreen === "browse" && BrowseScreen()}
+      {currentScreen === "create" && CreateMatchScreen()}
       {currentScreen === "invite" && <InviteScreen />}
 
-      <SignInModal />
-      <EditModal />
-      <Toast />
+      {SignInModal()}
+      {EditModal()}
+      {Toast()}
     </div>
   );
 };
