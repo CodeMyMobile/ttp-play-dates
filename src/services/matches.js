@@ -45,3 +45,12 @@ export const acceptInvite = async (token) => {
   return data;
 };
 
+export const searchPlayers = async (
+  { search = '', page = 1, perPage = 12 } = {}
+) => {
+  const { data } = await apiClient.get('/matches/players', {
+    params: { search, page, perPage },
+  });
+  return data;
+};
+
