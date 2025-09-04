@@ -40,11 +40,6 @@ export const getShareLink = async (matchId) => {
   return data;
 };
 
-export const acceptInvite = async (token) => {
-  const { data } = await apiClient.post('/invites/accept', { token });
-  return data;
-};
-
 export const searchPlayers = async (
   { search = '', page = 1, perPage = 12 } = {}
 ) => {
