@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import apiClient from "./services/api";
+import {
+  listMatches,
+  createMatch,
+  updateMatch,
+  cancelMatch,
+  joinMatch,
+  leaveMatch,
+} from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import {
   Calendar,
@@ -66,8 +74,21 @@ const TennisMatchApp = () => {
     format: "Doubles",
     dateTime: "",
     location: "",
+    latitude: null,
+    longitude: null,
+    mapUrl: "",
     notes: "",
   });
+
+  const [matches, setMatches] = useState([]);
+  const [matchCounts, setMatchCounts] = useState({
+    my: 0,
+    open: 0,
+    today: 0,
+    tomorrow: 0,
+    weekend: 0,
+  });
+  const [editMatch, setEditMatch] = useState(null);
 
   useEffect(() => {
     const tomorrow = new Date();
@@ -111,6 +132,18 @@ const TennisMatchApp = () => {
       : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
   };
 
+  const buildMapsUrl = (lat, lng, address) => {
+    if (lat && lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    }
+    if (address) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        address
+      )}`;
+    }
+    return "";
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("authToken");
     localStorage.removeItem("refreshToken");
@@ -118,53 +151,38 @@ const TennisMatchApp = () => {
     displayToast("Logged out", "success");
   };
 
-  // Match data
-  const matches = [
-    {
-      id: 1,
-      type: "hosted",
-      status: "closed",
-      dateTime: matchData.dateTime,
-      location: "Oceanside Tennis Center",
-      format: "Doubles",
-      skillLevel: "3.5 - Intermediate",
-      players: [
-        { name: "You", avatar: "AT", confirmed: true },
-        { name: "Mike Chen", avatar: "MC", confirmed: true },
-        { name: "Sarah J.", avatar: "SJ", confirmed: true },
-        { name: "", avatar: "?", confirmed: false },
-      ],
-      spotsAvailable: 1,
-    },
-    {
-      id: 2,
-      type: "joined",
-      status: "open",
-      dateTime: new Date().toISOString(),
-      location: "Vista Courts",
-      format: "Singles",
-      skillLevel: "4.0 - Adv. Intermediate",
-      players: [
-        { name: "John Davis", avatar: "JD", confirmed: true },
-        { name: "You", avatar: "AT", confirmed: true },
-      ],
-      spotsAvailable: 0,
-    },
-    {
-      id: 3,
-      type: "available",
-      status: "open",
-      dateTime: new Date().toISOString(),
-      location: "Carlsbad Tennis Club",
-      format: "Doubles",
-      skillLevel: "2.5 - Beginner",
-      players: [
-        { name: "Sam J.", avatar: "SJ", confirmed: true },
-        { name: "Tom C.", avatar: "TC", confirmed: true },
-      ],
-      spotsAvailable: 2,
-    },
-  ];
+  const fetchMatches = useCallback(async () => {
+    try {
+      const data = await listMatches(activeFilter);
+      const rawMatches = data.matches || [];
+      setMatchCounts(data.counts || {});
+      const transformed = rawMatches.map((m) => ({
+        id: m.id,
+        type: m.host_id === currentUser?.id ? "hosted" : "available",
+        status: m.match_type === "private" ? "closed" : m.status || "open",
+        dateTime: m.start_date_time,
+        location: m.location_text,
+        latitude: m.latitude,
+        longitude: m.longitude,
+        mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
+        format: m.match_format,
+        skillLevel: m.skill_level_min,
+        notes: m.notes,
+        players: m.players || [],
+        spotsAvailable: m.player_limit,
+      }));
+      setMatches(transformed);
+    } catch (err) {
+      displayToast(
+        err.response?.data?.message || "Failed to load matches",
+        "error"
+      );
+    }
+  }, [activeFilter, currentUser]);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [fetchMatches]);
 
   // Removed static sample players; will fetch real player list in InviteScreen
 
@@ -294,39 +312,39 @@ const TennisMatchApp = () => {
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
-            {[
+            {[ 
               {
                 id: "my",
                 label: "My Matches",
-                count: 2,
+                count: matchCounts.my || 0,
                 color: "violet",
                 icon: "⭐",
               },
               {
                 id: "open",
                 label: "Open Matches",
-                count: 8,
+                count: matchCounts.open || 0,
                 color: "green",
                 icon: "🔥",
               },
               {
                 id: "today",
                 label: "Today",
-                count: 3,
+                count: matchCounts.today || 0,
                 color: "blue",
                 icon: "📅",
               },
               {
                 id: "tomorrow",
                 label: "Tomorrow",
-                count: 5,
+                count: matchCounts.tomorrow || 0,
                 color: "amber",
                 icon: "⏰",
               },
               {
                 id: "weekend",
                 label: "Weekend",
-                count: 7,
+                count: matchCounts.weekend || 0,
                 color: "purple",
                 icon: "🎉",
               },
@@ -448,12 +466,13 @@ const TennisMatchApp = () => {
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative opacity-0 group-hover:opacity-100"
             >
               <MoreVertical className="w-4 h-4 text-gray-400" />
-              {showMatchMenu === match.id && (
-                <MatchMenu
-                  type={isHosted ? "host" : "player"}
-                  onClose={() => setShowMatchMenu(null)}
-                />
-              )}
+                {showMatchMenu === match.id && (
+                  <MatchMenu
+                    type={isHosted ? "host" : "player"}
+                    matchId={match.id}
+                    onClose={() => setShowMatchMenu(null)}
+                  />
+                )}
             </button>
           )}
         </div>
@@ -478,7 +497,14 @@ const TennisMatchApp = () => {
             </div>
             <div>
               <p className="text-sm font-black text-gray-900">
-                {match.location}
+                <a
+                  href={match.mapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {match.location}
+                </a>
               </p>
               <p className="text-xs font-semibold text-gray-500">
                 2.3 miles away
@@ -531,24 +557,43 @@ const TennisMatchApp = () => {
             </span>
           </div>
 
-          {match.type === "available" && (
-            <button
-              onClick={() => {
-                if (!currentUser) {
-                  setShowSignInModal(true);
-                } else {
-                  displayToast("Successfully joined the match! 🎾");
-                }
-              }}
-              className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all flex items-center gap-1.5 shadow-lg"
-            >
-              <Zap className="w-4 h-4" />
-              JOIN
-            </button>
-          )}
+            {match.type === "available" && (
+              <button
+                onClick={async () => {
+                  if (!currentUser) {
+                    setShowSignInModal(true);
+                  } else {
+                    try {
+                      await joinMatch(match.id);
+                      displayToast("Successfully joined the match! 🎾");
+                      fetchMatches();
+                    } catch (err) {
+                      displayToast(
+                        err.response?.data?.message || "Failed to join match",
+                        "error"
+                      );
+                    }
+                  }
+                }}
+                className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all flex items-center gap-1.5 shadow-lg"
+              >
+                <Zap className="w-4 h-4" />
+                JOIN
+              </button>
+            )}
           {isHosted && (
             <button
-              onClick={() => displayToast("Opening match management...")}
+              onClick={() => {
+                setEditMatch({
+                  id: match.id,
+                  dateTime: new Date(match.dateTime).toISOString().slice(0, 16),
+                  location: match.location,
+                  latitude: match.latitude,
+                  longitude: match.longitude,
+                  notes: match.notes || "",
+                });
+                setShowEditModal(true);
+              }}
               className="px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all shadow-lg"
             >
               MANAGE
@@ -567,7 +612,7 @@ const TennisMatchApp = () => {
     );
   };
 
-  const MatchMenu = ({ type, onClose }) => {
+  const MatchMenu = ({ type, matchId, onClose }) => {
     useEffect(() => {
       const handleClickOutside = (e) => {
         if (!e.target.closest(".match-menu")) {
@@ -586,7 +631,18 @@ const TennisMatchApp = () => {
           <>
             <button
               onClick={() => {
-                setShowEditModal(true);
+                const matchToEdit = matches.find((m) => m.id === matchId);
+                if (matchToEdit) {
+                  setEditMatch({
+                    id: matchToEdit.id,
+                    dateTime: new Date(matchToEdit.dateTime)
+                      .toISOString()
+                      .slice(0, 16),
+                    location: matchToEdit.location,
+                    notes: matchToEdit.notes || "",
+                  });
+                  setShowEditModal(true);
+                }
                 onClose();
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
@@ -613,9 +669,18 @@ const TennisMatchApp = () => {
             </button>
             <div className="border-t border-gray-100" />
             <button
-              onClick={() => {
-                displayToast("Cancel feature coming soon!");
-                onClose();
+              onClick={async () => {
+                try {
+                  await cancelMatch(matchId);
+                  displayToast("Match cancelled");
+                  onClose();
+                  fetchMatches();
+                } catch (err) {
+                  displayToast(
+                    err.response?.data?.message || "Failed to cancel match",
+                    "error"
+                  );
+                }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
             >
@@ -644,9 +709,18 @@ const TennisMatchApp = () => {
             </button>
             <div className="border-t border-gray-100" />
             <button
-              onClick={() => {
-                displayToast("Leave feature coming soon!");
-                onClose();
+              onClick={async () => {
+                try {
+                  await leaveMatch(matchId);
+                  displayToast("Left match");
+                  onClose();
+                  fetchMatches();
+                } catch (err) {
+                  displayToast(
+                    err.response?.data?.message || "Failed to leave match",
+                    "error"
+                  );
+                }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-orange-600 hover:bg-orange-50 flex items-center gap-2 transition-colors"
             >
@@ -690,6 +764,33 @@ const TennisMatchApp = () => {
       </div>
     );
 
+    const handlePublish = async () => {
+      try {
+        const payload = {
+          type: matchData.type === "closed" ? "private" : "open",
+          dateTime: new Date(matchData.dateTime).toISOString(),
+          location: matchData.location,
+          latitude: matchData.latitude,
+          longitude: matchData.longitude,
+          playerCount: matchData.playerCount,
+          skillLevel: matchData.skillLevel,
+          format: matchData.format,
+          notes: matchData.notes,
+        };
+        await createMatch(payload);
+        displayToast("Match published successfully! 🎾");
+        setCurrentScreen("browse");
+        setCreateStep(1);
+        setShowPreview(false);
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message || "Failed to publish match",
+          "error"
+        );
+      }
+    };
+
     // Preview Screen for Closed Matches
     if (showPreview && matchData.type === "closed") {
       return (
@@ -726,7 +827,14 @@ const TennisMatchApp = () => {
                       WHERE
                     </h3>
                     <p className="font-black text-gray-900 text-lg">
-                      {matchData.location}
+                      <a
+                        href={matchData.mapUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {matchData.location}
+                      </a>
                     </p>
                   </div>
                 </div>
@@ -896,14 +1004,21 @@ const TennisMatchApp = () => {
                       setMatchData((prev) => ({
                         ...prev,
                         location: e.target.value,
+                        latitude: null,
+                        longitude: null,
+                        mapUrl: buildMapsUrl(null, null, e.target.value),
                       }))
                     }
                     onPlaceSelected={(place) => {
-                      const address =
-                        place.formatted_address || place.name || "";
+                      const address = place.formatted_address || place.name || "";
+                      const lat = place.geometry?.location?.lat();
+                      const lng = place.geometry?.location?.lng();
                       setMatchData((prev) => ({
                         ...prev,
                         location: address,
+                        latitude: lat,
+                        longitude: lng,
+                        mapUrl: buildMapsUrl(lat, lng, address),
                       }));
                     }}
                     options={{
@@ -1207,7 +1322,14 @@ const TennisMatchApp = () => {
                 <div className="flex items-center gap-3 text-gray-700">
                   <MapPin className="w-5 h-5 text-gray-400" />
                   <span className="font-bold text-base">
-                    {matchData.location}
+                    <a
+                      href={matchData.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      {matchData.location}
+                    </a>
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-700">
@@ -1250,12 +1372,7 @@ const TennisMatchApp = () => {
                   BACK
                 </button>
                 <button
-                  onClick={() => {
-                    displayToast("Match published successfully! 🎾");
-                    setCurrentScreen("browse");
-                    setCreateStep(1);
-                    setShowPreview(false);
-                  }}
+                  onClick={handlePublish}
                   className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
                 >
                   PUBLISH <Check className="w-6 h-6" />
@@ -1320,7 +1437,14 @@ const TennisMatchApp = () => {
               </span>
               <span className="flex items-center gap-1">
                 <MapPin className="w-4 h-4" />
-                {matchData.location}
+                <a
+                  href={matchData.mapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {matchData.location}
+                </a>
               </span>
             </div>
           </div>
@@ -2157,13 +2281,37 @@ const TennisMatchApp = () => {
   }; // FIX: Removed comma here
 
   const EditModal = () => {
-    if (!showEditModal) return null;
+    if (!showEditModal || !editMatch) return null;
+
+    const handleSave = async () => {
+      try {
+        await updateMatch(editMatch.id, {
+          start_date_time: new Date(editMatch.dateTime).toISOString(),
+          location_text: editMatch.location,
+          latitude: editMatch.latitude,
+          longitude: editMatch.longitude,
+          notes: editMatch.notes,
+        });
+        displayToast("Match updated successfully!");
+        setShowEditModal(false);
+        setEditMatch(null);
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message || "Failed to update match",
+          "error"
+        );
+      }
+    };
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
           <button
-            onClick={() => setShowEditModal(false)}
+            onClick={() => {
+              setShowEditModal(false);
+              setEditMatch(null);
+            }}
             className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -2181,7 +2329,10 @@ const TennisMatchApp = () => {
               <input
                 type="datetime-local"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                defaultValue={matchData.dateTime}
+                value={editMatch.dateTime}
+                onChange={(e) =>
+                  setEditMatch({ ...editMatch, dateTime: e.target.value })
+                }
               />
             </div>
 
@@ -2189,60 +2340,72 @@ const TennisMatchApp = () => {
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
                 Location
               </label>
-              <input
-                type="text"
+              <div className="relative">
+                <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
+                <Autocomplete
+                  apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                  type="search"
+                  value={editMatch.location}
+                  onChange={(e) =>
+                    setEditMatch({
+                      ...editMatch,
+                      location: e.target.value,
+                      latitude: null,
+                      longitude: null,
+                    })
+                  }
+                  onPlaceSelected={(place) => {
+                    const address = place.formatted_address || place.name || "";
+                    const lat = place.geometry?.location?.lat();
+                    const lng = place.geometry?.location?.lng();
+                    setEditMatch({
+                      ...editMatch,
+                      location: address,
+                      latitude: lat,
+                      longitude: lng,
+                    });
+                  }}
+                  options={{
+                    types: ["geocode", "establishment"],
+                    fields: [
+                      "formatted_address",
+                      "geometry",
+                      "name",
+                      "address_components",
+                    ],
+                  }}
+                  className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                Notes
+              </label>
+              <textarea
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                defaultValue="Oceanside Tennis Center"
+                rows={3}
+                value={editMatch.notes}
+                onChange={(e) =>
+                  setEditMatch({ ...editMatch, notes: e.target.value })
+                }
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Match Format
-              </label>
-              <select
-                defaultValue="Doubles"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-              >
-                <option>Doubles</option>
-                <option>Singles</option>
-                <option>Mixed Doubles</option>
-                <option>Dingles</option>
-                <option>Round Robin</option>
-                <option>Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                NTRP Skill Level
-              </label>
-              <select
-                defaultValue="3.5 - Intermediate"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-              >
-                <option>2.5 - Beginner</option>
-                <option>3.0 - Adv. Beginner</option>
-                <option>3.5 - Intermediate</option>
-                <option>4.0 - Adv. Intermediate</option>
-                <option>4.5+ - Advanced</option>
-                <option>Any Level</option>
-              </select>
             </div>
           </div>
 
           <div className="flex gap-3 mt-8">
             <button
-              onClick={() => setShowEditModal(false)}
+              onClick={() => {
+                setShowEditModal(false);
+                setEditMatch(null);
+              }}
               className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
             >
               CANCEL
             </button>
             <button
-              onClick={() => {
-                setShowEditModal(false);
-                displayToast("Match updated successfully!");
-              }}
+              onClick={handleSave}
               className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg"
             >
               SAVE CHANGES
