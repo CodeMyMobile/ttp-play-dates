@@ -590,6 +590,7 @@ const TennisMatchApp = () => {
                   location: match.location,
                   latitude: match.latitude,
                   longitude: match.longitude,
+
                   notes: match.notes || "",
                 });
                 setShowEditModal(true);
@@ -2377,6 +2378,15 @@ const TennisMatchApp = () => {
                   className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
                 />
               </div>
+              <input
+                type="text"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                value={editMatch.location}
+                onChange={(e) =>
+                  setEditMatch({ ...editMatch, location: e.target.value })
+                }
+              />
+
             </div>
 
             <div>
