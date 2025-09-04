@@ -30,18 +30,16 @@ export const leaveMatch = async (id) => {
   return data;
 };
 
-export const sendInvites = async (matchId, playerIds) => {
-  const { data } = await apiClient.post(`/matches/${matchId}/invites`, { playerIds });
+export const sendInvites = async (matchId, userIds) => {
+  // Backend expects an array of user IDs under the key "playerIds"
+  const { data } = await apiClient.post(`/matches/${matchId}/invites`, {
+    playerIds: userIds,
+  });
   return data;
 };
 
 export const getShareLink = async (matchId) => {
   const { data } = await apiClient.get(`/matches/${matchId}/share-link`);
-  return data;
-};
-
-export const acceptInvite = async (token) => {
-  const { data } = await apiClient.post('/invites/accept', { token });
   return data;
 };
 
