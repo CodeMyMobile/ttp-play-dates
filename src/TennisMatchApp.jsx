@@ -10,6 +10,7 @@ import {
   searchPlayers,
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
+import InvitesList from "./components/InvitesList";
 import {
   Calendar,
   MapPin,
@@ -202,7 +203,10 @@ const TennisMatchApp = () => {
             </div>
             {currentUser ? (
               <div className="flex items-center gap-3">
-                <button className="relative p-2.5 hover:bg-gray-50 rounded-xl transition-colors">
+                <button
+                  onClick={() => setCurrentScreen("invites")}
+                  className="relative p-2.5 hover:bg-gray-50 rounded-xl transition-colors"
+                >
                   <Bell className="w-5 h-5 text-gray-600" />
                   <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 </button>
@@ -239,6 +243,22 @@ const TennisMatchApp = () => {
               >
                 Sign In
               </button>
+            )}
+          </div>
+        ) : currentScreen === "invites" ? (
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setCurrentScreen("browse")}
+              className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+              <span className="text-gray-700 font-bold">Back</span>
+            </button>
+            <h1 className="text-xl font-black text-gray-800">Invites</h1>
+            {currentUser && (
+              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
+                {currentUser.avatar}
+              </div>
             )}
           </div>
         ) : (
@@ -2510,6 +2530,7 @@ const TennisMatchApp = () => {
       {currentScreen === "browse" && BrowseScreen()}
       {currentScreen === "create" && CreateMatchScreen()}
       {currentScreen === "invite" && <InviteScreen />}
+      {currentScreen === "invites" && <InvitesList />}
 
       {SignInModal()}
       {EditModal()}
