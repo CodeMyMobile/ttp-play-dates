@@ -8,6 +8,7 @@ import {
   joinMatch,
   leaveMatch,
   searchPlayers,
+  sendInvites,
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
@@ -57,6 +58,7 @@ const TennisMatchApp = () => {
   const [createStep, setCreateStep] = useState(1);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
+  const [inviteMatchId, setInviteMatchId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
@@ -682,6 +684,8 @@ const TennisMatchApp = () => {
             </button>
             <button
               onClick={() => {
+                setInviteMatchId(matchId);
+                setSelectedPlayers(new Map());
                 setCurrentScreen("invite");
                 onClose();
               }}
@@ -1671,14 +1675,28 @@ const TennisMatchApp = () => {
                   setCurrentScreen("browse");
                   setShowPreview(false);
                   setCreateStep(1);
+                  setSelectedPlayers(new Map());
+                  setInviteMatchId(null);
                 }}
                 className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
               >
                 SAVE FOR LATER
               </button>
               <button
-                onClick={() => {
-                  if (selectedPlayers.size > 0) {
+                onClick={async () => {
+                  if (selectedPlayers.size === 0) {
+                    displayToast("Please select at least one player", "error");
+                    return;
+                  }
+                  if (!inviteMatchId) {
+                    displayToast("No match selected for invites", "error");
+                    return;
+                  }
+                  try {
+                    await sendInvites(
+                      inviteMatchId,
+                      Array.from(selectedPlayers.keys())
+                    );
                     displayToast(
                       `Invites sent to ${selectedPlayers.size} ${
                         selectedPlayers.size === 1 ? "player" : "players"
@@ -1688,8 +1706,12 @@ const TennisMatchApp = () => {
                     setSelectedPlayers(new Map());
                     setShowPreview(false);
                     setCreateStep(1);
-                  } else {
-                    displayToast("Please select at least one player", "error");
+                    setInviteMatchId(null);
+                  } catch (err) {
+                    displayToast(
+                      err.response?.data?.message || "Failed to send invites",
+                      "error"
+                    );
                   }
                 }}
                 className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
