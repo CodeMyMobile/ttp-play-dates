@@ -74,6 +74,9 @@ const TennisMatchApp = () => {
     format: "Doubles",
     dateTime: "",
     location: "",
+    latitude: null,
+    longitude: null,
+    mapUrl: "",
     notes: "",
   });
 
@@ -129,6 +132,18 @@ const TennisMatchApp = () => {
       : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
   };
 
+  const buildMapsUrl = (lat, lng, address) => {
+    if (lat && lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    }
+    if (address) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        address
+      )}`;
+    }
+    return "";
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("authToken");
     localStorage.removeItem("refreshToken");
@@ -147,6 +162,9 @@ const TennisMatchApp = () => {
         status: m.match_type === "private" ? "closed" : m.status || "open",
         dateTime: m.start_date_time,
         location: m.location_text,
+        latitude: m.latitude,
+        longitude: m.longitude,
+        mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
         format: m.match_format,
         skillLevel: m.skill_level_min,
         notes: m.notes,
@@ -479,7 +497,14 @@ const TennisMatchApp = () => {
             </div>
             <div>
               <p className="text-sm font-black text-gray-900">
-                {match.location}
+                <a
+                  href={match.mapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {match.location}
+                </a>
               </p>
               <p className="text-xs font-semibold text-gray-500">
                 2.3 miles away
@@ -563,6 +588,9 @@ const TennisMatchApp = () => {
                   id: match.id,
                   dateTime: new Date(match.dateTime).toISOString().slice(0, 16),
                   location: match.location,
+                  latitude: match.latitude,
+                  longitude: match.longitude,
+
                   notes: match.notes || "",
                 });
                 setShowEditModal(true);
@@ -743,6 +771,8 @@ const TennisMatchApp = () => {
           type: matchData.type === "closed" ? "private" : "open",
           dateTime: new Date(matchData.dateTime).toISOString(),
           location: matchData.location,
+          latitude: matchData.latitude,
+          longitude: matchData.longitude,
           playerCount: matchData.playerCount,
           skillLevel: matchData.skillLevel,
           format: matchData.format,
@@ -798,7 +828,14 @@ const TennisMatchApp = () => {
                       WHERE
                     </h3>
                     <p className="font-black text-gray-900 text-lg">
-                      {matchData.location}
+                      <a
+                        href={matchData.mapUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {matchData.location}
+                      </a>
                     </p>
                   </div>
                 </div>
@@ -968,14 +1005,21 @@ const TennisMatchApp = () => {
                       setMatchData((prev) => ({
                         ...prev,
                         location: e.target.value,
+                        latitude: null,
+                        longitude: null,
+                        mapUrl: buildMapsUrl(null, null, e.target.value),
                       }))
                     }
                     onPlaceSelected={(place) => {
-                      const address =
-                        place.formatted_address || place.name || "";
+                      const address = place.formatted_address || place.name || "";
+                      const lat = place.geometry?.location?.lat();
+                      const lng = place.geometry?.location?.lng();
                       setMatchData((prev) => ({
                         ...prev,
                         location: address,
+                        latitude: lat,
+                        longitude: lng,
+                        mapUrl: buildMapsUrl(lat, lng, address),
                       }));
                     }}
                     options={{
@@ -1279,7 +1323,14 @@ const TennisMatchApp = () => {
                 <div className="flex items-center gap-3 text-gray-700">
                   <MapPin className="w-5 h-5 text-gray-400" />
                   <span className="font-bold text-base">
-                    {matchData.location}
+                    <a
+                      href={matchData.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      {matchData.location}
+                    </a>
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-700">
@@ -1387,7 +1438,14 @@ const TennisMatchApp = () => {
               </span>
               <span className="flex items-center gap-1">
                 <MapPin className="w-4 h-4" />
-                {matchData.location}
+                <a
+                  href={matchData.mapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {matchData.location}
+                </a>
               </span>
             </div>
           </div>
@@ -2231,6 +2289,8 @@ const TennisMatchApp = () => {
         await updateMatch(editMatch.id, {
           start_date_time: new Date(editMatch.dateTime).toISOString(),
           location_text: editMatch.location,
+          latitude: editMatch.latitude,
+          longitude: editMatch.longitude,
           notes: editMatch.notes,
         });
         displayToast("Match updated successfully!");
@@ -2281,6 +2341,43 @@ const TennisMatchApp = () => {
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
                 Location
               </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
+                <Autocomplete
+                  apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                  type="search"
+                  value={editMatch.location}
+                  onChange={(e) =>
+                    setEditMatch({
+                      ...editMatch,
+                      location: e.target.value,
+                      latitude: null,
+                      longitude: null,
+                    })
+                  }
+                  onPlaceSelected={(place) => {
+                    const address = place.formatted_address || place.name || "";
+                    const lat = place.geometry?.location?.lat();
+                    const lng = place.geometry?.location?.lng();
+                    setEditMatch({
+                      ...editMatch,
+                      location: address,
+                      latitude: lat,
+                      longitude: lng,
+                    });
+                  }}
+                  options={{
+                    types: ["geocode", "establishment"],
+                    fields: [
+                      "formatted_address",
+                      "geometry",
+                      "name",
+                      "address_components",
+                    ],
+                  }}
+                  className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                />
+              </div>
               <input
                 type="text"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
@@ -2289,6 +2386,7 @@ const TennisMatchApp = () => {
                   setEditMatch({ ...editMatch, location: e.target.value })
                 }
               />
+
             </div>
 
             <div>
