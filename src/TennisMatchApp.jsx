@@ -56,7 +56,7 @@ const TennisMatchApp = () => {
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [createStep, setCreateStep] = useState(1);
   const [showPreview, setShowPreview] = useState(false);
-  const [selectedPlayers, setSelectedPlayers] = useState(new Set());
+  const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [showEditModal, setShowEditModal] = useState(false);
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
@@ -1412,6 +1412,9 @@ const TennisMatchApp = () => {
     const searchInputRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [players, setPlayers] = useState([]);
+    const [pagination, setPagination] = useState(null);
+    const [page, setPage] = useState(1);
+    const perPage = 12;
     const [copiedLink, setCopiedLink] = useState(false);
 
     const copyLink = () => {
@@ -1420,20 +1423,28 @@ const TennisMatchApp = () => {
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
-      useEffect(() => {
-        if (searchTerm === "" || searchTerm.length >= 2) {
-          searchPlayers({ search: searchTerm })
-            .then((data) => setPlayers(data.players || []))
-            .catch((err) =>
-              displayToast(
-                err.response?.data?.message || "Failed to load players",
-                "error"
-              )
-            );
-        } else {
-          setPlayers([]);
-        }
-      }, [searchTerm]);
+    useEffect(() => {
+      setPage(1);
+    }, [searchTerm]);
+
+    useEffect(() => {
+      if (searchTerm === "" || searchTerm.length >= 2) {
+        searchPlayers({ search: searchTerm, page, perPage })
+          .then((data) => {
+            setPlayers(data.players || []);
+            setPagination(data.pagination);
+          })
+          .catch((err) =>
+            displayToast(
+              err.response?.data?.message || "Failed to load players",
+              "error"
+            )
+          );
+      } else {
+        setPlayers([]);
+        setPagination(null);
+      }
+    }, [searchTerm, page]);
 
     // Keep search input focused after each render when typing
     useEffect(() => {
@@ -1549,24 +1560,24 @@ const TennisMatchApp = () => {
                       key={player.id}
                       onClick={() => {
                         setSelectedPlayers((prev) => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(name)) {
-                            newSet.delete(name);
+                          const newMap = new Map(prev);
+                          if (newMap.has(player.id)) {
+                            newMap.delete(player.id);
                           } else {
-                            newSet.add(name);
+                            newMap.set(player.id, player);
                           }
-                          return newSet;
+                          return newMap;
                         });
                       }}
                       className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
-                        selectedPlayers.has(name)
+                        selectedPlayers.has(player.id)
                           ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
                           : "border-gray-200 hover:border-gray-300 bg-white"
                       }`}
                     >
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
-                          selectedPlayers.has(name)
+                          selectedPlayers.has(player.id)
                             ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
                             : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
                         }`}
@@ -1580,29 +1591,73 @@ const TennisMatchApp = () => {
                       <span className="text-sm text-gray-700 font-bold">
                         {name}
                       </span>
-                      {selectedPlayers.has(name) && (
+                      {selectedPlayers.has(player.id) && (
                         <Check className="w-4 h-4 text-green-600 ml-auto" />
                       )}
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Selected Summary */}
-            {selectedPlayers.size > 0 && (
-              <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl p-5 shadow-xl">
-                <div className="flex justify-between items-center">
-                  <span className="text-base font-black">
-                    {selectedPlayers.size}{" "}
-                    {selectedPlayers.size === 1 ? "PLAYER" : "PLAYERS"} SELECTED
+              {pagination && (
+                <div className="flex items-center justify-between mt-4">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm font-semibold text-gray-600">
+                    Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
                   </span>
                   <button
-                    onClick={() => setSelectedPlayers(new Set())}
-                    className="text-sm text-white/80 hover:text-white font-bold"
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={pagination.page >= Math.ceil(pagination.total / pagination.perPage)}
+                    className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Selected players display */}
+            {selectedPlayers.size > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
+                    Selected ({selectedPlayers.size})
+                  </h3>
+                  <button
+                    onClick={() => setSelectedPlayers(new Map())}
+                    className="text-sm text-gray-500 hover:text-gray-700 font-bold"
                   >
                     Clear all
                   </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[...selectedPlayers.values()].map((player) => (
+                    <span
+                      key={player.id}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
+                    >
+                      {player.full_name}
+                      <button
+                        onClick={() =>
+                          setSelectedPlayers((prev) => {
+                            const m = new Map(prev);
+                            m.delete(player.id);
+                            return m;
+                          })
+                        }
+                        className="ml-1 text-green-700 hover:text-green-900"
+                        aria-label={`Remove ${player.full_name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -1630,7 +1685,7 @@ const TennisMatchApp = () => {
                       }! 🎾`
                     );
                     setCurrentScreen("browse");
-                    setSelectedPlayers(new Set());
+                    setSelectedPlayers(new Map());
                     setShowPreview(false);
                     setCreateStep(1);
                   } else {
