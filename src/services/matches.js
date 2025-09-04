@@ -5,8 +5,14 @@ export const createMatch = async (match) => {
   return data;
 };
 
-export const listMatches = async (filter) => {
-  const { data } = await apiClient.get('/matches', { params: filter ? { filter } : {} });
+export const listMatches = async (
+  filter,
+  { search = '', page = 1, perPage = 10 } = {}
+) => {
+  const params = { page, perPage };
+  if (filter) params.filter = filter;
+  if (search) params.search = search;
+  const { data } = await apiClient.get('/matches', { params });
   return data;
 };
 
@@ -30,8 +36,11 @@ export const leaveMatch = async (id) => {
   return data;
 };
 
-export const sendInvites = async (matchId, playerIds) => {
-  const { data } = await apiClient.post(`/matches/${matchId}/invites`, { playerIds });
+export const sendInvites = async (matchId, userIds) => {
+  // Backend expects an array of user IDs under the key "playerIds"
+  const { data } = await apiClient.post(`/matches/${matchId}/invites`, {
+    playerIds: userIds,
+  });
   return data;
 };
 
@@ -40,17 +49,12 @@ export const getShareLink = async (matchId) => {
   return data;
 };
 
-export const acceptInvite = async (token) => {
-  const { data } = await apiClient.post('/invites/accept', { token });
-  return data;
-};
-
 export const searchPlayers = async (
-  { search = '', page = 1, perPage = 12 } = {}
+  { search = '', page = 1, perPage = 12, ids } = {}
 ) => {
-  const { data } = await apiClient.get('/matches/players', {
-    params: { search, page, perPage },
-  });
+  const params = { search, page, perPage };
+  if (ids && ids.length) params.ids = ids.join(',');
+  const { data } = await apiClient.get('/matches/players', { params });
   return data;
 };
 
