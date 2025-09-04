@@ -1569,11 +1569,13 @@ const TennisMatchApp = () => {
                             newMap.delete(player.user_id);
                           } else {
                             newMap.set(player.user_id, player);
+
                           }
                           return newMap;
                         });
                       }}
                       className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
+
                         selectedPlayers.has(player.user_id)
                           ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
                           : "border-gray-200 hover:border-gray-300 bg-white"
@@ -1581,7 +1583,9 @@ const TennisMatchApp = () => {
                     >
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
+
                           selectedPlayers.has(player.user_id)
+
                             ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
                             : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
                         }`}
@@ -1596,6 +1600,7 @@ const TennisMatchApp = () => {
                         {name}
                       </span>
                       {selectedPlayers.has(player.user_id) && (
+
                         <Check className="w-4 h-4 text-green-600 ml-auto" />
                       )}
                     </button>
@@ -1643,7 +1648,9 @@ const TennisMatchApp = () => {
                 <div className="flex flex-wrap gap-2">
                   {[...selectedPlayers.values()].map((player) => (
                     <span
+
                       key={player.user_id}
+
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
@@ -1652,6 +1659,7 @@ const TennisMatchApp = () => {
                           setSelectedPlayers((prev) => {
                             const m = new Map(prev);
                             m.delete(player.user_id);
+
                             return m;
                           })
                         }
