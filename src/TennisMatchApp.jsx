@@ -740,6 +740,7 @@ const TennisMatchApp = () => {
               <Bell className="w-4 h-4 text-gray-500" /> Send Reminder
             </button>
             <button
+
               onClick={async () => {
                 const match = matches.find((m) => m.id === matchId);
                 if (match) {
@@ -780,6 +781,7 @@ const TennisMatchApp = () => {
                   setExistingInviteeIds(new Set());
                 }
                 setInviteMatchId(matchId);
+
                 setCurrentScreen("invite");
                 onClose();
               }}
@@ -1665,19 +1667,24 @@ const TennisMatchApp = () => {
                             newMap.delete(player.user_id);
                           } else {
                             newMap.set(player.user_id, player);
+
                           }
                           return newMap;
                         });
                       }}
                       className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
+
                         selectedPlayers.has(player.user_id)
+
                           ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
                           : "border-gray-200 hover:border-gray-300 bg-white"
                       }`}
                     >
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
+
                           selectedPlayers.has(player.user_id)
+
                             ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
                             : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
                         }`}
@@ -1691,7 +1698,9 @@ const TennisMatchApp = () => {
                       <span className="text-sm text-gray-700 font-bold">
                         {name}
                       </span>
+
                       {selectedPlayers.has(player.user_id) && (
+
                         <Check className="w-4 h-4 text-green-600 ml-auto" />
                       )}
                     </button>
@@ -1739,6 +1748,7 @@ const TennisMatchApp = () => {
                 <div className="flex flex-wrap gap-2">
                   {[...selectedPlayers.values()].map((player) => (
                     <span
+
                       key={player.user_id}
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
@@ -1761,6 +1771,7 @@ const TennisMatchApp = () => {
                           <X className="w-3 h-3" />
                         </button>
                       )}
+
                     </span>
                   ))}
                 </div>
@@ -1778,6 +1789,7 @@ const TennisMatchApp = () => {
                   setCreateStep(1);
                   setSelectedPlayers(new Map());
                   setExistingInviteeIds(new Set());
+
                   setInviteMatchId(null);
                 }}
                 className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
@@ -1803,6 +1815,7 @@ const TennisMatchApp = () => {
                       return;
                     }
                     await sendInvites(inviteMatchId, newIds);
+
                     displayToast(
                       `Invites sent to ${newIds.length} ${
                         newIds.length === 1 ? "player" : "players"
@@ -1811,6 +1824,7 @@ const TennisMatchApp = () => {
                     setCurrentScreen("browse");
                     setSelectedPlayers(new Map());
                     setExistingInviteeIds(new Set());
+
                     setShowPreview(false);
                     setCreateStep(1);
                     setInviteMatchId(null);
