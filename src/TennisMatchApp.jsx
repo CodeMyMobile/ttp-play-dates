@@ -7,6 +7,7 @@ import {
   cancelMatch,
   joinMatch,
   leaveMatch,
+  searchPlayers,
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import {
@@ -1399,21 +1400,20 @@ const TennisMatchApp = () => {
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
-    useEffect(() => {
-      if (searchTerm.length >= 2) {
-        apiClient
-          .get(`/players?search=${encodeURIComponent(searchTerm)}`)
-          .then((res) => setPlayers(res.data.players || []))
-          .catch((err) =>
-            displayToast(
-              err.response?.data?.message || "Failed to load players",
-              "error"
-            )
-          );
-      } else {
-        setPlayers([]);
-      }
-    }, [searchTerm]);
+      useEffect(() => {
+        if (searchTerm === "" || searchTerm.length >= 2) {
+          searchPlayers({ search: searchTerm })
+            .then((data) => setPlayers(data.players || []))
+            .catch((err) =>
+              displayToast(
+                err.response?.data?.message || "Failed to load players",
+                "error"
+              )
+            );
+        } else {
+          setPlayers([]);
+        }
+      }, [searchTerm]);
 
     // Keep search input focused after each render when typing
     useEffect(() => {
