@@ -1675,7 +1675,6 @@ const TennisMatchApp = () => {
                       className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
 
                         selectedPlayers.has(player.user_id)
-
                           ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
                           : "border-gray-200 hover:border-gray-300 bg-white"
                       }`}
@@ -1750,27 +1749,25 @@ const TennisMatchApp = () => {
                     <span
 
                       key={player.user_id}
+
+
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
-                      {existingInviteeIds.has(player.user_id) && (
-                        <span className="ml-1 text-green-700 text-xs">Invited</span>
-                      )}
-                      {!existingInviteeIds.has(player.user_id) && (
-                        <button
-                          onClick={() =>
-                            setSelectedPlayers((prev) => {
-                              const m = new Map(prev);
-                              m.delete(player.user_id);
-                              return m;
-                            })
-                          }
-                          className="ml-1 text-green-700 hover:text-green-900"
-                          aria-label={`Remove ${player.full_name}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() =>
+                          setSelectedPlayers((prev) => {
+                            const m = new Map(prev);
+                            m.delete(player.user_id);
+
+                            return m;
+                          })
+                        }
+                        className="ml-1 text-green-700 hover:text-green-900"
+                        aria-label={`Remove ${player.full_name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
 
                     </span>
                   ))}
