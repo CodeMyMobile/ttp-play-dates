@@ -97,7 +97,8 @@ const TennisMatchApp = () => {
   const [matchPagination, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchSearch, setMatchSearch] = useState("");
-  const [existingInviteeIds, setExistingInviteeIds] = useState(new Set());
+  // Track players already part of the match (participants or previously invited)
+  const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
   const [viewMatch, setViewMatch] = useState(null);
 
@@ -783,25 +784,38 @@ const TennisMatchApp = () => {
                     ),
                     notes: match.notes || "",
                   }));
-                  const ids = invitees.map((i) => i.invitee_id).filter(Boolean);
-                  let initial = new Map();
-                  if (ids.length) {
-                    try {
-                      const players = await searchPlayers({ ids });
-                      (players.players || []).forEach((p) =>
-                        initial.set(p.user_id, p)
-                      );
-                    } catch {
-                      // ignore
-                    }
-                    if (initial.size === 0) {
-                      ids.forEach((id) =>
-                        initial.set(id, { user_id: id, full_name: `Player ${id}` })
-                      );
-                    }
-                  }
+
+                  // Build initial selection from participants and invitees
+                  const initial = new Map();
+                  const participantIds = participants
+                    .filter((p) => p.status !== "left")
+                    .map((p) => p.player_id);
+                  const inviteeIds = invitees
+                    .map((i) => i.invitee_id)
+                    .filter(Boolean);
+
+                  participants.forEach((p) => {
+                    if (p.status === "left") return;
+                    const profile = p.profile || {};
+                    initial.set(p.player_id, {
+                      user_id: p.player_id,
+                      full_name: profile.full_name || `Player ${p.player_id}`,
+                      email: profile.email,
+                    });
+                  });
+                  invitees.forEach((i) => {
+                    const profile = i.profile || {};
+                    initial.set(i.invitee_id, {
+                      user_id: i.invitee_id,
+                      full_name: profile.full_name || `Player ${i.invitee_id}`,
+                      email: profile.email,
+                    });
+                  });
+
                   setSelectedPlayers(initial);
-                  setExistingInviteeIds(new Set(ids));
+                  setExistingPlayerIds(
+                    new Set([...participantIds, ...inviteeIds])
+                  );
                   setInviteMatchId(matchId);
                   setCurrentScreen("invite");
                   onClose();
@@ -1780,10 +1794,10 @@ const TennisMatchApp = () => {
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
-                      {existingInviteeIds.has(player.user_id) && (
-                        <span className="ml-1 text-green-700 text-xs">Invited</span>
+                      {existingPlayerIds.has(player.user_id) && (
+                        <span className="ml-1 text-green-700 text-xs">Added</span>
                       )}
-                      {!existingInviteeIds.has(player.user_id) && (
+                      {!existingPlayerIds.has(player.user_id) && (
                         <button
                           onClick={() =>
                             setSelectedPlayers((prev) => {
@@ -1815,7 +1829,7 @@ const TennisMatchApp = () => {
                   setShowPreview(false);
                   setCreateStep(1);
                   setSelectedPlayers(new Map());
-                  setExistingInviteeIds(new Set());
+                  setExistingPlayerIds(new Set());
 
                   setInviteMatchId(null);
                 }}
@@ -1835,7 +1849,7 @@ const TennisMatchApp = () => {
                   }
                   try {
                     const newIds = Array.from(selectedPlayers.keys()).filter(
-                      (id) => !existingInviteeIds.has(id)
+                      (id) => !existingPlayerIds.has(id)
                     );
                     if (newIds.length === 0) {
                       displayToast("No new players selected", "error");
@@ -1850,7 +1864,7 @@ const TennisMatchApp = () => {
                     );
                     setCurrentScreen("browse");
                     setSelectedPlayers(new Map());
-                    setExistingInviteeIds(new Set());
+                    setExistingPlayerIds(new Set());
 
                     setShowPreview(false);
                     setCreateStep(1);
