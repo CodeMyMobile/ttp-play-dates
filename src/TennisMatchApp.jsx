@@ -9,6 +9,7 @@ import {
   leaveMatch,
   searchPlayers,
   sendInvites,
+  getMatch,
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
@@ -96,8 +97,10 @@ const TennisMatchApp = () => {
   const [matchPagination, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchSearch, setMatchSearch] = useState("");
-  const [existingInviteeIds, setExistingInviteeIds] = useState(new Set());
+  // Track players already part of the match (participants or previously invited)
+  const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
+  const [viewMatch, setViewMatch] = useState(null);
 
   useEffect(() => {
     setMatchPage(1);
@@ -155,6 +158,19 @@ const TennisMatchApp = () => {
       )}`;
     }
     return "";
+  };
+
+  const handleViewDetails = async (matchId) => {
+    try {
+      const data = await getMatch(matchId);
+      setViewMatch(data);
+      setCurrentScreen("details");
+    } catch (err) {
+      displayToast(
+        err.response?.data?.message || "Failed to load match details",
+        "error"
+      );
+    }
   };
 
   const handleLogout = () => {
@@ -683,7 +699,7 @@ const TennisMatchApp = () => {
           )}
           {isJoined && (
           <button
-            onClick={() => displayToast("Loading match details...")}
+            onClick={() => handleViewDetails(match.id)}
             className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-black hover:bg-gray-200 transition-all"
           >
             DETAILS
@@ -740,50 +756,75 @@ const TennisMatchApp = () => {
               <Bell className="w-4 h-4 text-gray-500" /> Send Reminder
             </button>
             <button
-
               onClick={async () => {
-                const match = matches.find((m) => m.id === matchId);
-                if (match) {
+                try {
+                  const data = await getMatch(matchId);
+                  const match = data.match;
+                  const participants = data.participants || [];
+                  const invitees = data.invitees || [];
+                  const participantCount = participants.filter(
+                    (p) => p.status !== "left"
+                  ).length;
+                  const acceptedInvites = invitees.filter(
+                    (i) => i.status === "accepted"
+                  ).length;
+                  const occupied = participantCount + acceptedInvites;
                   setMatchData((prev) => ({
                     ...prev,
-                    playerCount: match.playerLimit,
-                    occupied: match.occupied,
-                    dateTime: match.dateTime,
-                    location: match.location,
+                    playerCount: match.player_limit,
+                    occupied,
+                    dateTime: match.start_date_time,
+                    location: match.location_text,
                     latitude: match.latitude,
                     longitude: match.longitude,
-                    mapUrl: match.mapUrl,
+                    mapUrl: buildMapsUrl(
+                      match.latitude,
+                      match.longitude,
+                      match.location_text
+                    ),
                     notes: match.notes || "",
                   }));
-                  const ids = (match.invitees || [])
+
+                  // Build initial selection from participants and invitees
+                  const initial = new Map();
+                  const participantIds = participants
+                    .filter((p) => p.status !== "left")
+                    .map((p) => p.player_id);
+                  const inviteeIds = invitees
                     .map((i) => i.invitee_id)
                     .filter(Boolean);
-                  let initial = new Map();
-                  if (ids.length) {
-                    try {
-                      const data = await searchPlayers({ ids });
-                      (data.players || []).forEach((p) =>
-                        initial.set(p.user_id, p)
-                      );
-                    } catch {
-                      // ignore
-                    }
-                    if (initial.size === 0) {
-                      ids.forEach((id) =>
-                        initial.set(id, { user_id: id, full_name: `Player ${id}` })
-                      );
-                    }
-                  }
-                  setSelectedPlayers(initial);
-                  setExistingInviteeIds(new Set(ids));
-                } else {
-                  setSelectedPlayers(new Map());
-                  setExistingInviteeIds(new Set());
-                }
-                setInviteMatchId(matchId);
 
-                setCurrentScreen("invite");
-                onClose();
+                  participants.forEach((p) => {
+                    if (p.status === "left") return;
+                    const profile = p.profile || {};
+                    initial.set(p.player_id, {
+                      user_id: p.player_id,
+                      full_name: profile.full_name || `Player ${p.player_id}`,
+                      email: profile.email,
+                    });
+                  });
+                  invitees.forEach((i) => {
+                    const profile = i.profile || {};
+                    initial.set(i.invitee_id, {
+                      user_id: i.invitee_id,
+                      full_name: profile.full_name || `Player ${i.invitee_id}`,
+                      email: profile.email,
+                    });
+                  });
+
+                  setSelectedPlayers(initial);
+                  setExistingPlayerIds(
+                    new Set([...participantIds, ...inviteeIds])
+                  );
+                  setInviteMatchId(matchId);
+                  setCurrentScreen("invite");
+                  onClose();
+                } catch (err) {
+                  displayToast(
+                    err.response?.data?.message || "Failed to load match details",
+                    "error"
+                  );
+                }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
             >
@@ -813,7 +854,7 @@ const TennisMatchApp = () => {
           <>
             <button
               onClick={() => {
-                displayToast("Loading match details...");
+                handleViewDetails(matchId);
                 onClose();
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
@@ -1754,20 +1795,26 @@ const TennisMatchApp = () => {
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
-                      <button
-                        onClick={() =>
-                          setSelectedPlayers((prev) => {
-                            const m = new Map(prev);
-                            m.delete(player.user_id);
 
-                            return m;
-                          })
-                        }
-                        className="ml-1 text-green-700 hover:text-green-900"
-                        aria-label={`Remove ${player.full_name}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                      {existingPlayerIds.has(player.user_id) && (
+                        <span className="ml-1 text-green-700 text-xs">Added</span>
+                      )}
+                      {!existingPlayerIds.has(player.user_id) && (
+                        <button
+                          onClick={() =>
+                            setSelectedPlayers((prev) => {
+                              const m = new Map(prev);
+                              m.delete(player.user_id);
+                              return m;
+                            })
+                          }
+                          className="ml-1 text-green-700 hover:text-green-900"
+                          aria-label={`Remove ${player.full_name}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+
 
                     </span>
                   ))}
@@ -1785,7 +1832,7 @@ const TennisMatchApp = () => {
                   setShowPreview(false);
                   setCreateStep(1);
                   setSelectedPlayers(new Map());
-                  setExistingInviteeIds(new Set());
+                  setExistingPlayerIds(new Set());
 
                   setInviteMatchId(null);
                 }}
@@ -1805,7 +1852,7 @@ const TennisMatchApp = () => {
                   }
                   try {
                     const newIds = Array.from(selectedPlayers.keys()).filter(
-                      (id) => !existingInviteeIds.has(id)
+                      (id) => !existingPlayerIds.has(id)
                     );
                     if (newIds.length === 0) {
                       displayToast("No new players selected", "error");
@@ -1820,7 +1867,7 @@ const TennisMatchApp = () => {
                     );
                     setCurrentScreen("browse");
                     setSelectedPlayers(new Map());
-                    setExistingInviteeIds(new Set());
+                    setExistingPlayerIds(new Set());
 
                     setShowPreview(false);
                     setCreateStep(1);
@@ -1840,6 +1887,61 @@ const TennisMatchApp = () => {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const MatchDetailsScreen = () => {
+    if (!viewMatch) return null;
+    const { match, participants = [], invitees = [] } = viewMatch;
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <button
+          onClick={() => {
+            setViewMatch(null);
+            setCurrentScreen("browse");
+          }}
+          className="mb-4 text-sm font-bold text-gray-700"
+        >
+          ← BACK
+        </button>
+        <h2 className="text-3xl font-black mb-4">Match Details</h2>
+        {match && (
+          <>
+            <p className="font-semibold mb-1">
+              {formatDateTime(match.start_date_time)}
+            </p>
+            <p className="text-gray-600 mb-4">{match.location_text}</p>
+          </>
+        )}
+        <div className="mb-6">
+          <h3 className="text-xl font-bold mb-2">Participants</h3>
+          {participants.length ? (
+            <ul className="space-y-1">
+              {participants.map((p) => (
+                <li key={p.id} className="text-gray-800">
+                  {p.profile?.full_name || `Player ${p.player_id}`}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No participants yet.</p>
+          )}
+        </div>
+        <div>
+          <h3 className="text-xl font-bold mb-2">Invitees</h3>
+          {invitees.length ? (
+            <ul className="space-y-1">
+              {invitees.map((i) => (
+                <li key={i.id} className="text-gray-800">
+                  {i.profile?.full_name || `Player ${i.invitee_id}`} - {i.status}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No invites sent.</p>
+          )}
         </div>
       </div>
     );
@@ -2722,10 +2824,11 @@ const TennisMatchApp = () => {
 
       {Header()}
 
-      {currentScreen === "browse" && BrowseScreen()}
-      {currentScreen === "create" && CreateMatchScreen()}
-      {currentScreen === "invite" && <InviteScreen />}
-      {currentScreen === "invites" && <InvitesList />}
+        {currentScreen === "browse" && BrowseScreen()}
+        {currentScreen === "create" && CreateMatchScreen()}
+        {currentScreen === "invite" && <InviteScreen />}
+        {currentScreen === "details" && <MatchDetailsScreen />}
+        {currentScreen === "invites" && <InvitesList />}
 
       {SignInModal()}
       {EditModal()}
