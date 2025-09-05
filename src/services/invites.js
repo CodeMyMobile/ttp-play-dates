@@ -18,3 +18,8 @@ export const rejectInvite = async (token) => {
   const { data } = await apiClient.post('/invites/reject', { token });
   return data;
 };
+
+export const getInviteByToken = async (token) => {
+  const { data } = await apiClient.get(`/invites/${token}`);
+  return data;
+};

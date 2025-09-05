@@ -10,9 +10,11 @@ import {
   searchPlayers,
   sendInvites,
   getMatch,
+  getShareLink,
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
+import { getInviteByToken } from "./services/invites";
 import {
   Calendar,
   MapPin,
@@ -129,6 +131,25 @@ const TennisMatchApp = () => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
   };
+
+  useEffect(() => {
+    const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
+    if (tokenMatch) {
+      const token = tokenMatch[1];
+      getInviteByToken(token)
+        .then(async (invite) => {
+          const matchId = invite.match?.id || invite.match_id;
+          if (matchId) {
+            const data = await getMatch(matchId);
+            setViewMatch(data);
+            setCurrentScreen("details");
+          }
+        })
+        .catch(() => {
+          displayToast("Failed to open match", "error");
+        });
+    }
+  }, []);
 
   const formatDateTime = (dateTime) => {
     const date = new Date(dateTime);
@@ -1569,13 +1590,28 @@ const TennisMatchApp = () => {
     const [page, setPage] = useState(1);
     const perPage = 12;
     const [copiedLink, setCopiedLink] = useState(false);
+    const [shareLink, setShareLink] = useState("");
 
     const copyLink = () => {
-      navigator.clipboard.writeText("matchplay.app/m/abc123");
+      if (!shareLink) return;
+      navigator.clipboard.writeText(shareLink);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
+    useEffect(() => {
+      if (inviteMatchId) {
+        getShareLink(inviteMatchId)
+          .then(({ shareUrl }) => setShareLink(shareUrl))
+          .catch((err) =>
+            displayToast(
+              err.response?.data?.message || "Failed to generate share link",
+              "error",
+            ),
+          );
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inviteMatchId]);
 
     useEffect(() => {
       if (searchTerm === "" || searchTerm.length >= 2) {
@@ -1658,12 +1694,13 @@ const TennisMatchApp = () => {
               <div className="flex gap-3 mb-4">
                 <input
                   type="text"
-                  value="matchplay.app/m/abc123"
+                  value={shareLink}
                   readOnly
                   className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-600"
                 />
                 <button
                   onClick={copyLink}
+                  disabled={!shareLink}
                   className={`px-5 py-3 rounded-xl font-black transition-all ${
                     copiedLink
                       ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
