@@ -2838,7 +2838,9 @@ const TennisMatchApp = () => {
         {currentScreen === "create" && CreateMatchScreen()}
         {currentScreen === "invite" && <InviteScreen />}
         {currentScreen === "details" && <MatchDetailsScreen />}
-        {currentScreen === "invites" && <InvitesList />}
+        {currentScreen === "invites" && (
+          <InvitesList onInviteResponse={fetchMatches} />
+        )}
 
       {SignInModal()}
       {EditModal()}

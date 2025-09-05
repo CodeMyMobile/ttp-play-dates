@@ -12,7 +12,7 @@ import {
   Gauge,
 } from 'lucide-react';
 
-const InvitesList = () => {
+const InvitesList = ({ onInviteResponse }) => {
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,6 +44,7 @@ const InvitesList = () => {
             : inv,
         ),
       );
+      onInviteResponse?.();
     } catch (err) {
       console.error(err);
     }
@@ -59,6 +60,7 @@ const InvitesList = () => {
             : inv,
         ),
       );
+      onInviteResponse?.();
     } catch (err) {
       console.error(err);
     }
