@@ -198,9 +198,19 @@ const TennisMatchApp = () => {
           (i) => i.status === "accepted"
         ).length;
         const occupied = participantCount + acceptedInvites;
+
+        const matchId = m.match_id || m.id;
+        const isHost = m.host_id === currentUser?.id;
+        const isJoined =
+          !isHost &&
+          (m.joined_at ||
+            (m.participants || []).some(
+              (p) => p.player_id === currentUser?.id && p.status !== "left",
+            ));
+
         return {
-          id: m.id,
-          type: m.host_id === currentUser?.id ? "hosted" : "available",
+          id: matchId,
+          type: isHost ? "hosted" : isJoined ? "joined" : "available",
           status: m.match_type === "private" ? "closed" : m.status || "open",
           dateTime: m.start_date_time,
           location: m.location_text,
