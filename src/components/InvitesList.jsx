@@ -37,7 +37,13 @@ const InvitesList = () => {
   const handleAccept = async (token) => {
     try {
       await acceptInvite(token);
-      setInvites((prev) => prev.filter((inv) => inv.token !== token));
+      setInvites((prev) =>
+        prev.map((inv) =>
+          inv.token === token
+            ? { ...inv, accepted: true, rejected: false, status: 'accepted' }
+            : inv,
+        ),
+      );
     } catch (err) {
       console.error(err);
     }
@@ -46,7 +52,13 @@ const InvitesList = () => {
   const handleReject = async (token) => {
     try {
       await rejectInvite(token);
-      setInvites((prev) => prev.filter((inv) => inv.token !== token));
+      setInvites((prev) =>
+        prev.map((inv) =>
+          inv.token === token
+            ? { ...inv, rejected: true, accepted: false, status: 'rejected' }
+            : inv,
+        ),
+      );
     } catch (err) {
       console.error(err);
     }
@@ -125,19 +137,31 @@ const InvitesList = () => {
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleReject(invite.token)}
-                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleAccept(invite.token)}
-                      className="p-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
+                  <div className="flex gap-2 items-center">
+                    {invite.accepted ? (
+                      <p className="text-sm text-green-600 flex items-center gap-1">
+                        <Check className="w-4 h-4" /> Accepted
+                      </p>
+                    ) : invite.rejected ? (
+                      <p className="text-sm text-red-600 flex items-center gap-1">
+                        <X className="w-4 h-4" /> Rejected
+                      </p>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleReject(invite.token)}
+                          className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleAccept(invite.token)}
+                          className="p-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </li>
