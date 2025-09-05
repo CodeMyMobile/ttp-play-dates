@@ -16,6 +16,11 @@ export const listMatches = async (
   return data;
 };
 
+export const getMatch = async (id) => {
+  const { data } = await apiClient.get(`/matches/${id}`);
+  return data;
+};
+
 export const updateMatch = async (id, updates) => {
   const { data } = await apiClient.put(`/matches/${id}`, updates);
   return data;
