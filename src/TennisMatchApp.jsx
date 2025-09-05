@@ -46,6 +46,8 @@ import {
   Activity,
   Sparkles,
   Target,
+  ClipboardList,
+  FileText,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 
@@ -1906,52 +1908,78 @@ const TennisMatchApp = () => {
     if (!viewMatch) return null;
     const { match, participants = [], invitees = [] } = viewMatch;
     return (
-      <div className="max-w-2xl mx-auto p-6">
-        <button
-          onClick={() => {
-            setViewMatch(null);
-            setCurrentScreen("browse");
-          }}
-          className="mb-4 text-sm font-bold text-gray-700"
-        >
-          ← BACK
-        </button>
-        <h2 className="text-3xl font-black mb-4">Match Details</h2>
-        {match && (
-          <>
-            <p className="font-semibold mb-1">
-              {formatDateTime(match.start_date_time)}
-            </p>
-            <p className="text-gray-600 mb-4">{match.location_text}</p>
-          </>
-        )}
-        <div className="mb-6">
-          <h3 className="text-xl font-bold mb-2">Participants</h3>
-          {participants.length ? (
-            <ul className="space-y-1">
-              {participants.map((p) => (
-                <li key={p.id} className="text-gray-800">
-                  {p.profile?.full_name || `Player ${p.player_id}`}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-500">No participants yet.</p>
+      <div className="max-w-2xl mx-auto p-4">
+        <div className="bg-white rounded-xl shadow p-6">
+          <button
+            onClick={() => {
+              setViewMatch(null);
+              setCurrentScreen("browse");
+            }}
+            className="mb-4 flex items-center text-sm font-bold text-gray-600 hover:text-gray-800"
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" /> Back
+          </button>
+          <h2 className="text-2xl font-black mb-4">Match Details</h2>
+          {match && (
+            <div className="space-y-1 mb-6">
+              <p className="text-gray-700 flex items-center gap-1">
+                <Calendar className="w-4 h-4" />
+                {formatDateTime(match.start_date_time)}
+              </p>
+              {match.location_text && (
+                <p className="text-gray-700 flex items-center gap-1">
+                  <MapPin className="w-4 h-4" /> {match.location_text}
+                </p>
+              )}
+              {match.match_format && (
+                <p className="text-gray-700 flex items-center gap-1">
+                  <ClipboardList className="w-4 h-4" /> {match.match_format}
+                </p>
+              )}
+              {match.player_limit && (
+                <p className="text-gray-700 flex items-center gap-1">
+                  <Users className="w-4 h-4" /> Player limit: {match.player_limit}
+                </p>
+              )}
+              {match.notes && (
+                <p className="text-gray-700 flex items-center gap-1">
+                  <FileText className="w-4 h-4" /> {match.notes}
+                </p>
+              )}
+            </div>
           )}
-        </div>
-        <div>
-          <h3 className="text-xl font-bold mb-2">Invitees</h3>
-          {invitees.length ? (
-            <ul className="space-y-1">
-              {invitees.map((i) => (
-                <li key={i.id} className="text-gray-800">
-                  {i.profile?.full_name || `Player ${i.invitee_id}`} - {i.status}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-500">No invites sent.</p>
-          )}
+          <div className="mb-6">
+            <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
+              <Users className="w-4 h-4" /> Participants
+            </h3>
+            {participants.length ? (
+              <ul className="space-y-1">
+                {participants.map((p) => (
+                  <li key={p.id} className="text-gray-700">
+                    {p.profile?.full_name || `Player ${p.player_id}`}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-500">No participants yet.</p>
+            )}
+          </div>
+          <div>
+            <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
+              <User className="w-4 h-4" /> Invitees
+            </h3>
+            {invitees.length ? (
+              <ul className="space-y-1">
+                {invitees.map((i) => (
+                  <li key={i.id} className="text-gray-700">
+                    {i.profile?.full_name || `Player ${i.invitee_id}`} - {i.status}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-500">No invites sent.</p>
+            )}
+          </div>
         </div>
       </div>
     );
