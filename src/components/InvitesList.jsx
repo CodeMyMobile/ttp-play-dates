@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { listInvites, acceptInvite, rejectInvite } from '../services/invites';
-import { Check, X } from 'lucide-react';
+import {
+  Check,
+  X,
+  Calendar,
+  MapPin,
+  Users,
+  ClipboardList,
+  User,
+  FileText,
+  Gauge,
+} from 'lucide-react';
 
 const InvitesList = () => {
   const [invites, setInvites] = useState([]);
@@ -42,6 +52,17 @@ const InvitesList = () => {
     }
   };
 
+  const formatSkillLevel = (min, max) => {
+    const minNum = parseFloat(min);
+    const maxNum = parseFloat(max);
+    if (!Number.isNaN(minNum) && !Number.isNaN(maxNum)) {
+      return `${minNum} - ${maxNum}`;
+    }
+    if (!Number.isNaN(minNum)) return `${minNum}+`;
+    if (!Number.isNaN(maxNum)) return `Up to ${maxNum}`;
+    return null;
+  };
+
   if (loading) return <div className="p-4">Loading invites...</div>;
   if (error) return <div className="p-4 text-red-500">{error}</div>;
 
@@ -52,37 +73,76 @@ const InvitesList = () => {
         <p className="text-gray-500">No invites found.</p>
       ) : (
         <ul className="space-y-4">
-          {invites.map((invite) => (
-            <li
-              key={invite.token}
-              className="bg-white p-4 rounded-xl shadow flex items-center justify-between"
-            >
-              <div className="flex-1 mr-4">
-                <p className="font-bold text-gray-800">
-                  {invite.match?.title || 'Match Invite'}
-                </p>
-                {invite.match?.start_date_time && (
-                  <p className="text-sm text-gray-500">
-                    {new Date(invite.match.start_date_time).toLocaleString()}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleReject(invite.token)}
-                  className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleAccept(invite.token)}
-                  className="p-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white"
-                >
-                  <Check className="w-4 h-4" />
-                </button>
-              </div>
-            </li>
-          ))}
+          {invites.map((invite) => {
+            const skill = formatSkillLevel(
+              invite.match?.skill_level_min,
+              invite.match?.skill_level_max,
+            );
+            return (
+              <li key={invite.token} className="bg-white p-4 rounded-xl shadow">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1 space-y-1 mr-4">
+                    <p className="font-bold text-gray-800">Match Invite</p>
+                    {invite.inviter?.full_name && (
+                      <p className="text-sm text-gray-600 flex items-center gap-1">
+                        <User className="w-4 h-4" /> {invite.inviter.full_name}
+                      </p>
+                    )}
+                    {invite.match?.start_date_time && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(invite.match.start_date_time).toLocaleString()}
+                      </p>
+                    )}
+                    {invite.match?.location_text && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <MapPin className="w-4 h-4" /> {invite.match.location_text}
+                      </p>
+                    )}
+                    {invite.match?.match_format && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <ClipboardList className="w-4 h-4" /> {invite.match.match_format}
+                      </p>
+                    )}
+                    {skill && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <Gauge className="w-4 h-4" /> Skill level: {skill}
+                      </p>
+                    )}
+                    {invite.match?.player_limit && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <Users className="w-4 h-4" /> Player limit: {invite.match.player_limit}
+                      </p>
+                    )}
+                    {invite.match?.notes && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <FileText className="w-4 h-4" /> {invite.match.notes}
+                      </p>
+                    )}
+                    {invite.expires_at && (
+                      <p className="text-xs text-gray-400">
+                        Expires {new Date(invite.expires_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleReject(invite.token)}
+                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleAccept(invite.token)}
+                      className="p-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
