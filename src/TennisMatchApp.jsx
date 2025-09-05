@@ -1716,7 +1716,6 @@ const TennisMatchApp = () => {
                       className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
 
                         selectedPlayers.has(player.user_id)
-
                           ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
                           : "border-gray-200 hover:border-gray-300 bg-white"
                       }`}
@@ -1791,9 +1790,12 @@ const TennisMatchApp = () => {
                     <span
 
                       key={player.user_id}
+
+
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
+
                       {existingPlayerIds.has(player.user_id) && (
                         <span className="ml-1 text-green-700 text-xs">Added</span>
                       )}
@@ -1812,6 +1814,7 @@ const TennisMatchApp = () => {
                           <X className="w-3 h-3" />
                         </button>
                       )}
+
 
                     </span>
                   ))}
