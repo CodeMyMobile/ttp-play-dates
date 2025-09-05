@@ -5,8 +5,14 @@ export const createMatch = async (match) => {
   return data;
 };
 
-export const listMatches = async (filter) => {
-  const { data } = await apiClient.get('/matches', { params: filter ? { filter } : {} });
+export const listMatches = async (
+  filter,
+  { search = '', page = 1, perPage = 10 } = {}
+) => {
+  const params = { page, perPage };
+  if (filter) params.filter = filter;
+  if (search) params.search = search;
+  const { data } = await apiClient.get('/matches', { params });
   return data;
 };
 
@@ -44,11 +50,11 @@ export const getShareLink = async (matchId) => {
 };
 
 export const searchPlayers = async (
-  { search = '', page = 1, perPage = 12 } = {}
+  { search = '', page = 1, perPage = 12, ids } = {}
 ) => {
-  const { data } = await apiClient.get('/matches/players', {
-    params: { search, page, perPage },
-  });
+  const params = { search, page, perPage };
+  if (ids && ids.length) params.ids = ids.join(',');
+  const { data } = await apiClient.get('/matches/players', { params });
   return data;
 };
 

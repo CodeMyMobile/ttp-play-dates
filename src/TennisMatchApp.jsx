@@ -74,6 +74,7 @@ const TennisMatchApp = () => {
   const [matchData, setMatchData] = useState({
     type: "open",
     playerCount: 4,
+    occupied: 1,
     skillLevel: null,
     format: "Doubles",
     dateTime: "",
@@ -92,7 +93,15 @@ const TennisMatchApp = () => {
     tomorrow: 0,
     weekend: 0,
   });
+  const [matchPagination, setMatchPagination] = useState(null);
+  const [matchPage, setMatchPage] = useState(1);
+  const [matchSearch, setMatchSearch] = useState("");
+  const [existingInviteeIds, setExistingInviteeIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
+
+  useEffect(() => {
+    setMatchPage(1);
+  }, [matchSearch, activeFilter]);
 
   useEffect(() => {
     const tomorrow = new Date();
@@ -157,24 +166,41 @@ const TennisMatchApp = () => {
 
   const fetchMatches = useCallback(async () => {
     try {
-      const data = await listMatches(activeFilter);
+      const data = await listMatches(activeFilter, {
+        search: matchSearch,
+        page: matchPage,
+        perPage: 10,
+      });
       const rawMatches = data.matches || [];
       setMatchCounts(data.counts || {});
-      const transformed = rawMatches.map((m) => ({
-        id: m.id,
-        type: m.host_id === currentUser?.id ? "hosted" : "available",
-        status: m.match_type === "private" ? "closed" : m.status || "open",
-        dateTime: m.start_date_time,
-        location: m.location_text,
-        latitude: m.latitude,
-        longitude: m.longitude,
-        mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
-        format: m.match_format,
-        skillLevel: m.skill_level_min,
-        notes: m.notes,
-        players: m.players || [],
-        spotsAvailable: m.player_limit,
-      }));
+      setMatchPagination(data.pagination);
+      const transformed = rawMatches.map((m) => {
+        const participantCount = (m.participants || []).filter(
+          (p) => p.status !== "left"
+        ).length;
+        const acceptedInvites = (m.invitees || []).filter(
+          (i) => i.status === "accepted"
+        ).length;
+        const occupied = participantCount + acceptedInvites;
+        return {
+          id: m.id,
+          type: m.host_id === currentUser?.id ? "hosted" : "available",
+          status: m.match_type === "private" ? "closed" : m.status || "open",
+          dateTime: m.start_date_time,
+          location: m.location_text,
+          latitude: m.latitude,
+          longitude: m.longitude,
+          mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
+          format: m.match_format,
+          skillLevel: m.skill_level_min,
+          notes: m.notes,
+          invitees: m.invitees || [],
+          participants: m.participants || [],
+          playerLimit: m.player_limit,
+          occupied,
+          spotsAvailable: Math.max(m.player_limit - occupied, 0),
+        };
+      });
       setMatches(transformed);
     } catch (err) {
       displayToast(
@@ -182,7 +208,7 @@ const TennisMatchApp = () => {
         "error"
       );
     }
-  }, [activeFilter, currentUser]);
+  }, [activeFilter, currentUser, matchPage, matchSearch]);
 
   useEffect(() => {
     fetchMatches();
@@ -435,11 +461,57 @@ const TennisMatchApp = () => {
           </div>
         </div>
 
+        <div className="mb-6">
+          <input
+            type="search"
+            placeholder="Search matches..."
+            value={matchSearch}
+            onChange={(e) => setMatchSearch(e.target.value)}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
+          />
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {matches.map((match) => (
             <MatchCard key={match.id} match={match} />
           ))}
         </div>
+
+        {matchPagination && (
+          <div className="flex items-center justify-between mt-6">
+            <button
+              onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
+              disabled={matchPage === 1}
+              className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm font-semibold text-gray-600">
+              Page {matchPagination.page} of
+              {" "}
+              {Math.max(
+                1,
+                Math.ceil(
+                  (matchCounts[activeFilter] || 0) /
+                    matchPagination.perPage
+                )
+              )}
+            </span>
+            <button
+              onClick={() => setMatchPage((p) => p + 1)}
+              disabled={
+                matchPagination.page >=
+                Math.ceil(
+                  (matchCounts[activeFilter] || 0) /
+                    matchPagination.perPage
+                )
+              }
+              className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -554,31 +626,17 @@ const TennisMatchApp = () => {
         </div>
 
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex -space-x-2">
-              {match.players.map((player, idx) => (
-                <div
-                  key={idx}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black border-2 border-white shadow-md ${
-                    player.confirmed
-                      ? player.name === "You"
-                        ? "bg-gradient-to-br from-violet-500 to-purple-600 text-white"
-                        : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
-                      : "bg-white border-2 border-dashed border-gray-300 text-gray-400"
-                  }`}
-                >
-                  {player.avatar}
-                </div>
-              ))}
-            </div>
-            <span className="text-xs text-gray-600 font-bold">
-              {match.spotsAvailable === 0
-                ? "FULL"
-                : `${match.spotsAvailable} SPOT${
-                    match.spotsAvailable === 1 ? "" : "S"
-                  } LEFT`}
-            </span>
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
+            <Users className="w-4 h-4" /> {match.occupied}/{match.playerLimit} players
           </div>
+          <span className="text-xs text-gray-600 font-bold">
+            {match.spotsAvailable === 0
+              ? "FULL"
+              : `${match.spotsAvailable} SPOT${
+                  match.spotsAvailable === 1 ? "" : "S"
+                } LEFT`}
+          </span>
+        </div>
 
             {match.type === "available" && (
               <button
@@ -624,14 +682,13 @@ const TennisMatchApp = () => {
             </button>
           )}
           {isJoined && (
-            <button
-              onClick={() => displayToast("Loading match details...")}
-              className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-black hover:bg-gray-200 transition-all"
-            >
-              DETAILS
-            </button>
-          )}
-        </div>
+          <button
+            onClick={() => displayToast("Loading match details...")}
+            className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-black hover:bg-gray-200 transition-all"
+          >
+            DETAILS
+          </button>
+        )}
       </div>
     );
   };
@@ -683,9 +740,48 @@ const TennisMatchApp = () => {
               <Bell className="w-4 h-4 text-gray-500" /> Send Reminder
             </button>
             <button
-              onClick={() => {
+
+              onClick={async () => {
+                const match = matches.find((m) => m.id === matchId);
+                if (match) {
+                  setMatchData((prev) => ({
+                    ...prev,
+                    playerCount: match.playerLimit,
+                    occupied: match.occupied,
+                    dateTime: match.dateTime,
+                    location: match.location,
+                    latitude: match.latitude,
+                    longitude: match.longitude,
+                    mapUrl: match.mapUrl,
+                    notes: match.notes || "",
+                  }));
+                  const ids = (match.invitees || [])
+                    .map((i) => i.invitee_id)
+                    .filter(Boolean);
+                  let initial = new Map();
+                  if (ids.length) {
+                    try {
+                      const data = await searchPlayers({ ids });
+                      (data.players || []).forEach((p) =>
+                        initial.set(p.user_id, p)
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    if (initial.size === 0) {
+                      ids.forEach((id) =>
+                        initial.set(id, { user_id: id, full_name: `Player ${id}` })
+                      );
+                    }
+                  }
+                  setSelectedPlayers(initial);
+                  setExistingInviteeIds(new Set(ids));
+                } else {
+                  setSelectedPlayers(new Map());
+                  setExistingInviteeIds(new Set());
+                }
                 setInviteMatchId(matchId);
-                setSelectedPlayers(new Map());
+
                 setCurrentScreen("invite");
                 onClose();
               }}
@@ -1427,9 +1523,6 @@ const TennisMatchApp = () => {
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
-    useEffect(() => {
-      setPage(1);
-    }, [searchTerm]);
 
     useEffect(() => {
       if (searchTerm === "" || searchTerm.length >= 2) {
@@ -1463,8 +1556,10 @@ const TennisMatchApp = () => {
               Invite Players
             </h2>
             <p className="text-lg font-semibold text-gray-600 mb-4">
-              Need {matchData.playerCount - 1} more{" "}
-              {matchData.playerCount - 1 === 1 ? "player" : "players"}
+              Need {matchData.playerCount - matchData.occupied} more{" "}
+              {matchData.playerCount - matchData.occupied === 1
+                ? "player"
+                : "players"}
             </p>
             <div className="flex items-center gap-4 text-sm font-bold text-gray-500">
               <span className="flex items-center gap-1">
@@ -1495,7 +1590,10 @@ const TennisMatchApp = () => {
                 autoComplete="off"
                 placeholder="Search players..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
               />
             </div>
@@ -1599,6 +1697,7 @@ const TennisMatchApp = () => {
                       <span className="text-sm text-gray-700 font-bold">
                         {name}
                       </span>
+
                       {selectedPlayers.has(player.user_id) && (
 
                         <Check className="w-4 h-4 text-green-600 ml-auto" />
@@ -1651,6 +1750,7 @@ const TennisMatchApp = () => {
 
                       key={player.user_id}
 
+
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
@@ -1668,6 +1768,7 @@ const TennisMatchApp = () => {
                       >
                         <X className="w-3 h-3" />
                       </button>
+
                     </span>
                   ))}
                 </div>
@@ -1684,6 +1785,8 @@ const TennisMatchApp = () => {
                   setShowPreview(false);
                   setCreateStep(1);
                   setSelectedPlayers(new Map());
+                  setExistingInviteeIds(new Set());
+
                   setInviteMatchId(null);
                 }}
                 className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
@@ -1701,17 +1804,24 @@ const TennisMatchApp = () => {
                     return;
                   }
                   try {
-                    await sendInvites(
-                      inviteMatchId,
-                      Array.from(selectedPlayers.keys())
+                    const newIds = Array.from(selectedPlayers.keys()).filter(
+                      (id) => !existingInviteeIds.has(id)
                     );
+                    if (newIds.length === 0) {
+                      displayToast("No new players selected", "error");
+                      return;
+                    }
+                    await sendInvites(inviteMatchId, newIds);
+
                     displayToast(
-                      `Invites sent to ${selectedPlayers.size} ${
-                        selectedPlayers.size === 1 ? "player" : "players"
+                      `Invites sent to ${newIds.length} ${
+                        newIds.length === 1 ? "player" : "players"
                       }! 🎾`
                     );
                     setCurrentScreen("browse");
                     setSelectedPlayers(new Map());
+                    setExistingInviteeIds(new Set());
+
                     setShowPreview(false);
                     setCreateStep(1);
                     setInviteMatchId(null);
