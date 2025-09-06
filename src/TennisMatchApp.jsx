@@ -15,6 +15,7 @@ import {
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
 import { getInviteByToken } from "./services/invites";
+import { signup, updatePersonalDetails } from "./services/auth";
 import {
   Calendar,
   MapPin,
@@ -205,6 +206,12 @@ const TennisMatchApp = () => {
   };
 
     const fetchMatches = useCallback(async () => {
+      if (!currentUser) {
+        setMatches([]);
+        setMatchCounts({});
+        setMatchPagination(null);
+        return;
+      }
       try {
         const filter = activeFilter === "draft" ? "my" : activeFilter;
         const status = activeFilter === "draft" ? "draft" : undefined;
@@ -414,11 +421,13 @@ const TennisMatchApp = () => {
         </div>
       </div>
 
+      {currentUser ? (
+        <>
       {/* Filter Tabs */}
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
-            {[ 
+            {[
               {
                 id: "my",
                 label: "My Matches",
@@ -577,6 +586,20 @@ const TennisMatchApp = () => {
           </div>
         )}
       </div>
+        </>
+      ) : (
+        <div className="max-w-7xl mx-auto px-4 py-10 text-center">
+          <p className="text-gray-600 font-semibold mb-6">
+            Sign up or log in to view available matches.
+          </p>
+          <button
+            onClick={() => setShowSignInModal(true)}
+            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+          >
+            Sign Up / Log In
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -2121,34 +2144,48 @@ const TennisMatchApp = () => {
       setSignInStep("oauth-complete");
     };
 
-      const handleVerification = () => {
-        if (verificationCode.length === 6) {
-          const newUser = {
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            skillLevel: formData.skillLevel,
-            avatar: formData.name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .toUpperCase(),
-            rating: 4.2,
-          };
-          localStorage.setItem("user", JSON.stringify(newUser));
-          setCurrentUser(newUser);
-          setShowSignInModal(false);
-          setSignInStep("initial");
-          setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-          setVerificationCode("");
-          displayToast(
-          `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
-          "success"
-        );
-      } else {
-        displayToast("Please enter a valid 6-digit code", "error");
-      }
-    };
+        const handleVerification = async () => {
+          if (verificationCode.length === 6) {
+            try {
+              await signup(formData.email, "0000");
+              await updatePersonalDetails({
+                full_name: formData.name,
+                phone: formData.phone,
+                profile_picture: "",
+                date_of_birth: "",
+                usta_rating: Number(formData.skillLevel) || 0,
+                uta_rating: 0,
+              });
+              const newUser = {
+                name: formData.name,
+                email: formData.email,
+                phone: formData.phone,
+                skillLevel: formData.skillLevel,
+                avatar: formData.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase(),
+                rating: 4.2,
+              };
+              localStorage.setItem("user", JSON.stringify(newUser));
+              setCurrentUser(newUser);
+              setShowSignInModal(false);
+              setSignInStep("initial");
+              setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+              setVerificationCode("");
+              displayToast(
+                `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
+                "success",
+              );
+            } catch (err) {
+              console.error(err);
+              displayToast("Signup failed", "error");
+            }
+          } else {
+            displayToast("Please enter a valid 6-digit code", "error");
+          }
+        };
 
     // OAuth completion step
     if (signInStep === "oauth-complete") {
