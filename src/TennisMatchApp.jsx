@@ -91,13 +91,14 @@ const TennisMatchApp = () => {
   });
 
   const [matches, setMatches] = useState([]);
-  const [matchCounts, setMatchCounts] = useState({
-    my: 0,
-    open: 0,
-    today: 0,
-    tomorrow: 0,
-    weekend: 0,
-  });
+    const [matchCounts, setMatchCounts] = useState({
+      my: 0,
+      open: 0,
+      today: 0,
+      tomorrow: 0,
+      weekend: 0,
+      draft: 0,
+    });
   const [matchPagination, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchSearch, setMatchSearch] = useState("");
@@ -203,17 +204,20 @@ const TennisMatchApp = () => {
     displayToast("Logged out", "success");
   };
 
-  const fetchMatches = useCallback(async () => {
-    try {
-      const data = await listMatches(activeFilter, {
-        search: matchSearch,
-        page: matchPage,
-        perPage: 10,
-      });
+    const fetchMatches = useCallback(async () => {
+      try {
+        const filter = activeFilter === "draft" ? "my" : activeFilter;
+        const status = activeFilter === "draft" ? "draft" : undefined;
+        const data = await listMatches(filter, {
+          status,
+          search: matchSearch,
+          page: matchPage,
+          perPage: 10,
+        });
       const rawMatches = data.matches || [];
       setMatchCounts(data.counts || {});
       setMatchPagination(data.pagination);
-      const transformed = rawMatches.map((m) => {
+      let transformed = rawMatches.map((m) => {
         const participantCount = (m.participants || []).filter(
           (p) => p.status !== "left"
         ).length;
@@ -234,7 +238,8 @@ const TennisMatchApp = () => {
         return {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
-          status: m.match_type === "private" ? "closed" : m.status || "open",
+          status: m.status || "upcoming",
+          privacy: m.match_type || "open",
           dateTime: m.start_date_time,
           location: m.location_text,
           latitude: m.latitude,
@@ -250,6 +255,9 @@ const TennisMatchApp = () => {
           spotsAvailable: Math.max(m.player_limit - occupied, 0),
         };
       });
+      if (activeFilter === "draft") {
+        transformed = transformed.filter((m) => m.status === "draft");
+      }
       setMatches(transformed);
     } catch (err) {
       displayToast(
@@ -439,14 +447,21 @@ const TennisMatchApp = () => {
                 color: "amber",
                 icon: "⏰",
               },
-              {
-                id: "weekend",
-                label: "Weekend",
-                count: matchCounts.weekend || 0,
-                color: "purple",
-                icon: "🎉",
-              },
-            ].map((filter) => (
+                {
+                  id: "weekend",
+                  label: "Weekend",
+                  count: matchCounts.weekend || 0,
+                  color: "purple",
+                  icon: "🎉",
+                },
+                {
+                  id: "draft",
+                  label: "Drafts",
+                  count: matchCounts.draft || 0,
+                  color: "gray",
+                  icon: "📝",
+                },
+              ].map((filter) => (
               <button
                 key={filter.id}
                 onClick={() => setActiveFilter(filter.id)}
@@ -579,15 +594,20 @@ const TennisMatchApp = () => {
       <div className="bg-white rounded-2xl shadow-sm hover:shadow-2xl transition-all p-6 border border-gray-100 group hover:scale-[1.02]">
         <div className="flex justify-between items-start mb-4">
           <div className="flex flex-wrap items-center gap-2">
-            {match.status === "open" && (
+            {match.privacy === "open" && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 rounded-full text-xs font-black flex items-center gap-1.5">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 OPEN
               </span>
             )}
-            {match.status === "closed" && (
+            {match.privacy === "private" && (
               <span className="px-3 py-1.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-full text-xs font-black">
                 PRIVATE
+              </span>
+            )}
+            {match.status === "draft" && (
+              <span className="px-3 py-1.5 bg-gradient-to-r from-yellow-50 to-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-black">
+                DRAFT
               </span>
             )}
             {isHosted && (
@@ -755,6 +775,8 @@ const TennisMatchApp = () => {
       return () => document.removeEventListener("click", handleClickOutside);
     }, [onClose]);
 
+    const match = matches.find((m) => m.id === matchId);
+
     return (
       <div className="match-menu absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
         {type === "host" ? (
@@ -788,6 +810,26 @@ const TennisMatchApp = () => {
             >
               <Bell className="w-4 h-4 text-gray-500" /> Send Reminder
             </button>
+            {match?.status === "draft" && (
+              <button
+                onClick={async () => {
+                  try {
+                    await updateMatch(matchId, { status: "upcoming" });
+                    displayToast("Match published");
+                    onClose();
+                    fetchMatches();
+                  } catch (err) {
+                    displayToast(
+                      err.response?.data?.message || "Failed to publish match",
+                      "error"
+                    );
+                  }
+                }}
+                className="w-full px-4 py-3 text-left text-sm font-bold text-green-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
+              >
+                <Zap className="w-4 h-4 text-green-500" /> Publish Match
+              </button>
+            )}
             <button
               onClick={async () => {
                 try {
@@ -961,19 +1003,20 @@ const TennisMatchApp = () => {
     );
 
     const handlePublish = async () => {
-      try {
-        const payload = {
-          type: matchData.type === "closed" ? "private" : "open",
-          dateTime: new Date(matchData.dateTime).toISOString(),
-          location: matchData.location,
-          latitude: matchData.latitude,
-          longitude: matchData.longitude,
-          playerCount: matchData.playerCount,
-          skillLevel: matchData.skillLevel,
-          format: matchData.format,
-          notes: matchData.notes,
-        };
-        await createMatch(payload);
+        try {
+          const payload = {
+            status: "open",
+            type: matchData.type === "closed" ? "private" : "open",
+            dateTime: new Date(matchData.dateTime).toISOString(),
+            location: matchData.location,
+            latitude: matchData.latitude,
+            longitude: matchData.longitude,
+            playerCount: matchData.playerCount,
+            skillLevel: matchData.skillLevel,
+            format: matchData.format,
+            notes: matchData.notes,
+          };
+          await createMatch(payload);
         displayToast("Match published successfully! 🎾");
         setCurrentScreen("browse");
         setCreateStep(1);
@@ -1100,6 +1143,7 @@ const TennisMatchApp = () => {
                     if (!inviteMatchId) {
                       try {
                         const payload = {
+                          status: "draft",
                           type: matchData.type === "closed" ? "private" : "open",
                           dateTime: new Date(matchData.dateTime).toISOString(),
                           location: matchData.location,
@@ -1905,24 +1949,24 @@ const TennisMatchApp = () => {
           </div>
 
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-            <div className="max-w-2xl mx-auto flex gap-3">
-              <button
-                onClick={() => {
-                  displayToast("Match saved!");
-                  setCurrentScreen("browse");
-                  setShowPreview(false);
-                  setCreateStep(1);
-                  setSelectedPlayers(new Map());
-                  setExistingPlayerIds(new Set());
-
-                  setInviteMatchId(null);
-                }}
-                className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
-              >
-                SAVE FOR LATER
-              </button>
-              <button
-                onClick={async () => {
+              <div className="max-w-2xl mx-auto flex gap-3">
+                <button
+                  onClick={async () => {
+                    displayToast("Match saved as draft!");
+                    setCurrentScreen("browse");
+                    setShowPreview(false);
+                    setCreateStep(1);
+                    setSelectedPlayers(new Map());
+                    setExistingPlayerIds(new Set());
+                    setInviteMatchId(null);
+                    fetchMatches();
+                  }}
+                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                >
+                  SAVE FOR LATER
+                </button>
+                <button
+                  onClick={async () => {
                   if (selectedPlayers.size === 0) {
                     displayToast("Please select at least one player", "error");
                     return;
@@ -1931,29 +1975,31 @@ const TennisMatchApp = () => {
                     displayToast("No match selected for invites", "error");
                     return;
                   }
-                  try {
-                    const newIds = Array.from(selectedPlayers.keys()).filter(
-                      (id) => !existingPlayerIds.has(id)
-                    );
-                    if (newIds.length === 0) {
-                      displayToast("No new players selected", "error");
-                      return;
-                    }
-                    await sendInvites(inviteMatchId, newIds);
+                    try {
+                      const newIds = Array.from(selectedPlayers.keys()).filter(
+                        (id) => !existingPlayerIds.has(id)
+                      );
+                      if (newIds.length === 0) {
+                        displayToast("No new players selected", "error");
+                        return;
+                      }
+                      await updateMatch(inviteMatchId, { status: "upcoming" });
+                      await sendInvites(inviteMatchId, newIds);
 
-                    displayToast(
-                      `Invites sent to ${newIds.length} ${
-                        newIds.length === 1 ? "player" : "players"
-                      }! 🎾`
-                    );
-                    setCurrentScreen("browse");
-                    setSelectedPlayers(new Map());
-                    setExistingPlayerIds(new Set());
+                      displayToast(
+                        `Invites sent to ${newIds.length} ${
+                          newIds.length === 1 ? "player" : "players"
+                        }! 🎾`
+                      );
+                      setCurrentScreen("browse");
+                      setSelectedPlayers(new Map());
+                      setExistingPlayerIds(new Set());
 
-                    setShowPreview(false);
-                    setCreateStep(1);
-                    setInviteMatchId(null);
-                  } catch (err) {
+                      setShowPreview(false);
+                      setCreateStep(1);
+                      setInviteMatchId(null);
+                      fetchMatches();
+                    } catch (err) {
                     displayToast(
                       err.response?.data?.message || "Failed to send invites",
                       "error"
