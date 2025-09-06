@@ -7,10 +7,11 @@ export const createMatch = async (match) => {
 
 export const listMatches = async (
   filter,
-  { search = '', page = 1, perPage = 10 } = {}
+  { status, search = '', page = 1, perPage = 10 } = {}
 ) => {
   const params = { page, perPage };
   if (filter) params.filter = filter;
+  if (status) params.status = status;
   if (search) params.search = search;
   const { data } = await apiClient.get('/matches', { params });
   return data;
