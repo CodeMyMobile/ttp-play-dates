@@ -1096,7 +1096,39 @@ const TennisMatchApp = () => {
                   BACK
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
+                    if (!inviteMatchId) {
+                      try {
+                        const payload = {
+                          type: matchData.type === "closed" ? "private" : "open",
+                          dateTime: new Date(matchData.dateTime).toISOString(),
+                          location: matchData.location,
+                          latitude: matchData.latitude,
+                          longitude: matchData.longitude,
+                          playerCount: matchData.playerCount,
+                          skillLevel: matchData.skillLevel,
+                          format: matchData.format,
+                          notes: matchData.notes,
+                        };
+                        const created = await createMatch(payload);
+                        const newId =
+                          created.match?.id || created.match_id || created.id;
+                        if (newId) {
+                          setInviteMatchId(newId);
+                          if (currentUser?.id) {
+                            setExistingPlayerIds(new Set([currentUser.id]));
+                          }
+                          fetchMatches();
+                        }
+                      } catch (err) {
+                        displayToast(
+                          err.response?.data?.message ||
+                            "Failed to create match",
+                          "error"
+                        );
+                        return;
+                      }
+                    }
                     setShowPreview(false);
                     setCurrentScreen("invite");
                   }}
