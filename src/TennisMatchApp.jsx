@@ -775,6 +775,8 @@ const TennisMatchApp = () => {
       return () => document.removeEventListener("click", handleClickOutside);
     }, [onClose]);
 
+    const match = matches.find((m) => m.id === matchId);
+
     return (
       <div className="match-menu absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
         {type === "host" ? (
@@ -808,6 +810,26 @@ const TennisMatchApp = () => {
             >
               <Bell className="w-4 h-4 text-gray-500" /> Send Reminder
             </button>
+            {match?.status === "draft" && (
+              <button
+                onClick={async () => {
+                  try {
+                    await updateMatch(matchId, { status: "upcoming" });
+                    displayToast("Match published");
+                    onClose();
+                    fetchMatches();
+                  } catch (err) {
+                    displayToast(
+                      err.response?.data?.message || "Failed to publish match",
+                      "error"
+                    );
+                  }
+                }}
+                className="w-full px-4 py-3 text-left text-sm font-bold text-green-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
+              >
+                <Zap className="w-4 h-4 text-green-500" /> Publish Match
+              </button>
+            )}
             <button
               onClick={async () => {
                 try {
@@ -1961,7 +1983,7 @@ const TennisMatchApp = () => {
                         displayToast("No new players selected", "error");
                         return;
                       }
-                      await updateMatch(inviteMatchId, { status: "open" });
+                      await updateMatch(inviteMatchId, { status: "upcoming" });
                       await sendInvites(inviteMatchId, newIds);
 
                       displayToast(
