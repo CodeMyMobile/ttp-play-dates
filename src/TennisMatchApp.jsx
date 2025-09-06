@@ -238,7 +238,8 @@ const TennisMatchApp = () => {
         return {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
-          status: m.match_type === "private" ? "closed" : m.status || "open",
+          status: m.status || "upcoming",
+          privacy: m.match_type || "open",
           dateTime: m.start_date_time,
           location: m.location_text,
           latitude: m.latitude,
@@ -590,15 +591,20 @@ const TennisMatchApp = () => {
       <div className="bg-white rounded-2xl shadow-sm hover:shadow-2xl transition-all p-6 border border-gray-100 group hover:scale-[1.02]">
         <div className="flex justify-between items-start mb-4">
           <div className="flex flex-wrap items-center gap-2">
-            {match.status === "open" && (
+            {match.privacy === "open" && match.status !== "draft" && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 rounded-full text-xs font-black flex items-center gap-1.5">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 OPEN
               </span>
             )}
-            {match.status === "closed" && (
+            {match.privacy === "private" && (
               <span className="px-3 py-1.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-full text-xs font-black">
                 PRIVATE
+              </span>
+            )}
+            {match.status === "draft" && (
+              <span className="px-3 py-1.5 bg-gradient-to-r from-yellow-50 to-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-black">
+                DRAFT
               </span>
             )}
             {isHosted && (
