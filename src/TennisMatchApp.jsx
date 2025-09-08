@@ -54,6 +54,8 @@ import {
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 
+const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
+
 const TennisMatchApp = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentScreen, setCurrentScreen] = useState("browse");
@@ -707,7 +709,7 @@ const TennisMatchApp = () => {
               {match.format}
             </span>
           </div>
-          {getNTRPDisplay(match.skillLevel) && (
+          {match.type === "open" && getNTRPDisplay(match.skillLevel) && (
             <>
               <span className="text-gray-300">•</span>
               <span className="text-sm font-black text-gray-900 bg-gradient-to-r from-amber-50 to-orange-50 px-2.5 py-1 rounded-lg">
@@ -1035,7 +1037,10 @@ const TennisMatchApp = () => {
             latitude: matchData.latitude,
             longitude: matchData.longitude,
             playerCount: matchData.playerCount,
-            skillLevel: matchData.skillLevel,
+            skillLevel:
+              matchData.type === "closed"
+                ? DEFAULT_SKILL_LEVEL
+                : matchData.skillLevel,
             format: matchData.format,
             notes: matchData.notes,
           };
@@ -1119,7 +1124,8 @@ const TennisMatchApp = () => {
                   </div>
                 </div>
 
-                {matchData.skillLevel &&
+                {matchData.type === "open" &&
+                  matchData.skillLevel &&
                   matchData.skillLevel !== "Any Level" && (
                     <div className="flex items-start gap-3">
                       <Trophy className="w-6 h-6 text-gray-400 mt-0.5" />
@@ -1173,7 +1179,10 @@ const TennisMatchApp = () => {
                           latitude: matchData.latitude,
                           longitude: matchData.longitude,
                           playerCount: matchData.playerCount,
-                          skillLevel: matchData.skillLevel,
+                          skillLevel:
+                            matchData.type === "closed"
+                              ? DEFAULT_SKILL_LEVEL
+                              : matchData.skillLevel,
                           format: matchData.format,
                           notes: matchData.notes,
                         };
@@ -1247,7 +1256,12 @@ const TennisMatchApp = () => {
                     <button
                       key={type.id}
                       onClick={() =>
-                        setMatchData((prev) => ({ ...prev, type: type.id }))
+                        setMatchData((prev) => ({
+                          ...prev,
+                          type: type.id,
+                          skillLevel:
+                            type.id === "closed" ? DEFAULT_SKILL_LEVEL : null,
+                        }))
                       }
                       className={`p-6 rounded-2xl border-2 transition-all hover:scale-105 ${
                         matchData.type === type.id
