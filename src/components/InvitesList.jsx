@@ -10,6 +10,7 @@ import {
   User,
   FileText,
   Gauge,
+  Link as LinkIcon,
 } from 'lucide-react';
 
 const InvitesList = ({ onInviteResponse }) => {
@@ -140,6 +141,15 @@ const InvitesList = ({ onInviteResponse }) => {
                     )}
                   </div>
                   <div className="flex gap-2 items-center">
+                    <a
+                      href={`${import.meta.env.BASE_URL}invites/${invite.token}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      title="Open invite link"
+                    >
+                      <LinkIcon className="w-4 h-4" />
+                    </a>
                     {invite.accepted ? (
                       <p className="text-sm text-green-600 flex items-center gap-1">
                         <Check className="w-4 h-4" /> Accepted
