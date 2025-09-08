@@ -1421,64 +1421,49 @@ const TennisMatchApp = () => {
             </h2>
 
             <div className="space-y-6">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
-                    NTRP Skill Level
-                  </label>
-                  {matchData.type === "open" ? (
+              {matchData.type === "open" && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
+                      NTRP Skill Level
+                    </label>
                     <span className="px-3 py-1.5 bg-red-100 text-red-700 text-xs rounded-full font-black">
                       REQUIRED
                     </span>
-                  ) : (
-                    <span className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-full font-black">
-                      OPTIONAL
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    {
-                      value: "2.5 - Beginner",
-                      label: "2.5",
-                      desc: "Beginner",
-                      color: "from-blue-400 to-blue-500",
-                    },
-                    {
-                      value: "3.0 - Adv. Beginner",
-                      label: "3.0",
-                      desc: "Developing",
-                      color: "from-green-400 to-green-500",
-                    },
-                    {
-                      value: "3.5 - Intermediate",
-                      label: "3.5",
-                      desc: "Intermediate",
-                      color: "from-yellow-400 to-amber-500",
-                    },
-                    {
-                      value: "4.0 - Adv. Intermediate",
-                      label: "4.0",
-                      desc: "Advanced",
-                      color: "from-orange-400 to-orange-500",
-                    },
-                    {
-                      value: "4.5+ - Advanced",
-                      label: "4.5+",
-                      desc: "Expert",
-                      color: "from-red-400 to-red-500",
-                    },
-                    matchData.type === "closed"
-                      ? {
-                          value: "Any Level",
-                          label: "Any",
-                          desc: "All Levels",
-                          color: "from-gray-400 to-gray-500",
-                        }
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .map((level) => (
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      {
+                        value: "2.5 - Beginner",
+                        label: "2.5",
+                        desc: "Beginner",
+                        color: "from-blue-400 to-blue-500",
+                      },
+                      {
+                        value: "3.0 - Adv. Beginner",
+                        label: "3.0",
+                        desc: "Developing",
+                        color: "from-green-400 to-green-500",
+                      },
+                      {
+                        value: "3.5 - Intermediate",
+                        label: "3.5",
+                        desc: "Intermediate",
+                        color: "from-yellow-400 to-amber-500",
+                      },
+                      {
+                        value: "4.0 - Adv. Intermediate",
+                        label: "4.0",
+                        desc: "Advanced",
+                        color: "from-orange-400 to-orange-500",
+                      },
+                      {
+                        value: "4.5+ - Advanced",
+                        label: "4.5+",
+                        desc: "Expert",
+                        color: "from-red-400 to-red-500",
+                      },
+                    ].map((level) => (
                       <button
                         key={level.value}
                         onClick={() =>
@@ -1507,18 +1492,12 @@ const TennisMatchApp = () => {
                         </div>
                       </button>
                     ))}
-                </div>
-                {matchData.type === "open" && (
+                  </div>
                   <p className="text-xs font-semibold text-gray-500 mt-3">
                     Helps players find appropriate skill matches
                   </p>
-                )}
-                {matchData.type === "closed" && (
-                  <p className="text-xs font-semibold text-gray-500 mt-3">
-                    Optional - helps balance skill levels
-                  </p>
-                )}
-              </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-black text-gray-700 mb-3 uppercase tracking-wider">
