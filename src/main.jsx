@@ -7,8 +7,10 @@ import InvitationPage from './InvitationPage.jsx'
 const path = window.location.pathname
 let element = <App />
 
-if (path.startsWith('/invites/')) {
-  const token = path.split('/').pop()
+// Handle base paths like "/ttp-play-dates" when detecting invite links
+const invitePrefix = `${import.meta.env.BASE_URL}invites/`
+if (path.startsWith(invitePrefix)) {
+  const token = path.slice(invitePrefix.length)
   element = <InvitationPage token={token} />
 }
 

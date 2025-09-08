@@ -142,7 +142,7 @@ const InvitesList = ({ onInviteResponse }) => {
                   </div>
                   <div className="flex gap-2 items-center">
                     <a
-                      href={`/invites/${invite.token}`}
+                      href={`${import.meta.env.BASE_URL}invites/${invite.token}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
