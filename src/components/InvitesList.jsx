@@ -13,12 +13,14 @@ import {
   Link as LinkIcon,
   MessageCircle,
   Phone,
+  Copy,
 } from 'lucide-react';
 
 const InvitesList = ({ onInviteResponse }) => {
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [copiedToken, setCopiedToken] = useState('');
 
   useEffect(() => {
     const fetchInvites = async () => {
@@ -66,6 +68,16 @@ const InvitesList = ({ onInviteResponse }) => {
       onInviteResponse?.();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleCopy = async (url, token) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedToken(token);
+      setTimeout(() => setCopiedToken(''), 2000);
+    } catch (err) {
+      console.error('Failed to copy link', err);
     }
   };
 
@@ -171,6 +183,13 @@ const InvitesList = ({ onInviteResponse }) => {
                     >
                       <Phone className="w-4 h-4" />
                     </a>
+                    <button
+                      onClick={() => handleCopy(inviteUrl, invite.token)}
+                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      title="Copy invite link"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
                     {invite.accepted ? (
                       <p className="text-sm text-green-600 flex items-center gap-1">
                         <Check className="w-4 h-4" /> Accepted
@@ -197,6 +216,10 @@ const InvitesList = ({ onInviteResponse }) => {
                     )}
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-gray-500 break-all">{inviteUrl}</p>
+                {copiedToken === invite.token && (
+                  <p className="text-xs text-green-600">Link copied!</p>
+                )}
               </li>
             );
           })}
