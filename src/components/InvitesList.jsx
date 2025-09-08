@@ -11,12 +11,16 @@ import {
   FileText,
   Gauge,
   Link as LinkIcon,
+  MessageCircle,
+  Phone,
+  Copy,
 } from 'lucide-react';
 
 const InvitesList = ({ onInviteResponse }) => {
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [copiedToken, setCopiedToken] = useState('');
 
   useEffect(() => {
     const fetchInvites = async () => {
@@ -67,6 +71,16 @@ const InvitesList = ({ onInviteResponse }) => {
     }
   };
 
+  const handleCopy = async (url, token) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedToken(token);
+      setTimeout(() => setCopiedToken(''), 2000);
+    } catch (err) {
+      console.error('Failed to copy link', err);
+    }
+  };
+
   const formatSkillLevel = (min, max) => {
     const minNum = parseFloat(min);
     const maxNum = parseFloat(max);
@@ -93,6 +107,9 @@ const InvitesList = ({ onInviteResponse }) => {
               invite.match?.skill_level_min,
               invite.match?.skill_level_max,
             );
+            const inviteUrl = `${window.location.origin}${import.meta.env.BASE_URL}invites/${invite.token}`;
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(inviteUrl)}`;
+            const smsUrl = `sms:?&body=${encodeURIComponent(inviteUrl)}`;
             return (
               <li key={invite.token} className="bg-white p-4 rounded-xl shadow">
                 <div className="flex justify-between items-start">
@@ -142,7 +159,7 @@ const InvitesList = ({ onInviteResponse }) => {
                   </div>
                   <div className="flex gap-2 items-center">
                     <a
-                      href={`${import.meta.env.BASE_URL}invites/${invite.token}`}
+                      href={inviteUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
@@ -150,6 +167,29 @@ const InvitesList = ({ onInviteResponse }) => {
                     >
                       <LinkIcon className="w-4 h-4" />
                     </a>
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      title="Share via WhatsApp"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                    </a>
+                    <a
+                      href={smsUrl}
+                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      title="Share via SMS"
+                    >
+                      <Phone className="w-4 h-4" />
+                    </a>
+                    <button
+                      onClick={() => handleCopy(inviteUrl, invite.token)}
+                      className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      title="Copy invite link"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
                     {invite.accepted ? (
                       <p className="text-sm text-green-600 flex items-center gap-1">
                         <Check className="w-4 h-4" /> Accepted
@@ -176,6 +216,10 @@ const InvitesList = ({ onInviteResponse }) => {
                     )}
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-gray-500 break-all">{inviteUrl}</p>
+                {copiedToken === invite.token && (
+                  <p className="text-xs text-green-600">Link copied!</p>
+                )}
               </li>
             );
           })}
