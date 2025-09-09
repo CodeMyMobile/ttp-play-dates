@@ -6,6 +6,16 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// Attach auth token from localStorage if present
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("authToken");
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Utility to unwrap axios or throw a clean error
 export const unwrap = (p) =>
   p.then((r) => r.data).catch((e) => {
