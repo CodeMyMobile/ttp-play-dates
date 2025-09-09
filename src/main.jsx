@@ -6,11 +6,17 @@ import MatchPage from "./pages/MatchPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 import "./index.css";
 
-const router = createBrowserRouter([
-  { path: "/i/:token/*", element: <InvitePage /> },
-  { path: "/matches/:id/*", element: <MatchPage /> },
-  { path: "*", element: <NotFoundPage /> },
-]);
+const router = createBrowserRouter(
+  [
+    { path: "/i/:token/*", element: <InvitePage /> },
+    { path: "/matches/:id/*", element: <MatchPage /> },
+    { path: "*", element: <NotFoundPage /> },
+  ],
+  {
+    // Align router paths with the Vite base so links work under /ttp-play-dates/
+    basename: import.meta.env.BASE_URL,
+  },
+);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
