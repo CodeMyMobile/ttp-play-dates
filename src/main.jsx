@@ -1,21 +1,17 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-import InvitationPage from './InvitationPage.jsx'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import InvitePage from "./pages/InvitePage.jsx";
+import MatchPage from "./pages/MatchPage.jsx";
+import "./index.css";
 
-const path = window.location.pathname
-let element = <App />
+const router = createBrowserRouter([
+  { path: "/i/:token", element: <InvitePage /> },
+  { path: "/matches/:id", element: <MatchPage /> },
+]);
 
-// Handle base paths like "/ttp-play-dates" when detecting invite links
-const invitePrefix = `${import.meta.env.BASE_URL}invites/`
-if (path.startsWith(invitePrefix)) {
-  const token = path.slice(invitePrefix.length)
-  element = <InvitationPage token={token} />
-}
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    {element}
-  </StrictMode>,
-)
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <RouterProvider router={router} />
+  </React.StrictMode>
+);
