@@ -1,218 +1,183 @@
-import { useEffect, useState } from 'react';
+// src/InvitationPage.jsx
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
-  acceptInvite,
-  rejectInvite,
-  getInviteByToken,
-} from './services/invites';
-import {
-  Calendar,
-  MapPin,
-  Users,
-  ClipboardList,
-  Gauge,
-  Check,
-  X,
-} from 'lucide-react';
+  getInvitePreview,
+  beginInviteVerification,
+  verifyInviteCode,
+} from "./services/invites";
 
-const formatSkillLevel = (min, max) => {
-  const minNum = parseFloat(min);
-  const maxNum = parseFloat(max);
-  if (!Number.isNaN(minNum) && !Number.isNaN(maxNum)) {
-    return `${minNum} - ${maxNum}`;
-  }
-  if (!Number.isNaN(minNum)) return `${minNum}+`;
-  if (!Number.isNaN(maxNum)) return `Up to ${maxNum}`;
-  return null;
-};
+export default function InvitationPage() {
+  const { token } = useParams();
+  const navigate = useNavigate();
 
-const InvitationPage = ({ token }) => {
-  const [invite, setInvite] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [action, setAction] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [phase, setPhase] = useState("preview"); // 'preview'|'identify'|'otp'|'done'
+  const [identifier, setIdentifier] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [resendAt, setResendAt] = useState(null);
+  const [now, setNow] = useState(Date.now());
 
+  // 1s ticker for resend countdown
   useEffect(() => {
-    getInviteByToken(token)
-      .then((data) => setInvite(data.invite || data))
-      .catch(() => setError('Failed to load invite'))
-      .finally(() => setLoading(false));
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const canResend = useMemo(() => {
+    if (!resendAt) return true;
+    return Date.now() >= new Date(resendAt).getTime();
+  }, [resendAt, now]);
+
+  // Load minimal invite preview
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await getInvitePreview(token);
+        if (!alive) return;
+        setPreview(data);
+        setPhase("preview");
+      } catch {
+        setPreview(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, [token]);
 
-  const handleAccept = async () => {
+  const startIdentify = () => {
+    setError("");
+    setPhase("identify");
+  };
+
+  const begin = async () => {
+    setError("");
     try {
-      await acceptInvite(token);
-      setInvite((prev) => ({ ...prev, status: 'accepted', accepted: true }));
-      setAction('accepted');
+      const body = preview?.requires === "generic" ? { identifier } : undefined;
+      const resp = await beginInviteVerification(token, body);
+      setResendAt(resp?.resendAt || null);
+      setPhase("otp");
     } catch {
-      setError('Failed to accept invite');
+      setError("Couldn’t send code. Please try again.");
     }
   };
 
-  const handleReject = async () => {
+  const verify = async () => {
+    setError("");
     try {
-      await rejectInvite(token);
-      setInvite((prev) => ({ ...prev, status: 'rejected', rejected: true }));
-      setAction('rejected');
+      const data = await verifyInviteCode(token, code);
+      setPhase("done");
+      navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
     } catch {
-      setError('Failed to reject invite');
+      setError("Invalid or expired code. Try again.");
     }
   };
 
-  if (loading) return <div className="p-4">Loading invitation...</div>;
-  if (error) return <div className="p-4 text-red-500">{error}</div>;
-  if (!invite) return <div className="p-4">Invitation not found.</div>;
+  const resend = async () => {
+    if (!canResend) return;
+    await begin();
+  };
 
-  const { match = {}, inviter = {}, invitee = {} } = invite;
-  const skill = formatSkillLevel(match.skill_level_min, match.skill_level_max);
-  const isAccepted = invite.status === 'accepted' || invite.accepted || action === 'accepted';
-
-  const confirmedPlayers = [
-    inviter.full_name ? { name: inviter.full_name, role: 'Host' } : null,
-  ].filter(Boolean);
-  if (isAccepted && invitee.full_name) {
-    confirmedPlayers.push({ name: invitee.full_name, role: 'You' });
-  }
-  const spotsLeft = match.player_limit
-    ? Math.max(match.player_limit - confirmedPlayers.length, 0)
-    : null;
+  // Render states
+  if (loading) return <Page><p>Loading…</p></Page>;
+  if (!preview) return <Page><Alert>Invite not found.</Alert></Page>;
+  if (preview.status === "expired") return <Page><Alert>This invite has expired.</Alert></Page>;
+  if (preview.status === "revoked") return <Page><Alert>This invite was revoked.</Alert></Page>;
+  if (preview.status === "full") return <Page><Alert>This match is full.</Alert></Page>;
 
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-6">
-      {/* Header */}
-      {isAccepted ? (
-        <div className="bg-green-600 text-white p-4 rounded-xl text-center">
-          <p className="font-bold">Match Details</p>
-        </div>
-      ) : (
-        <div className="rounded-xl overflow-hidden">
-          <div className="bg-green-600 text-white text-center p-3">
-            <p className="font-semibold">Match Invitation</p>
-          </div>
-          <div className="bg-yellow-50 p-3 text-sm text-center text-gray-700">
-            {inviter.full_name ? (
-              <span>
-                {inviter.full_name} has invited {invitee.full_name || 'you'} to join
-                this match
-              </span>
-            ) : (
-              <span>You're invited to join this match</span>
-            )}
-          </div>
+    <Page>
+      <h1 className="text-xl font-bold mb-3">Private match invite</h1>
+
+      {preview.matchPreview && (
+        <div className="mb-4 space-y-1">
+          <div className="font-semibold">{preview.matchPreview.title}</div>
+          <div>{new Date(preview.matchPreview.startsAt).toLocaleString()}</div>
+          <div>Host: {preview.matchPreview.host}</div>
         </div>
       )}
 
-      {/* Date and location */}
-      <div className="bg-white rounded-xl shadow p-4 space-y-2">
-        {match.start_date_time && (
-          <p className="text-gray-700 flex items-center gap-1">
-            <Calendar className="w-4 h-4" />
-            {new Date(match.start_date_time).toLocaleString()}
-          </p>
-        )}
-        {match.location_text && (
-          <p className="text-gray-700 flex items-center gap-1">
-            <MapPin className="w-4 h-4" /> {match.location_text}
-          </p>
-        )}
-      </div>
+      {phase === "preview" && (
+        <Primary onClick={startIdentify}>Join match</Primary>
+      )}
 
-      {/* Match information */}
-      <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="font-semibold mb-2">Match Information</h2>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          {match.match_format && (
-            <p className="flex items-center gap-1">
-              <ClipboardList className="w-4 h-4" /> {match.match_format}
-            </p>
+      {phase === "identify" && (
+        <div className="grid gap-3">
+          {preview.requires === "generic" ? (
+            <label className="grid gap-1">
+              <span>Phone or email</span>
+              <input
+                className="w-full p-2 border rounded"
+                placeholder="+91 9xxxxxxxxx or name@example.com"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+              />
+            </label>
+          ) : (
+            <p>Verify <b>{preview.maskedIdentifier}</b> to continue.</p>
           )}
-          {match.player_limit && (
-            <p className="flex items-center gap-1">
-              <Users className="w-4 h-4" /> {match.player_limit} Players
-            </p>
-          )}
-          {skill && (
-            <p className="flex items-center gap-1">
-              <Gauge className="w-4 h-4" /> Skill {skill}
-            </p>
-          )}
-          {spotsLeft !== null && (
-            <p className="flex items-center gap-1">
-              <Users className="w-4 h-4" /> {spotsLeft} Spots Left
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Host */}
-      {inviter.full_name && (
-        <div className="bg-white rounded-xl shadow p-4">
-          <h2 className="font-semibold mb-2">Host</h2>
-          <div className="flex items-center justify-between">
-            <span>{inviter.full_name}</span>
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-              Host
-            </span>
-          </div>
+          <Primary onClick={begin}>Send code</Primary>
+          {error && <ErrorText>{error}</ErrorText>}
         </div>
       )}
 
-      {/* Confirmed players */}
-      <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="font-semibold mb-2">Confirmed Players</h2>
-        <div className="space-y-2">
-          {confirmedPlayers.map((p) => (
-            <div key={p.name} className="flex items-center justify-between">
-              <span>{p.name}</span>
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                {p.role}
-              </span>
-            </div>
-          ))}
-          {spotsLeft > 0 && (
-            <p className="text-sm text-gray-500">{spotsLeft} open spot(s)</p>
-          )}
-        </div>
-      </div>
-
-      {/* Accept / decline */}
-      <div className="bg-white rounded-xl shadow p-4">
-        {action === 'accepted' || isAccepted ? (
-          <p className="text-green-600 flex items-center gap-1">
-            <Check className="w-4 h-4" /> Invitation accepted
-          </p>
-        ) : action === 'rejected' || invite.status === 'rejected' ? (
-          <p className="text-red-600 flex items-center gap-1">
-            <X className="w-4 h-4" /> Invitation declined
-          </p>
-        ) : (
-          <div className="flex gap-2">
+      {phase === "otp" && (
+        <div className="grid gap-3">
+          <label className="grid gap-1">
+            <span>Enter 6-digit code</span>
+            <input
+              className="w-full p-2 border rounded tracking-widest"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </label>
+          <div className="flex items-center gap-3">
+            <Primary onClick={verify}>Verify and join</Primary>
             <button
-              onClick={handleReject}
-              className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50"
+              onClick={resend}
+              disabled={!canResend}
+              className="px-3 py-2 border rounded disabled:opacity-50"
+              aria-disabled={!canResend}
             >
-              Decline
-            </button>
-            <button
-              onClick={handleAccept}
-              className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl"
-            >
-              Accept Invitation
+              {canResend
+                ? "Resend code"
+                : `Resend in ${Math.max(
+                    0,
+                    Math.ceil((new Date(resendAt).getTime() - now) / 1000)
+                  )}s`}
             </button>
           </div>
-        )}
-      </div>
-
-      {/* Location */}
-      {match.location_text && (
-        <div className="bg-white rounded-xl shadow p-4">
-          <h2 className="font-semibold mb-2">Location</h2>
-          <p className="text-sm text-gray-700 flex items-center gap-1">
-            <MapPin className="w-4 h-4" /> {match.location_text}
-          </p>
+          {error && <ErrorText>{error}</ErrorText>}
         </div>
       )}
-    </div>
+    </Page>
   );
-};
+}
 
-export default InvitationPage;
+/** Lightweight primitives (keeps your Tailwind setup) */
+function Page({ children }) {
+  return (
+    <main className="max-w-xl mx-auto p-4">
+      {children}
+    </main>
+  );
+}
+function Primary({ onClick, children }) {
+  return (
+    <button onClick={onClick} className="px-4 py-2 rounded bg-black text-white">
+      {children}
+    </button>
+  );
+}
+function ErrorText({ children }) {
+  return <p className="text-red-600">{children}</p>;
+}
+function Alert({ children }) {
+  return <div className="p-3 rounded bg-gray-100 border">{children}</div>;
+}

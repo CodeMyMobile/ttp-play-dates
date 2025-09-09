@@ -1,29 +1,16 @@
-import axios from 'axios';
+import axios from "axios";
 
-// Replace with your actual backend URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-
-const apiClient = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "",
+  withCredentials: true, // important for HttpOnly session cookie
+  headers: { "Content-Type": "application/json" },
 });
 
-// Interceptor to add the auth token to every request if it exists
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('authToken'); // Or wherever you store your token
-    if (token) {
-      // Include auth token header for API authentication
-      config.headers.Authorization = `Bearer ${token}`;
-      config.headers.authtoken = token;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+// Utility to unwrap axios or throw a clean error
+export const unwrap = (p) =>
+  p.then((r) => r.data).catch((e) => {
+    const msg = e?.response?.data?.error || e.message || "API_ERROR";
+    throw new Error(msg);
+  });
 
-export default apiClient;
+export default api;

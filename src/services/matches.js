@@ -1,7 +1,10 @@
-import apiClient from './api';
+import api, { unwrap } from "./api";
+
+export const getMatch = (id) =>
+  unwrap(api.get(`/matches/${id}`));
 
 export const createMatch = async (match) => {
-  const { data } = await apiClient.post('/matches', match);
+  const { data } = await api.post('/matches', match);
   return data;
 };
 
@@ -13,45 +16,39 @@ export const listMatches = async (
   if (filter) params.filter = filter;
   if (status) params.status = status;
   if (search) params.search = search;
-  const { data } = await apiClient.get('/matches', { params });
-  return data;
-};
-
-export const getMatch = async (id) => {
-  const { data } = await apiClient.get(`/matches/${id}`);
+  const { data } = await api.get('/matches', { params });
   return data;
 };
 
 export const updateMatch = async (id, updates) => {
-  const { data } = await apiClient.put(`/matches/${id}`, updates);
+  const { data } = await api.put(`/matches/${id}`, updates);
   return data;
 };
 
 export const cancelMatch = async (id) => {
-  const { data } = await apiClient.delete(`/matches/${id}`);
+  const { data } = await api.delete(`/matches/${id}`);
   return data;
 };
 
 export const joinMatch = async (id) => {
-  const { data } = await apiClient.post(`/matches/${id}/join`);
+  const { data } = await api.post(`/matches/${id}/join`);
   return data;
 };
 
 export const leaveMatch = async (id) => {
-  const { data } = await apiClient.post(`/matches/${id}/leave`);
+  const { data } = await api.post(`/matches/${id}/leave`);
   return data;
 };
 
 export const sendInvites = async (matchId, userIds) => {
-  // Backend expects an array of user IDs under the key "playerIds"
-  const { data } = await apiClient.post(`/matches/${matchId}/invites`, {
+  const { data } = await api.post(`/matches/${matchId}/invites`, {
     playerIds: userIds,
   });
   return data;
 };
 
 export const getShareLink = async (matchId) => {
-  const { data } = await apiClient.get(`/matches/${matchId}/share-link`);
+  const { data } = await api.get(`/matches/${matchId}/share-link`);
   return data;
 };
 
@@ -60,7 +57,6 @@ export const searchPlayers = async (
 ) => {
   const params = { search, page, perPage };
   if (ids && ids.length) params.ids = ids.join(',');
-  const { data } = await apiClient.get('/matches/players', { params });
+  const { data } = await api.get('/matches/players', { params });
   return data;
 };
-
