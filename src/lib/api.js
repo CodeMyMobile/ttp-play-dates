@@ -1,4 +1,6 @@
-const API = import.meta.env.VITE_API_BASE_URL || "";
+// Support both VITE_API_URL (preferred) and legacy VITE_API_BASE_URL
+const API =
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "";
 
 async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(API + path, {
