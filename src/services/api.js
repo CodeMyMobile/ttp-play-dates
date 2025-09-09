@@ -1,26 +1,32 @@
-import axios from "axios";
+const baseURL = import.meta.env.VITE_API_URL || "";
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "",
-  withCredentials: true, // important for HttpOnly session cookie
-  headers: { "Content-Type": "application/json" },
-});
-
-// Attach auth token from localStorage if present
-api.interceptors.request.use((config) => {
+const api = (path, options = {}) => {
   const token = localStorage.getItem("authToken");
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(baseURL + path, {
+    credentials: "include",
+    ...options,
+    headers,
+  });
+};
 
-// Utility to unwrap axios or throw a clean error
 export const unwrap = (p) =>
-  p.then((r) => r.data).catch((e) => {
-    const msg = e?.response?.data?.error || e.message || "API_ERROR";
-    throw new Error(msg);
+  p.then(async (r) => {
+    let data = null;
+    try {
+      data = await r.json();
+    } catch {
+      // ignore non-JSON responses
+    }
+    if (!r.ok) {
+      const msg = data?.error || r.statusText || "API_ERROR";
+      throw new Error(msg);
+    }
+    return data;
   });
 
 export default api;

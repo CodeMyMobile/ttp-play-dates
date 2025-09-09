@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import apiClient from "./services/api";
 import {
   listMatches,
   createMatch,
@@ -15,7 +14,7 @@ import {
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
 import { getInviteByToken } from "./services/invites";
-import { signup, updatePersonalDetails } from "./services/auth";
+import { login, signup, updatePersonalDetails } from "./services/auth";
 import {
   Calendar,
   MapPin,
@@ -2304,8 +2303,7 @@ const TennisMatchApp = () => {
     // Email/password login step
   if (signInStep === "login") {
   const handleLogin = () => {
-    apiClient
-      .post("/auth/login", { email: formData.email, password })
+    login(formData.email, password)
       .then((res) => {
         // Support both payload shapes:
         // 1) { access_token, refresh_token, profile, user_id, user_type }
@@ -2318,7 +2316,7 @@ const TennisMatchApp = () => {
           user_type,
           token,
           user: userFromApi,
-        } = res.data || {};
+        } = res || {};
 
         let user;
 
