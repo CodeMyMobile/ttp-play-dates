@@ -1,7 +1,9 @@
 import api, { unwrap } from "./api";
 
-export const getInvitePreview = (token) =>
-  unwrap(api(`/invites/${token}`));
+export const getInvitePreview = async (token) => {
+  const data = await unwrap(api(`/invites/${token}`));
+  return data.invite || data;
+};
 
 export const beginInviteVerification = (token, payload) =>
   unwrap(

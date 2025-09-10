@@ -27,10 +27,11 @@ export default function MatchPage() {
 
   return (
     <Page>
-      <h1 className="text-xl font-bold mb-2">{data.title}</h1>
+      <h1 className="text-xl font-bold mb-2">{data.match_format} match</h1>
       <div className="space-y-1">
-        <p><b>Starts:</b> {new Date(data.startsAt).toLocaleString()}</p>
-        {data.locationName && <p><b>Location:</b> {data.locationName}</p>}
+        <p><b>Starts:</b> {new Date(data.start_date_time).toLocaleString()}</p>
+        {data.location_text && <p><b>Location:</b> {data.location_text}</p>}
+        {data.notes && <p><b>Notes:</b> {data.notes}</p>}
       </div>
       {/* Render participants, notes, actions, etc. */}
     </Page>

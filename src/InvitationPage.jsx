@@ -13,8 +13,7 @@ export default function InvitationPage() {
 
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState(null);
-  const [phase, setPhase] = useState("preview"); // 'preview'|'identify'|'otp'|'done'
-  const [identifier, setIdentifier] = useState("");
+  const [phase, setPhase] = useState("preview"); // 'preview'|'otp'
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [resendAt, setResendAt] = useState(null);
@@ -28,7 +27,7 @@ export default function InvitationPage() {
 
   const canResend = useMemo(() => {
     if (!resendAt) return true;
-    return Date.now() >= new Date(resendAt).getTime();
+    return now >= new Date(resendAt).getTime();
   }, [resendAt, now]);
 
   // Load minimal invite preview
@@ -49,16 +48,10 @@ export default function InvitationPage() {
     return () => { alive = false; };
   }, [token]);
 
-  const startIdentify = () => {
-    setError("");
-    setPhase("identify");
-  };
-
   const begin = async () => {
     setError("");
     try {
-      const body = preview?.requires === "generic" ? { identifier } : undefined;
-      const resp = await beginInviteVerification(token, body);
+      const resp = await beginInviteVerification(token);
       setResendAt(resp?.resendAt || null);
       setPhase("otp");
     } catch {
@@ -93,36 +86,24 @@ export default function InvitationPage() {
     <Page>
       <h1 className="text-xl font-bold mb-3">Private match invite</h1>
 
-      {preview.matchPreview && (
+      {preview.match && (
         <div className="mb-4 space-y-1">
-          <div className="font-semibold">{preview.matchPreview.title}</div>
-          <div>{new Date(preview.matchPreview.startsAt).toLocaleString()}</div>
-          <div>Host: {preview.matchPreview.host}</div>
+          <div className="font-semibold">{preview.match.match_format} match</div>
+          <div>
+            {new Date(preview.match.start_date_time).toLocaleString()}
+          </div>
+          <div>Host: {preview.inviter?.full_name}</div>
+          {preview.match.location_text && (
+            <div>Location: {preview.match.location_text}</div>
+          )}
         </div>
       )}
 
       {phase === "preview" && (
-        <Primary onClick={startIdentify}>Join match</Primary>
-      )}
-
-      {phase === "identify" && (
-        <div className="grid gap-3">
-          {preview.requires === "generic" ? (
-            <label className="grid gap-1">
-              <span>Phone or email</span>
-              <input
-                className="w-full p-2 border rounded"
-                placeholder="+91 9xxxxxxxxx or name@example.com"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-              />
-            </label>
-          ) : (
-            <p>Verify <b>{preview.maskedIdentifier}</b> to continue.</p>
-          )}
-          <Primary onClick={begin}>Send code</Primary>
+        <>
+          <Primary onClick={begin}>Join match</Primary>
           {error && <ErrorText>{error}</ErrorText>}
-        </div>
+        </>
       )}
 
       {phase === "otp" && (
