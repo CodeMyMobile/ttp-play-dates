@@ -90,6 +90,8 @@ const TennisMatchApp = () => {
     longitude: null,
     mapUrl: "",
     notes: "",
+    hostId: null,
+    hostName: "",
   });
 
   const [matches, setMatches] = useState([]);
@@ -868,6 +870,8 @@ const TennisMatchApp = () => {
                     (i) => i.status === "accepted"
                   ).length;
                   const occupied = participantCount + acceptedInvites;
+                  const host =
+                    participants.find((p) => p.status === "hosting") || null;
                   setMatchData((prev) => ({
                     ...prev,
                     playerCount: match.player_limit,
@@ -882,6 +886,10 @@ const TennisMatchApp = () => {
                       match.location_text
                     ),
                     notes: match.notes || "",
+                    hostId: host?.player_id || match.host_id,
+                    hostName:
+                      host?.profile?.full_name ||
+                      (host ? `Player ${host.player_id}` : ""),
                   }));
 
                   // Build initial selection from participants and invitees
@@ -900,6 +908,7 @@ const TennisMatchApp = () => {
                       user_id: p.player_id,
                       full_name: profile.full_name || `Player ${p.player_id}`,
                       email: profile.email,
+                      hosting: p.status === "hosting",
                     });
                   });
                   invitees.forEach((i) => {
@@ -908,6 +917,7 @@ const TennisMatchApp = () => {
                       user_id: i.invitee_id,
                       full_name: profile.full_name || `Player ${i.invitee_id}`,
                       email: profile.email,
+                      hosting: false,
                     });
                   });
 
@@ -1757,6 +1767,12 @@ const TennisMatchApp = () => {
                   {matchData.location}
                 </a>
               </span>
+              {matchData.hostName && (
+                <span className="flex items-center gap-1">
+                  <User className="w-4 h-4" />
+                  Host: {matchData.hostName}
+                </span>
+              )}
             </div>
           </div>
 
@@ -1928,14 +1944,13 @@ const TennisMatchApp = () => {
                 <div className="flex flex-wrap gap-2">
                   {[...selectedPlayers.values()].map((player) => (
                     <span
-
                       key={player.user_id}
-
-
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
-
+                      {player.hosting && (
+                        <span className="ml-1 text-blue-700 text-xs">Host</span>
+                      )}
                       {existingPlayerIds.has(player.user_id) && (
                         <span className="ml-1 text-green-700 text-xs">Added</span>
                       )}
@@ -1954,8 +1969,6 @@ const TennisMatchApp = () => {
                           <X className="w-3 h-3" />
                         </button>
                       )}
-
-
                     </span>
                   ))}
                 </div>
