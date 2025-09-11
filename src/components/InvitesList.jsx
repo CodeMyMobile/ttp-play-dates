@@ -107,7 +107,7 @@ const InvitesList = ({ onInviteResponse }) => {
               invite.match?.skill_level_min,
               invite.match?.skill_level_max,
             );
-            const inviteUrl = `${window.location.origin}${import.meta.env.BASE_URL}invites/${invite.token}`;
+            const inviteUrl = `${window.location.origin}${import.meta.env.BASE_URL}#/invites/${invite.token}`;
             const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(inviteUrl)}`;
             const smsUrl = `sms:?&body=${encodeURIComponent(inviteUrl)}`;
             return (
