@@ -68,6 +68,8 @@ const TennisMatchApp = () => {
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [inviteMatchId, setInviteMatchId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [participantsMatchId, setParticipantsMatchId] = useState(null);
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
   const [password, setPassword] = useState("");
@@ -836,6 +838,16 @@ const TennisMatchApp = () => {
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
             >
               <Bell className="w-4 h-4 text-gray-500" /> Send Reminder
+            </button>
+            <button
+              onClick={() => {
+                setParticipantsMatchId(matchId);
+                setShowParticipantsModal(true);
+                onClose();
+              }}
+              className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+            >
+              <Users className="w-4 h-4 text-gray-500" /> Manage Participants
             </button>
             {match?.status === "draft" && (
               <button
@@ -1693,6 +1705,10 @@ const TennisMatchApp = () => {
     const perPage = 12;
     const [copiedLink, setCopiedLink] = useState(false);
     const [shareLink, setShareLink] = useState("");
+    const [participants, setParticipants] = useState([]);
+    const [participantsLoading, setParticipantsLoading] = useState(false);
+    const [participantsError, setParticipantsError] = useState("");
+    const [hostId, setHostId] = useState(null);
 
     const copyLink = () => {
       if (!shareLink) return;
@@ -1713,6 +1729,31 @@ const TennisMatchApp = () => {
           );
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inviteMatchId]);
+
+    // Load current participants for the match being invited
+    useEffect(() => {
+      if (!inviteMatchId) return;
+      let alive = true;
+      (async () => {
+        try {
+          setParticipantsLoading(true);
+          setParticipantsError("");
+          const data = await getMatch(inviteMatchId);
+          if (!alive) return;
+          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+          setHostId(data.match?.host_id ?? null);
+        } catch (err) {
+          if (!alive) return;
+          setParticipants([]);
+          setParticipantsError("Failed to load participants");
+        } finally {
+          if (alive) setParticipantsLoading(false);
+        }
+      })();
+      return () => {
+        alive = false;
+      };
     }, [inviteMatchId]);
 
     useEffect(() => {
@@ -1738,6 +1779,34 @@ const TennisMatchApp = () => {
     useEffect(() => {
       searchInputRef.current?.focus();
     }, [searchTerm]);
+
+    const canRemove = (pid) => {
+      const host = hostId ?? currentUser?.id;
+      return currentUser?.id && host && currentUser.id === host && pid !== host;
+    };
+
+    const handleRemoveParticipant = async (playerId) => {
+      if (!window.confirm("Remove this participant from the match?")) return;
+      try {
+        await removeParticipant(inviteMatchId, playerId);
+        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        setExistingPlayerIds((prev) => {
+          const next = new Set([...prev]);
+          next.delete(playerId);
+          return next;
+        });
+        setMatchData((prev) => ({
+          ...prev,
+          occupied: Math.max((prev.occupied || 1) - 1, 0),
+        }));
+        displayToast("Participant removed");
+      } catch (err) {
+        displayToast(
+          err?.response?.data?.message || "Failed to remove participant",
+          "error"
+        );
+      }
+    };
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 pb-20">
@@ -1778,6 +1847,43 @@ const TennisMatchApp = () => {
           </div>
 
           <div className="space-y-6">
+            {/* Current Participants */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-4 h-4" /> Current Participants
+              </h3>
+              {participantsLoading ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : participantsError ? (
+                <p className="text-sm text-red-600">{participantsError}</p>
+              ) : participants.length ? (
+                <ul className="divide-y divide-gray-100 border rounded-xl">
+                  {participants.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="text-gray-800">
+                        {p.profile?.full_name || `Player ${p.player_id}`}
+                        {(p.player_id === (hostId ?? currentUser?.id)) && (
+                          <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                        )}
+                      </span>
+                      {canRemove(p.player_id) ? (
+                        <button
+                          onClick={() => handleRemoveParticipant(p.player_id)}
+                          className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
+                        >
+                          <X className="w-4 h-4" /> Remove
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400">No actions</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No participants yet.</p>
+              )}
+            </div>
+
             {/* Search players to invite */}
             <div>
               <input
@@ -2054,6 +2160,7 @@ const TennisMatchApp = () => {
     const isHost = currentUser?.id === match.host_id;
 
     const handleRemoveParticipant = async (playerId) => {
+      if (!window.confirm("Remove this participant from the match?")) return;
       try {
         await removeParticipant(match.id, playerId);
         setViewMatch({
@@ -2824,7 +2931,160 @@ const TennisMatchApp = () => {
     );
   }; // FIX: Removed comma here
 
+  const ParticipantsModal = () => {
+    // Always call hooks first; guard inside effects instead of early-returning
+    const [participants, setParticipants] = React.useState([]);
+    const [hostId, setHostId] = React.useState(null);
+    const [loadingParts, setLoadingParts] = React.useState(true);
+    const [removeErr, setRemoveErr] = React.useState("");
+
+    React.useEffect(() => {
+      if (!showParticipantsModal || !participantsMatchId) return;
+      let alive = true;
+      (async () => {
+        try {
+          setLoadingParts(true);
+          const data = await getMatch(participantsMatchId);
+          if (!alive) return;
+          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+          setHostId(data.match?.host_id ?? null);
+        } catch (_) {
+          // ignore
+        } finally {
+          if (alive) setLoadingParts(false);
+        }
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [showParticipantsModal, participantsMatchId]);
+
+    const isHost = currentUser?.id && hostId && currentUser.id === hostId;
+
+    const handleRemoveParticipant = async (playerId) => {
+      if (!window.confirm("Remove this participant from the match?")) return;
+      try {
+        if (!participantsMatchId) return;
+        await removeParticipant(participantsMatchId, playerId);
+        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        setRemoveErr("");
+      } catch (_) {
+        setRemoveErr("Failed to remove participant");
+        setTimeout(() => setRemoveErr(""), 2500);
+      }
+    };
+
+    if (!showParticipantsModal || !participantsMatchId) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+          <button
+            onClick={() => {
+              setShowParticipantsModal(false);
+              setParticipantsMatchId(null);
+            }}
+            className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <h2 className="text-2xl font-black text-gray-900 mb-2">Manage Participants</h2>
+          <p className="text-sm text-gray-500 mb-6 font-semibold">Remove players from this match</p>
+          {removeErr && (
+            <p className="text-red-600 text-sm font-semibold mb-2">{removeErr}</p>
+          )}
+          {loadingParts ? (
+            <p className="text-sm text-gray-500">Loading participants…</p>
+          ) : (
+            <div>
+              {participants.length ? (
+                <ul className="divide-y divide-gray-100 border rounded-xl">
+                  {participants.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="text-gray-800">
+                        {p.profile?.full_name || `Player ${p.player_id}`}
+                        {p.player_id === hostId && (
+                          <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                        )}
+                      </span>
+                      {isHost && p.player_id !== hostId ? (
+                        <button
+                          onClick={() => handleRemoveParticipant(p.player_id)}
+                          className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
+                        >
+                          <X className="w-4 h-4" /> Remove
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400">No actions</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No participants yet.</p>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              onClick={() => {
+                setShowParticipantsModal(false);
+                setParticipantsMatchId(null);
+              }}
+              className="px-4 py-2 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
+            >
+              CLOSE
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const EditModal = () => {
+    // Always call hooks first; guard inside effects instead of early-returning
+    // Load participants for the match being edited so hosts can remove players
+    const [participants, setParticipants] = React.useState([]);
+    const [hostId, setHostId] = React.useState(null);
+    const [loadingParts, setLoadingParts] = React.useState(true);
+    const [removeErr, setRemoveErr] = React.useState("");
+
+    React.useEffect(() => {
+      if (!showEditModal || !editMatch?.id) return;
+      let alive = true;
+      (async () => {
+        try {
+          setLoadingParts(true);
+          const data = await getMatch(editMatch.id);
+          if (!alive) return;
+          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+          setHostId(data.match?.host_id ?? null);
+        } catch (_) {
+          // ignore; leave list empty
+        } finally {
+          if (alive) setLoadingParts(false);
+        }
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [showEditModal, editMatch?.id]);
+
+    const isHost = currentUser?.id && hostId && currentUser.id === hostId;
+
+    const handleRemoveParticipant = async (playerId) => {
+      if (!window.confirm("Remove this participant from the match?")) return;
+      try {
+        if (!editMatch?.id) return;
+        await removeParticipant(editMatch.id, playerId);
+        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        setRemoveErr("");
+      } catch (_) {
+        setRemoveErr("Failed to remove participant");
+        setTimeout(() => setRemoveErr(""), 2500);
+      }
+    };
+
     if (!showEditModal || !editMatch) return null;
 
     const handleSave = async () => {
@@ -2945,6 +3205,44 @@ const TennisMatchApp = () => {
                 }
               />
             </div>
+
+            {isHost && (
+              <div className="pt-2">
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider flex items-center gap-2">
+                  <Users className="w-4 h-4 text-gray-500" /> Participants
+                </label>
+                {removeErr && (
+                  <p className="text-red-600 text-sm font-semibold mb-2">{removeErr}</p>
+                )}
+                {loadingParts ? (
+                  <p className="text-sm text-gray-500">Loading participants…</p>
+                ) : participants.length ? (
+                  <ul className="divide-y divide-gray-100 border rounded-xl">
+                    {participants.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                        <span className="text-gray-800">
+                          {p.profile?.full_name || `Player ${p.player_id}`}
+                          {p.player_id === hostId && (
+                            <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                          )}
+                        </span>
+                        {p.player_id !== hostId && (
+                          <button
+                            onClick={() => handleRemoveParticipant(p.player_id)}
+                            className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
+                          >
+                            <X className="w-4 h-4" />
+                            Remove
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500">No participants yet.</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3 mt-8">
@@ -3060,6 +3358,7 @@ const TennisMatchApp = () => {
 
       {SignInModal()}
       {EditModal()}
+      {ParticipantsModal()}
       {Toast()}
       <ProfileManager
         isOpen={showProfileManager}

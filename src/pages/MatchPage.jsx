@@ -37,6 +37,7 @@ export default function MatchPage() {
 
   const handleRemoveParticipant = async (playerId) => {
     if (!data) return;
+    if (!window.confirm("Remove this participant from the match?")) return;
     try {
       await removeParticipant(data.match.id, playerId);
       setData({
