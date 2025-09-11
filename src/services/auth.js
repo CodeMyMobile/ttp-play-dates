@@ -1,7 +1,6 @@
 import api, { unwrap } from "./api";
 
 const AUTH_BASE =
-  import.meta.env.VITE_AUTH_API_URL ||
   import.meta.env.VITE_API_URL ||
   "https://ttp-api.codemymobile.com/api";
 
