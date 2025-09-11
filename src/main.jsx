@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { createHashRouter, RouterProvider, Navigate } from "react-router-dom";
 import InvitationPage from "./InvitationPage.jsx";
 import MatchPage from "./pages/MatchPage.jsx";
+import ResetPassword from "./pages/ResetPassword.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
 
 const router = createHashRouter([
@@ -17,6 +18,9 @@ const router = createHashRouter([
   // Backward-compatible aliases
   { path: "/i/:token", element: <InvitationPage /> },
   { path: "/m/:token", element: <InvitationPage /> },
+
+  // Password reset
+  { path: "/reset-password/:token", element: <ResetPassword /> },
 
   // Fallback: redirect unknown routes to home
   { path: "*", element: <Navigate to="/" replace /> },
