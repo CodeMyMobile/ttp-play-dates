@@ -6,10 +6,7 @@ const qs = (params) => {
   return str ? `?${str}` : "";
 };
 
-export const getMatch = async (id) => {
-  const data = await unwrap(api(`/matches/${id}`));
-  return data.match || data;
-};
+export const getMatch = async (id) => unwrap(api(`/matches/${id}`));
 
 export const createMatch = (match) =>
   unwrap(

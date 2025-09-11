@@ -12,9 +12,9 @@ export default function MatchPage() {
     let alive = true;
     (async () => {
       try {
-        const match = await getMatch(id);
+        const resp = await getMatch(id);
         if (!alive) return;
-        setData(match);
+        setData(resp.match);
       } catch {
         setErr("Not found or access denied.");
       }
