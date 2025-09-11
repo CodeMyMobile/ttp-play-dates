@@ -78,8 +78,10 @@ const TennisMatchApp = () => {
     email: "",
     phone: "",
     skillLevel: "",
+    dateOfBirth: "",
   });
-  const [verificationCode, setVerificationCode] = useState("");
+  const [signupErrors, setSignupErrors] = useState({});
+  // Removed OTP verification; no verification code needed
 
   const [matchData, setMatchData] = useState({
     type: "open",
@@ -2288,48 +2290,63 @@ const TennisMatchApp = () => {
       setSignInStep("oauth-complete");
     };
 
-        const handleVerification = async () => {
-          if (verificationCode.length === 6) {
-            try {
-              await signup(formData.email, "0000");
-              await updatePersonalDetails({
-                full_name: formData.name,
-                phone: formData.phone,
-                profile_picture: "",
-                date_of_birth: "",
-                usta_rating: Number(formData.skillLevel) || 0,
-                uta_rating: 0,
-              });
-              const newUser = {
-                name: formData.name,
-                email: formData.email,
-                phone: formData.phone,
-                skillLevel: formData.skillLevel,
-                avatar: formData.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase(),
-                rating: 4.2,
-              };
-              localStorage.setItem("user", JSON.stringify(newUser));
-              setCurrentUser(newUser);
-              setShowSignInModal(false);
-              setSignInStep("initial");
-              setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-              setVerificationCode("");
-              displayToast(
-                `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
-                "success",
-              );
-            } catch (err) {
-              console.error(err);
-              displayToast("Signup failed", "error");
-            }
-          } else {
-            displayToast("Please enter a valid 6-digit code", "error");
-          }
+    const completeSignup = async (pwd) => {
+      try {
+        const res = await signup({
+          email: formData.email,
+          password: pwd ?? "0000",
+          name: formData.name,
+          phone: formData.phone,
+        });
+        // Ensure tokens are persisted (services already store them; this is defensive)
+        if (res?.access_token) localStorage.setItem("authToken", res.access_token);
+        if (res?.refresh_token) localStorage.setItem("refreshToken", res.refresh_token);
+        // Update profile details using access token
+        const digits = (formData.phone || "").replace(/\D/g, "");
+        await updatePersonalDetails({
+          full_name: formData.name,
+          date_of_birth: formData.dateOfBirth || "",
+          profile_picture: "",
+          phone: digits ? Number(digits) : undefined,
+          usta_rating: 0,
+          uta_rating: 0,
+        });
+        const newUser = {
+          id: res?.user_id,
+          type: res?.user_type,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          skillLevel: formData.skillLevel,
+          avatar: formData.name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase(),
+          rating: 4.2,
         };
+        localStorage.setItem("user", JSON.stringify(newUser));
+        setCurrentUser(newUser);
+        setShowSignInModal(false);
+        setSignInStep("initial");
+        setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
+        setPassword("");
+        setSignupErrors({});
+        displayToast(
+          `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
+          "success",
+        );
+      } catch (err) {
+        const data = err?.response?.data;
+        if (data?.err?.constraint === "users_email_unique") {
+          setSignupErrors((prev) => ({ ...prev, email: "Email Already Exists" }));
+          displayToast("Email Already Exists", "error");
+        } else {
+          console.error(err);
+          displayToast("Signup failed", "error");
+        }
+      }
+    };
 
     // OAuth completion step
     if (signInStep === "oauth-complete") {
@@ -2404,35 +2421,24 @@ const TennisMatchApp = () => {
 
               <div>
                 <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                  NTRP Skill Level
-                  <span className="ml-1 text-red-500">*</span>
+                  Date of Birth
                 </label>
-                <select
-                  value={formData.skillLevel}
+                <input
+                  type="date"
+                  value={formData.dateOfBirth}
                   onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      skillLevel: e.target.value,
-                    }))
+                    setFormData((prev) => ({ ...prev, dateOfBirth: e.target.value }))
                   }
-                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors appearance-none bg-white font-bold text-gray-800"
-                >
-                  <option value="">Select your level</option>
-                  <option value="2.5">2.5 - Beginner</option>
-                  <option value="3.0">3.0 - Advanced Beginner</option>
-                  <option value="3.5">3.5 - Intermediate</option>
-                  <option value="4.0">4.0 - Advanced Intermediate</option>
-                  <option value="4.5+">4.5+ - Advanced</option>
-                </select>
-                <p className="text-xs font-semibold text-gray-500 mt-2">
-                  Helps us find appropriate matches for you
-                </p>
+                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                />
               </div>
 
+              {/* NTRP Skill Level removed from signup */}
+
               <button
-                onClick={() => {
-                  if (formData.phone && formData.skillLevel) {
-                    setSignInStep("verify");
+                onClick={async () => {
+                  if (formData.phone) {
+                    await completeSignup();
                   } else {
                     displayToast("Please fill in all required fields", "error");
                   }
@@ -2618,29 +2624,27 @@ const TennisMatchApp = () => {
               </p>
             </div>
 
-            <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-3 mb-5">
-              <p className="text-xs text-blue-700 text-center font-bold">
-                📱 Phone verification required • We use SMS to coordinate
-                matches and prevent no-shows
-              </p>
-            </div>
+            {/* Phone verification removed */}
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                  Full Name
-                  <span className="ml-1 text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="John Smith"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
-                />
-              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                    Full Name
+                    <span className="ml-1 text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="John Smith"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                  />
+                  {signupErrors.fullName && (
+                    <p className="text-xs text-red-600 mt-1">{signupErrors.fullName}</p>
+                  )}
+                </div>
 
               <div>
                 <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
@@ -2656,70 +2660,85 @@ const TennisMatchApp = () => {
                   }
                   className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
                 />
+                {signupErrors.email && (
+                  <p className="text-xs text-red-600 mt-1">{signupErrors.email}</p>
+                )}
               </div>
+
+                <div>
+                  <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                    Mobile Number
+                    <span className="ml-1 text-red-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="(555) 123-4567"
+                    value={formData.phone}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        phone: formatPhoneNumber(e.target.value),
+                      }))
+                    }
+                    className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                    maxLength="14"
+                  />
+                  <p className="text-xs font-semibold text-gray-500 mt-2">
+                    We'll text you match reminders and updates
+                  </p>
+                  {signupErrors.mobile && (
+                    <p className="text-xs text-red-600 mt-1">{signupErrors.mobile}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                    Date of Birth
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dateOfBirth}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, dateOfBirth: e.target.value }))
+                    }
+                    className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                  />
+                </div>
 
               <div>
                 <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                  Mobile Number
+                  Password
                   <span className="ml-1 text-red-500">*</span>
                 </label>
                 <input
-                  type="tel"
-                  placeholder="(555) 123-4567"
-                  value={formData.phone}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      phone: formatPhoneNumber(e.target.value),
-                    }))
-                  }
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
-                  maxLength="14"
                 />
-                <p className="text-xs font-semibold text-gray-500 mt-2">
-                  We'll text you match reminders and updates
-                </p>
+                {signupErrors.password && (
+                  <p className="text-xs text-red-600 mt-1">{signupErrors.password}</p>
+                )}
               </div>
 
-              <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                  NTRP Skill Level
-                  <span className="ml-1 text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.skillLevel}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      skillLevel: e.target.value,
-                    }))
-                  }
-                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors appearance-none bg-white font-bold text-gray-800"
-                >
-                  <option value="">Select your level</option>
-                  <option value="2.5">2.5 - Beginner</option>
-                  <option value="3.0">3.0 - Advanced Beginner</option>
-                  <option value="3.5">3.5 - Intermediate</option>
-                  <option value="4.0">4.0 - Advanced Intermediate</option>
-                  <option value="4.5+">4.5+ - Advanced</option>
-                </select>
-                <p className="text-xs font-semibold text-gray-500 mt-2">
-                  Helps us find appropriate matches for you
-                </p>
-              </div>
+              {/* NTRP Skill Level removed from signup */}
 
               <button
-                onClick={() => {
-                  if (
-                    formData.name &&
-                    formData.email &&
-                    formData.phone &&
-                    formData.skillLevel
-                  ) {
-                    setSignInStep("verify");
-                  } else {
-                    displayToast("Please fill in all required fields", "error");
+                onClick={async () => {
+                  const errors = {};
+                  const isValidEmail = (v) => /\S+@\S+\.\S+/.test(v);
+                  if (!formData.name?.trim()) errors.fullName = "Please enter your full name";
+                  if (!formData.email?.trim()) errors.email = "Please enter your email";
+                  else if (!isValidEmail(formData.email)) errors.email = "Please enter a valid email";
+                  if (!formData.phone?.trim()) errors.mobile = "Please enter your mobile";
+                  if (!password?.trim()) errors.password = "Please enter your password";
+                  setSignupErrors(errors);
+                  if (Object.keys(errors).length > 0) {
+                    displayToast("Please correct the errors", "error");
+                    return;
                   }
+                  await completeSignup(password);
                 }}
                 className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
               >
@@ -2736,90 +2755,7 @@ const TennisMatchApp = () => {
       );
     }
 
-    if (signInStep === "verify") {
-      return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
-            <button
-              onClick={() => {
-                setSignInStep(
-                  formData.name && formData.email ? "oauth-complete" : "form"
-                );
-                setVerificationCode("");
-              }}
-              className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => {
-                setShowSignInModal(false);
-                setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-                setVerificationCode("");
-              }}
-              className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="text-center mb-6 mt-4">
-              <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <MessageCircle className="w-10 h-10 text-green-600" />
-              </div>
-              <h2 className="text-3xl font-black text-gray-900 mb-2">
-                Verify Your Number
-              </h2>
-              <p className="text-gray-500 font-semibold mb-2">
-                We sent a code to {formData.phone}
-              </p>
-              <p className="text-xs text-gray-400 font-semibold">
-                This helps prevent no-shows and keeps matches reliable
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                  Verification Code
-                </label>
-                <input
-                  type="text"
-                  placeholder="000000"
-                  value={verificationCode}
-                  onChange={(e) =>
-                    setVerificationCode(
-                      e.target.value.replace(/\D/g, "").slice(0, 6)
-                    )
-                  }
-                  className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-center text-2xl font-black tracking-widest focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
-                  maxLength="6"
-                  autoFocus
-                />
-              </div>
-
-              <button
-                onClick={handleVerification}
-                className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
-              >
-                VERIFY & CONTINUE
-              </button>
-
-              <button
-                onClick={() => displayToast("Verification code resent!")}
-                className="w-full text-gray-500 text-sm hover:text-gray-700 transition-colors font-bold"
-              >
-                Didn't receive the code? Resend
-              </button>
-            </div>
-
-            <p className="text-xs text-center text-gray-500 mt-6 font-semibold">
-              For demo purposes, enter any 6-digit code
-            </p>
-          </div>
-        </div>
-      );
-    }
+    // 'verify' step removed
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -2829,7 +2765,6 @@ const TennisMatchApp = () => {
               setShowSignInModal(false);
               setSignInStep("initial");
               setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-              setVerificationCode("");
             }}
             className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
@@ -2920,7 +2855,6 @@ const TennisMatchApp = () => {
               setShowSignInModal(false);
               setSignInStep("initial");
               setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-              setVerificationCode("");
             }}
             className="w-full text-gray-500 text-sm hover:text-gray-700 transition-colors mt-3 font-bold"
           >
