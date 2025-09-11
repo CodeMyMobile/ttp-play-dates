@@ -6,6 +6,7 @@ import {
   cancelMatch,
   joinMatch,
   leaveMatch,
+  removeParticipant,
   searchPlayers,
   sendInvites,
   getMatch,
@@ -2050,6 +2051,20 @@ const TennisMatchApp = () => {
   const MatchDetailsScreen = () => {
     if (!viewMatch) return null;
     const { match, participants = [], invitees = [] } = viewMatch;
+    const isHost = currentUser?.id === match.host_id;
+
+    const handleRemoveParticipant = async (playerId) => {
+      try {
+        await removeParticipant(match.id, playerId);
+        setViewMatch({
+          ...viewMatch,
+          participants: participants.filter((p) => p.player_id !== playerId),
+        });
+        setShowToast("Participant removed");
+      } catch {
+        setShowToast("Failed to remove participant");
+      }
+    };
     return (
       <div className="max-w-2xl mx-auto p-4">
         <div className="bg-white rounded-xl shadow p-6">
@@ -2098,8 +2113,25 @@ const TennisMatchApp = () => {
             {participants.length ? (
               <ul className="space-y-1">
                 {participants.map((p) => (
-                  <li key={p.id} className="text-gray-700">
-                    {p.profile?.full_name || `Player ${p.player_id}`}
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between text-gray-700"
+                  >
+                    <span>
+                      {p.profile?.full_name || `Player ${p.player_id}`}
+                      {p.player_id === match.host_id && (
+                        <span className="ml-1 text-blue-700 text-xs">Host</span>
+                      )}
+                    </span>
+                    {isHost && p.player_id !== match.host_id && (
+                      <button
+                        onClick={() => handleRemoveParticipant(p.player_id)}
+                        className="text-red-600 hover:text-red-800"
+                        aria-label="Remove participant"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -56,6 +56,13 @@ export const leaveMatch = (id) =>
     })
   );
 
+export const removeParticipant = (matchId, playerId) =>
+  unwrap(
+    api(`/matches/${matchId}/participants/${playerId}`, {
+      method: "DELETE",
+    })
+  );
+
 export const sendInvites = (matchId, userIds) =>
   unwrap(
     api(`/matches/${matchId}/invites`, {
