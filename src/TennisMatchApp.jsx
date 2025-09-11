@@ -15,7 +15,7 @@ import {
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
 import { getInviteByToken } from "./services/invites";
-import { login, signup, updatePersonalDetails } from "./services/auth";
+import { login, signup, updatePersonalDetails, forgotPassword } from "./services/auth";
 import {
   Calendar,
   MapPin,
@@ -2584,6 +2584,72 @@ const TennisMatchApp = () => {
                 className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
               >
                 SIGN IN
+              </button>
+              <button
+                onClick={() => setSignInStep("forgot")}
+                className="w-full text-gray-500 text-xs hover:text-gray-700 transition-colors font-bold"
+              >
+                Forgot password?
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (signInStep === "forgot") {
+      return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+            <button
+              onClick={() => setSignInStep("login")}
+              className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setShowSignInModal(false);
+                setSignInStep("initial");
+              }}
+              className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="text-center mb-6 mt-4">
+              <h2 className="text-3xl font-black text-gray-900 mb-2">Forgot Password</h2>
+              <p className="text-gray-500 font-semibold">Enter your account email</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">Email Address</label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
+                  className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
+                />
+              </div>
+              <button
+                onClick={async () => {
+                  if (!formData.email?.trim()) {
+                    displayToast("Please enter your email", "error");
+                    return;
+                  }
+                  try {
+                    await forgotPassword(formData.email.trim());
+                    displayToast("If the email exists, a reset link was sent", "success");
+                    setSignInStep("login");
+                  } catch (err) {
+                    displayToast(err?.message || "Failed to send reset link", "error");
+                  }
+                }}
+                className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
+              >
+                SEND RESET LINK
               </button>
             </div>
           </div>

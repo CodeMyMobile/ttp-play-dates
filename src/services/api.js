@@ -7,9 +7,11 @@ const api = (path, options = {}) => {
     ...(options.headers || {}),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
+  // Allow absolute URLs by not prefixing baseURL when path looks absolute
+  const url = /^https?:\/\//i.test(path) ? path : baseURL + path;
   // Default to no cookies to avoid CORS credential restrictions unless explicitly requested
   const credentials = options.credentials ?? "omit";
-  return fetch(baseURL + path, {
+  return fetch(url, {
     ...options,
     credentials,
     headers,

@@ -1,5 +1,10 @@
 import api, { unwrap } from "./api";
 
+const AUTH_BASE =
+  import.meta.env.VITE_AUTH_API_URL ||
+  import.meta.env.VITE_API_URL ||
+  "https://ttp-api.codemymobile.com/api";
+
 export const login = async (email, password) => {
   const data = await unwrap(
     api(`/auth/login`, {
@@ -54,3 +59,19 @@ export const updatePersonalDetails = async (details) =>
 export const logout = () => {
   localStorage.removeItem("authToken");
 };
+
+export const forgotPassword = async (email) =>
+  unwrap(
+    api(`${AUTH_BASE}/auth/forgot-password`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    })
+  );
+
+export const resetPassword = async ({ token, email, password }) =>
+  unwrap(
+    api(`${AUTH_BASE}/auth/reset-password/${token}/${encodeURIComponent(email)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ password }),
+    })
+  );
