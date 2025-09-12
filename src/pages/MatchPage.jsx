@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getMatch, removeParticipant } from "../services/matches";
 import { Calendar, MapPin, Users, ClipboardList, FileText, X } from "lucide-react";
+import Header from "../components/Header.jsx";
 
 export default function MatchPage() {
   const { id } = useParams();
@@ -50,23 +51,32 @@ export default function MatchPage() {
     }
   };
 
-  if (err) return (
-    <Page>
-      <Alert>{err}</Alert>
-    </Page>
-  );
+  if (err)
+    return (
+      <>
+        <Header />
+        <Page>
+          <Alert>{err}</Alert>
+        </Page>
+      </>
+    );
   if (!data)
     return (
-      <Page>
-        <p>Loading…</p>
-      </Page>
+      <>
+        <Header />
+        <Page>
+          <p>Loading…</p>
+        </Page>
+      </>
     );
 
   const { match, participants = [] } = data;
   const isHost = currentUser?.id === match.host_id;
 
   return (
-    <Page>
+    <>
+      <Header />
+      <Page>
       <h1 className="text-xl font-bold mb-4">Match Details</h1>
       <div className="space-y-1 mb-6">
         <p className="flex items-center gap-1 text-gray-700">
@@ -123,7 +133,8 @@ export default function MatchPage() {
           <p className="text-gray-500">No participants yet.</p>
         )}
       </div>
-    </Page>
+      </Page>
+    </>
   );
 }
 

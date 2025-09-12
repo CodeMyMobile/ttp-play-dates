@@ -6,6 +6,7 @@ import {
   beginInviteVerification,
   verifyInviteCode,
 } from "./services/invites";
+import Header from "./components/Header.jsx";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -118,14 +119,46 @@ export default function InvitationPage() {
   };
 
   // Render states
-  if (loading) return <Page><p>Loading…</p></Page>;
-  if (!preview) return <Page><Alert>Invite not found.</Alert></Page>;
-  if (preview.status === "expired") return <Page><Alert>This invite has expired.</Alert></Page>;
-  if (preview.status === "revoked") return <Page><Alert>This invite was revoked.</Alert></Page>;
-  if (preview.status === "full") return <Page><Alert>This match is full.</Alert></Page>;
+  if (loading)
+    return (
+      <>
+        <Header />
+        <Page><p>Loading…</p></Page>
+      </>
+    );
+  if (!preview)
+    return (
+      <>
+        <Header />
+        <Page><Alert>Invite not found.</Alert></Page>
+      </>
+    );
+  if (preview.status === "expired")
+    return (
+      <>
+        <Header />
+        <Page><Alert>This invite has expired.</Alert></Page>
+      </>
+    );
+  if (preview.status === "revoked")
+    return (
+      <>
+        <Header />
+        <Page><Alert>This invite was revoked.</Alert></Page>
+      </>
+    );
+  if (preview.status === "full")
+    return (
+      <>
+        <Header />
+        <Page><Alert>This match is full.</Alert></Page>
+      </>
+    );
 
   return (
-    <Page>
+    <>
+      <Header />
+      <Page>
       <h1 className="text-xl font-bold mb-3">Private match invite</h1>
 
       {preview.match && (
@@ -179,7 +212,8 @@ export default function InvitationPage() {
           {error && <ErrorText>{error}</ErrorText>}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }
 
