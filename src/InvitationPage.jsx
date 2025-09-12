@@ -6,6 +6,7 @@ import {
   beginInviteVerification,
   verifyInviteCode,
 } from "./services/invites";
+import Header from "./components/Header.jsx";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -63,6 +64,48 @@ export default function InvitationPage() {
     setError("");
     try {
       const data = await verifyInviteCode(token, code);
+
+      // If verification returns tokens/profile, start a session
+      const {
+        access_token,
+        refresh_token,
+        profile,
+        user_id,
+        user_type,
+      } = data || {};
+
+      if (access_token) {
+        try {
+          localStorage.setItem("authToken", access_token);
+        } catch {}
+      }
+      if (refresh_token) {
+        try {
+          localStorage.setItem("refreshToken", refresh_token);
+        } catch {}
+      }
+
+      // Persist a lightweight user object for app state restore
+      if (user_id || profile) {
+        const name = (profile?.full_name || "").trim() || "Player";
+        const user = {
+          id: user_id,
+          type: user_type,
+          name,
+          email: profile?.email || "",
+          phone: profile?.phone || "",
+          avatar: name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase(),
+          skillLevel: profile?.usta_rating || "",
+        };
+        try {
+          localStorage.setItem("user", JSON.stringify(user));
+        } catch {}
+      }
+
       setPhase("done");
       navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
     } catch {
@@ -76,14 +119,46 @@ export default function InvitationPage() {
   };
 
   // Render states
-  if (loading) return <Page><p>Loading…</p></Page>;
-  if (!preview) return <Page><Alert>Invite not found.</Alert></Page>;
-  if (preview.status === "expired") return <Page><Alert>This invite has expired.</Alert></Page>;
-  if (preview.status === "revoked") return <Page><Alert>This invite was revoked.</Alert></Page>;
-  if (preview.status === "full") return <Page><Alert>This match is full.</Alert></Page>;
+  if (loading)
+    return (
+      <>
+        <Header />
+        <Page><p>Loading…</p></Page>
+      </>
+    );
+  if (!preview)
+    return (
+      <>
+        <Header />
+        <Page><Alert>Invite not found.</Alert></Page>
+      </>
+    );
+  if (preview.status === "expired")
+    return (
+      <>
+        <Header />
+        <Page><Alert>This invite has expired.</Alert></Page>
+      </>
+    );
+  if (preview.status === "revoked")
+    return (
+      <>
+        <Header />
+        <Page><Alert>This invite was revoked.</Alert></Page>
+      </>
+    );
+  if (preview.status === "full")
+    return (
+      <>
+        <Header />
+        <Page><Alert>This match is full.</Alert></Page>
+      </>
+    );
 
   return (
-    <Page>
+    <>
+      <Header />
+      <Page>
       <h1 className="text-xl font-bold mb-3">Private match invite</h1>
 
       {preview.match && (
@@ -137,7 +212,8 @@ export default function InvitationPage() {
           {error && <ErrorText>{error}</ErrorText>}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }
 

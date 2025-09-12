@@ -641,6 +641,11 @@ const TennisMatchApp = () => {
                 DRAFT
               </span>
             )}
+            {match.status === "cancelled" && (
+              <span className="px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
+                CANCELLED
+              </span>
+            )}
             {isHosted && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border border-violet-200 rounded-full text-xs font-black">
                 HOSTING
@@ -911,26 +916,31 @@ const TennisMatchApp = () => {
                   const initial = new Map();
                   const participantIds = participants
                     .filter((p) => p.status !== "left")
-                    .map((p) => p.player_id);
+                    .map((p) => p.player_id)
+                    .filter((id) => Number.isFinite(id) && id > 0);
                   const inviteeIds = invitees
-                    .map((i) => i.invitee_id)
-                    .filter(Boolean);
+                    .map((i) => Number(i.invitee_id))
+                    .filter((id) => Number.isFinite(id) && id > 0);
 
                   participants.forEach((p) => {
                     if (p.status === "left") return;
+                    const pid = Number(p.player_id);
+                    if (!Number.isFinite(pid) || pid <= 0) return;
                     const profile = p.profile || {};
-                    initial.set(p.player_id, {
-                      user_id: p.player_id,
-                      full_name: profile.full_name || `Player ${p.player_id}`,
+                    initial.set(pid, {
+                      user_id: pid,
+                      full_name: profile.full_name || `Player ${pid}`,
                       email: profile.email,
                       hosting: p.status === "hosting",
                     });
                   });
                   invitees.forEach((i) => {
+                    const id = Number(i.invitee_id);
+                    if (!Number.isFinite(id) || id <= 0) return;
                     const profile = i.profile || {};
-                    initial.set(i.invitee_id, {
-                      user_id: i.invitee_id,
-                      full_name: profile.full_name || `Player ${i.invitee_id}`,
+                    initial.set(id, {
+                      user_id: id,
+                      full_name: profile.full_name || `Player ${id}`,
                       email: profile.email,
                       hosting: false,
                     });
@@ -1967,13 +1977,14 @@ const TennisMatchApp = () => {
                     <button
                       key={player.user_id}
                       onClick={() => {
+                        const pid = Number(player.user_id);
+                        if (!Number.isFinite(pid) || pid <= 0) return;
                         setSelectedPlayers((prev) => {
                           const newMap = new Map(prev);
-                          if (newMap.has(player.user_id)) {
-                            newMap.delete(player.user_id);
+                          if (newMap.has(pid)) {
+                            newMap.delete(pid);
                           } else {
-                            newMap.set(player.user_id, player);
-
+                            newMap.set(pid, { ...player, user_id: pid });
                           }
                           return newMap;
                         });
@@ -2051,7 +2062,9 @@ const TennisMatchApp = () => {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {[...selectedPlayers.values()].map((player) => (
+                  {[...selectedPlayers.values()]
+                    .filter((p) => Number.isFinite(p.user_id) && p.user_id > 0)
+                    .map((player) => (
                     <span
                       key={player.user_id}
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
@@ -2079,7 +2092,7 @@ const TennisMatchApp = () => {
                         </button>
                       )}
                     </span>
-                  ))}
+                    ))}
                 </div>
               </div>
             )}
@@ -2113,9 +2126,11 @@ const TennisMatchApp = () => {
                     return;
                   }
                     try {
-                      const newIds = Array.from(selectedPlayers.keys()).filter(
-                        (id) => !existingPlayerIds.has(id)
-                      );
+                      const newIds = Array.from(selectedPlayers.keys())
+                        .map((id) => Number(id))
+                        .filter(
+                          (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id)
+                        );
                       if (newIds.length === 0) {
                         displayToast("No new players selected", "error");
                         return;
@@ -2186,7 +2201,14 @@ const TennisMatchApp = () => {
           >
             <ChevronLeft className="w-4 h-4 mr-1" /> Back
           </button>
-          <h2 className="text-2xl font-black mb-4">Match Details</h2>
+          <h2 className="text-2xl font-black mb-2">Match Details</h2>
+          {match?.status === "cancelled" && (
+            <div className="mb-4">
+              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
+                CANCELLED
+              </span>
+            </div>
+          )}
           {match && (
             <div className="space-y-1 mb-6">
               <p className="text-gray-700 flex items-center gap-1">

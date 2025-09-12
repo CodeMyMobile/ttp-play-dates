@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resetPassword } from "../services/auth";
+import Header from "../components/Header.jsx";
 
 export default function ResetPassword() {
   const { token, email } = useParams();
@@ -30,7 +31,9 @@ export default function ResetPassword() {
   };
 
   return (
-    <main className="max-w-md mx-auto p-6">
+    <>
+      <Header />
+      <main className="max-w-md mx-auto p-6">
       <h1 className="text-2xl font-bold mb-2">Reset Password</h1>
       <p className="text-sm text-gray-600 mb-6 break-all">{decodeURIComponent(email)}</p>
       <form onSubmit={onSubmit} className="space-y-4">
@@ -54,7 +57,7 @@ export default function ResetPassword() {
           {loading ? "Updating…" : "Update Password"}
         </button>
       </form>
-    </main>
+      </main>
+    </>
   );
 }
-
