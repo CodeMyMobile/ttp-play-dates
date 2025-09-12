@@ -641,6 +641,11 @@ const TennisMatchApp = () => {
                 DRAFT
               </span>
             )}
+            {match.status === "cancelled" && (
+              <span className="px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
+                CANCELLED
+              </span>
+            )}
             {isHosted && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border border-violet-200 rounded-full text-xs font-black">
                 HOSTING
@@ -2196,7 +2201,14 @@ const TennisMatchApp = () => {
           >
             <ChevronLeft className="w-4 h-4 mr-1" /> Back
           </button>
-          <h2 className="text-2xl font-black mb-4">Match Details</h2>
+          <h2 className="text-2xl font-black mb-2">Match Details</h2>
+          {match?.status === "cancelled" && (
+            <div className="mb-4">
+              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
+                CANCELLED
+              </span>
+            </div>
+          )}
           {match && (
             <div className="space-y-1 mb-6">
               <p className="text-gray-700 flex items-center gap-1">

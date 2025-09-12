@@ -77,7 +77,14 @@ export default function MatchPage() {
     <>
       <Header />
       <Page>
-      <h1 className="text-xl font-bold mb-4">Match Details</h1>
+      <h1 className="text-xl font-bold mb-2">Match Details</h1>
+      {data?.match?.status === "cancelled" && (
+        <div className="mb-4">
+          <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
+            CANCELLED
+          </span>
+        </div>
+      )}
       <div className="space-y-1 mb-6">
         <p className="flex items-center gap-1 text-gray-700">
           <Calendar className="w-4 h-4" />
