@@ -63,6 +63,48 @@ export default function InvitationPage() {
     setError("");
     try {
       const data = await verifyInviteCode(token, code);
+
+      // If verification returns tokens/profile, start a session
+      const {
+        access_token,
+        refresh_token,
+        profile,
+        user_id,
+        user_type,
+      } = data || {};
+
+      if (access_token) {
+        try {
+          localStorage.setItem("authToken", access_token);
+        } catch {}
+      }
+      if (refresh_token) {
+        try {
+          localStorage.setItem("refreshToken", refresh_token);
+        } catch {}
+      }
+
+      // Persist a lightweight user object for app state restore
+      if (user_id || profile) {
+        const name = (profile?.full_name || "").trim() || "Player";
+        const user = {
+          id: user_id,
+          type: user_type,
+          name,
+          email: profile?.email || "",
+          phone: profile?.phone || "",
+          avatar: name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase(),
+          skillLevel: profile?.usta_rating || "",
+        };
+        try {
+          localStorage.setItem("user", JSON.stringify(user));
+        } catch {}
+      }
+
       setPhase("done");
       navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
     } catch {
