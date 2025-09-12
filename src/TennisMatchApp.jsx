@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import apiClient from "./services/api";
 import {
   listMatches,
   createMatch,
@@ -7,6 +6,7 @@ import {
   cancelMatch,
   joinMatch,
   leaveMatch,
+  removeParticipant,
   searchPlayers,
   sendInvites,
   getMatch,
@@ -15,7 +15,7 @@ import {
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
 import { getInviteByToken } from "./services/invites";
-import { signup, updatePersonalDetails } from "./services/auth";
+import { login, signup, updatePersonalDetails } from "./services/auth";
 import {
   Calendar,
   MapPin,
@@ -91,6 +91,8 @@ const TennisMatchApp = () => {
     longitude: null,
     mapUrl: "",
     notes: "",
+    hostId: null,
+    hostName: "",
   });
 
   const [matches, setMatches] = useState([]);
@@ -869,6 +871,8 @@ const TennisMatchApp = () => {
                     (i) => i.status === "accepted"
                   ).length;
                   const occupied = participantCount + acceptedInvites;
+                  const host =
+                    participants.find((p) => p.status === "hosting") || null;
                   setMatchData((prev) => ({
                     ...prev,
                     playerCount: match.player_limit,
@@ -883,6 +887,10 @@ const TennisMatchApp = () => {
                       match.location_text
                     ),
                     notes: match.notes || "",
+                    hostId: host?.player_id || match.host_id,
+                    hostName:
+                      host?.profile?.full_name ||
+                      (host ? `Player ${host.player_id}` : ""),
                   }));
 
                   // Build initial selection from participants and invitees
@@ -901,6 +909,7 @@ const TennisMatchApp = () => {
                       user_id: p.player_id,
                       full_name: profile.full_name || `Player ${p.player_id}`,
                       email: profile.email,
+                      hosting: p.status === "hosting",
                     });
                   });
                   invitees.forEach((i) => {
@@ -909,6 +918,7 @@ const TennisMatchApp = () => {
                       user_id: i.invitee_id,
                       full_name: profile.full_name || `Player ${i.invitee_id}`,
                       email: profile.email,
+                      hosting: false,
                     });
                   });
 
@@ -1758,6 +1768,12 @@ const TennisMatchApp = () => {
                   {matchData.location}
                 </a>
               </span>
+              {matchData.hostName && (
+                <span className="flex items-center gap-1">
+                  <User className="w-4 h-4" />
+                  Host: {matchData.hostName}
+                </span>
+              )}
             </div>
           </div>
 
@@ -1929,14 +1945,13 @@ const TennisMatchApp = () => {
                 <div className="flex flex-wrap gap-2">
                   {[...selectedPlayers.values()].map((player) => (
                     <span
-
                       key={player.user_id}
-
-
                       className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
                     >
                       {player.full_name}
-
+                      {player.hosting && (
+                        <span className="ml-1 text-blue-700 text-xs">Host</span>
+                      )}
                       {existingPlayerIds.has(player.user_id) && (
                         <span className="ml-1 text-green-700 text-xs">Added</span>
                       )}
@@ -1955,8 +1970,6 @@ const TennisMatchApp = () => {
                           <X className="w-3 h-3" />
                         </button>
                       )}
-
-
                     </span>
                   ))}
                 </div>
@@ -2038,6 +2051,20 @@ const TennisMatchApp = () => {
   const MatchDetailsScreen = () => {
     if (!viewMatch) return null;
     const { match, participants = [], invitees = [] } = viewMatch;
+    const isHost = currentUser?.id === match.host_id;
+
+    const handleRemoveParticipant = async (playerId) => {
+      try {
+        await removeParticipant(match.id, playerId);
+        setViewMatch({
+          ...viewMatch,
+          participants: participants.filter((p) => p.player_id !== playerId),
+        });
+        setShowToast("Participant removed");
+      } catch {
+        setShowToast("Failed to remove participant");
+      }
+    };
     return (
       <div className="max-w-2xl mx-auto p-4">
         <div className="bg-white rounded-xl shadow p-6">
@@ -2086,8 +2113,25 @@ const TennisMatchApp = () => {
             {participants.length ? (
               <ul className="space-y-1">
                 {participants.map((p) => (
-                  <li key={p.id} className="text-gray-700">
-                    {p.profile?.full_name || `Player ${p.player_id}`}
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between text-gray-700"
+                  >
+                    <span>
+                      {p.profile?.full_name || `Player ${p.player_id}`}
+                      {p.player_id === match.host_id && (
+                        <span className="ml-1 text-blue-700 text-xs">Host</span>
+                      )}
+                    </span>
+                    {isHost && p.player_id !== match.host_id && (
+                      <button
+                        onClick={() => handleRemoveParticipant(p.player_id)}
+                        className="text-red-600 hover:text-red-800"
+                        aria-label="Remove participant"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -2304,8 +2348,7 @@ const TennisMatchApp = () => {
     // Email/password login step
   if (signInStep === "login") {
   const handleLogin = () => {
-    apiClient
-      .post("/auth/login", { email: formData.email, password })
+    login(formData.email, password)
       .then((res) => {
         // Support both payload shapes:
         // 1) { access_token, refresh_token, profile, user_id, user_type }
@@ -2318,7 +2361,7 @@ const TennisMatchApp = () => {
           user_type,
           token,
           user: userFromApi,
-        } = res.data || {};
+        } = res || {};
 
         let user;
 

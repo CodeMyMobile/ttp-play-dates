@@ -1,25 +1,49 @@
-import apiClient from './api';
+import api, { unwrap } from "./api";
 
-export const listInvites = async ({ status, page, perPage } = {}) => {
-  const params = {};
-  if (status) params.status = status;
-  if (page) params.page = page;
-  if (perPage) params.perPage = perPage;
-  const { data } = await apiClient.get('/invites', { params });
-  return data;
+export const getInvitePreview = async (token) => {
+  const data = await unwrap(api(`/invites/${token}`));
+  return data.invite || data;
 };
 
-export const acceptInvite = async (token) => {
-  const { data } = await apiClient.post('/invites/accept', { token });
-  return data;
+export const beginInviteVerification = (token, payload) =>
+  unwrap(
+    api(`/invites/${token}/begin`, {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    })
+  );
+
+export const verifyInviteCode = (token, code) =>
+  unwrap(
+    api(`/invites/${token}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    })
+  );
+
+export const listInvites = ({ status, page, perPage } = {}) => {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (page) params.set("page", page);
+  if (perPage) params.set("perPage", perPage);
+  const qs = params.toString();
+  return unwrap(api(`/invites${qs ? `?${qs}` : ""}`));
 };
 
-export const rejectInvite = async (token) => {
-  const { data } = await apiClient.post('/invites/reject', { token });
-  return data;
-};
+export const acceptInvite = (token) =>
+  unwrap(
+    api(`/invites/accept`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    })
+  );
 
-export const getInviteByToken = async (token) => {
-  const { data } = await apiClient.get(`/invites/${token}`);
-  return data;
-};
+export const rejectInvite = (token) =>
+  unwrap(
+    api(`/invites/reject`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    })
+  );
+
+export const getInviteByToken = (token) => unwrap(api(`/invites/${token}`));
