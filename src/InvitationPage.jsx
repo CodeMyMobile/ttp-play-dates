@@ -19,6 +19,10 @@ export default function InvitationPage() {
   const [error, setError] = useState("");
   const [resendAt, setResendAt] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [showPicker, setShowPicker] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState(null);
+  const [identifier, setIdentifier] = useState("");
+  const [lastChannel, setLastChannel] = useState(null);
 
   // 1s ticker for resend countdown
   useEffect(() => {
@@ -40,6 +44,15 @@ export default function InvitationPage() {
         if (!alive) return;
         setPreview(data);
         setPhase("preview");
+        // Initialize channel preference from available channels
+        const channels = data?.availableChannels || [];
+        const defaultChannel = channels.includes("sms")
+          ? "sms"
+          : channels[0] || null;
+        setSelectedChannel(defaultChannel);
+        setLastChannel(null);
+        setShowPicker(false);
+        setIdentifier("");
       } catch {
         setPreview(null);
       } finally {
@@ -52,11 +65,17 @@ export default function InvitationPage() {
   const begin = async () => {
     setError("");
     try {
-      const resp = await beginInviteVerification(token);
+      const payload = {};
+      if (selectedChannel) payload.channel = selectedChannel;
+      if (identifier) payload.identifier = identifier.trim();
+      const resp = await beginInviteVerification(token, payload);
+      if (resp?.channel) setLastChannel(resp.channel);
       setResendAt(resp?.resendAt || null);
       setPhase("otp");
-    } catch {
-      setError("Couldn’t send code. Please try again.");
+      setShowPicker(false);
+    } catch (e) {
+      const msg = mapBeginError(e?.message);
+      setError(msg);
     }
   };
 
@@ -175,14 +194,88 @@ export default function InvitationPage() {
       )}
 
       {phase === "preview" && (
-        <>
-          <Primary onClick={begin}>Join match</Primary>
-          {error && <ErrorText>{error}</ErrorText>}
-        </>
+        <div className="grid gap-3">
+          <Primary
+            onClick={() => {
+              const channels = preview?.availableChannels || [];
+              if (channels.length > 1 || preview?.identifierRequired) {
+                setShowPicker((v) => !v);
+              } else {
+                // If there's only one channel and no identifier required, send immediately
+                setShowPicker(false);
+                setSelectedChannel(channels[0] || selectedChannel);
+                begin();
+              }
+            }}
+          >
+            Join match
+          </Primary>
+
+          {showPicker && (
+            <div className="p-3 border rounded bg-gray-50 grid gap-3">
+              <div className="font-medium">Choose where to receive your code</div>
+              <div className="grid gap-2">
+                {(preview?.availableChannels || []).map((ch) => (
+                  <label key={ch} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="channel"
+                      value={ch}
+                      checked={selectedChannel === ch}
+                      onChange={() => setSelectedChannel(ch)}
+                    />
+                    <span className="capitalize">{ch}</span>
+                    {preview?.maskedIdentifier && (
+                      <span className="text-gray-500 text-sm">
+                        to {preview.maskedIdentifier}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+
+              {preview?.identifierRequired && (
+                <label className="grid gap-1">
+                  <span className="text-sm text-gray-700">
+                    Enter your {prettyRequirement(preview?.requires)}
+                  </span>
+                  <input
+                    className="w-full p-2 border rounded"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder={placeholderFor(preview?.requires)}
+                  />
+                </label>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={begin}
+                  className="px-3 py-2 rounded bg-black text-white"
+                >
+                  Send code
+                </button>
+                <button
+                  onClick={() => setShowPicker(false)}
+                  className="px-3 py-2 border rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              {error && <ErrorText>{error}</ErrorText>}
+            </div>
+          )}
+
+          {!showPicker && error && <ErrorText>{error}</ErrorText>}
+        </div>
       )}
 
       {phase === "otp" && (
         <div className="grid gap-3">
+          <div className="text-sm text-gray-600">
+            Code sent via {lastChannel || selectedChannel} {preview?.maskedIdentifier ? `to ${preview.maskedIdentifier}` : ""}
+          </div>
           <label className="grid gap-1">
             <span>Enter 6-digit code</span>
             <input
@@ -207,6 +300,16 @@ export default function InvitationPage() {
                     0,
                     Math.ceil((new Date(resendAt).getTime() - now) / 1000)
                   )}s`}
+            </button>
+            <button
+              onClick={() => {
+                setPhase("preview");
+                setShowPicker(true);
+                setError("");
+              }}
+              className="px-3 py-2 border rounded"
+            >
+              Change channel
             </button>
           </div>
           {error && <ErrorText>{error}</ErrorText>}
@@ -237,4 +340,37 @@ function ErrorText({ children }) {
 }
 function Alert({ children }) {
   return <div className="p-3 rounded bg-gray-100 border">{children}</div>;
+}
+
+// Helpers
+function mapBeginError(code) {
+  switch (code) {
+    case "invalid_channel":
+      return "Please choose a valid delivery channel.";
+    case "identifier_required":
+    case "identifier_missing":
+      return "Please enter the required phone or email.";
+    case "expired":
+      return "This invite has expired.";
+    case "invalid_status":
+      return "This invite cannot be used right now.";
+    case "not_found":
+      return "Invite not found.";
+    case "bad_request":
+      return "Couldn’t send code. Check details and try again.";
+    default:
+      return "Couldn’t send code. Please try again.";
+  }
+}
+
+function prettyRequirement(req) {
+  if (req === "phone") return "phone";
+  if (req === "email") return "email";
+  return "identifier";
+}
+
+function placeholderFor(req) {
+  if (req === "phone") return "+1 555 555 5555";
+  if (req === "email") return "you@example.com";
+  return "Enter identifier";
 }
