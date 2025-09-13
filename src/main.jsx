@@ -4,6 +4,7 @@ import { createHashRouter, RouterProvider, Navigate } from "react-router-dom";
 import InvitationPage from "./InvitationPage.jsx";
 import MatchPage from "./pages/MatchPage.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
+import TestEditModal from "./pages/TestEditModal.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
 
 const router = createHashRouter([
@@ -12,6 +13,9 @@ const router = createHashRouter([
 
   // Match details (direct link)
   { path: "/matches/:id", element: <MatchPage /> },
+
+  // Test page for EditMatchModal
+  { path: "/test-edit-modal", element: <TestEditModal /> },
 
   // Private invite OTP flow
   { path: "/invites/:token", element: <InvitationPage /> },
