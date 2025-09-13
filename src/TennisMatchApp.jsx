@@ -1722,6 +1722,53 @@ const TennisMatchApp = () => {
     const [participantsError, setParticipantsError] = useState("");
     const [hostId, setHostId] = useState(null);
 
+    const buildShareMessage = () => {
+      const parts = [];
+      const host = matchData.hostName || currentUser?.name || currentUser?.email || "";
+      parts.push("You're invited to a tennis match!");
+      if (host) parts.push(`Host: ${host}`);
+      if (matchData.dateTime) parts.push(`When: ${formatDateTime(matchData.dateTime)}`);
+      if (matchData.location) parts.push(`Where: ${matchData.location}`);
+      if (matchData.format) parts.push(`Format: ${matchData.format}`);
+      if (matchData.skillLevel && matchData.skillLevel !== "Any Level") {
+        parts.push(`Level: NTRP ${matchData.skillLevel}`);
+      }
+      if (matchData.playerCount) parts.push(`Players: ${matchData.playerCount}`);
+      if (shareLink) parts.push(`Join here: ${shareLink}`);
+      return parts.join("\n");
+    };
+
+    const buildEmailSubject = () => {
+      const when = matchData.dateTime ? ` – ${formatDateTime(matchData.dateTime)}` : "";
+      return `Tennis Match Invite${when}`;
+    };
+
+    const openWhatsApp = () => {
+      if (!shareLink) return;
+      const text = encodeURIComponent(buildShareMessage());
+      const url = `https://wa.me/?text=${text}`;
+      displayToast("Opening WhatsApp...");
+      window.open(url, "_blank");
+    };
+
+    const openSMS = () => {
+      if (!shareLink) return;
+      const body = encodeURIComponent(buildShareMessage());
+      // Using query parameter form to maximize cross-platform support
+      const url = `sms:?body=${body}`;
+      displayToast("Opening messages...");
+      window.location.href = url;
+    };
+
+    const openEmail = () => {
+      if (!shareLink) return;
+      const subject = encodeURIComponent(buildEmailSubject());
+      const body = encodeURIComponent(buildShareMessage());
+      const url = `mailto:?subject=${subject}&body=${body}`;
+      displayToast("Opening email...");
+      window.location.href = url;
+    };
+
     const copyLink = () => {
       if (!shareLink) return;
       navigator.clipboard.writeText(shareLink);
@@ -1943,20 +1990,35 @@ const TennisMatchApp = () => {
 
               <div className="grid grid-cols-3 gap-3">
                 <button
-                  onClick={() => displayToast("Opening WhatsApp...")}
-                  className="py-3 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-2 border-green-300 rounded-xl text-sm font-black hover:shadow-lg hover:scale-105 transition-all"
+                  onClick={openWhatsApp}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
                 >
                   WHATSAPP
                 </button>
                 <button
-                  onClick={() => displayToast("Opening messages...")}
-                  className="py-3 bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-2 border-blue-300 rounded-xl text-sm font-black hover:shadow-lg hover:scale-105 transition-all"
+                  onClick={openSMS}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
                 >
                   SMS
                 </button>
                 <button
-                  onClick={() => displayToast("Opening email...")}
-                  className="py-3 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-2 border-purple-300 rounded-xl text-sm font-black hover:shadow-lg hover:scale-105 transition-all"
+                  onClick={openEmail}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
                 >
                   EMAIL
                 </button>
