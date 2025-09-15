@@ -1099,10 +1099,30 @@ const TennisMatchApp = () => {
       );
     };
 
+    const createMatchWithCompatibility = async (payload) => {
+      try {
+        return await createMatch(payload);
+      } catch (err) {
+        const message = err?.message?.toLowerCase?.() || "";
+        const hasStatusFields = payload.status && payload.match_type;
+        if (hasStatusFields && message.includes("match_status_enum")) {
+          const fallbackPayload = {
+            ...payload,
+            status: payload.match_type,
+            match_type: payload.status,
+          };
+
+          return await createMatch(fallbackPayload);
+        }
+
+        throw err;
+      }
+    };
+
     const handlePublish = async () => {
       try {
         const payload = buildMatchPayload("upcoming");
-        await createMatch(payload);
+        await createMatchWithCompatibility(payload);
         displayToast("Match published successfully! 🎾");
         setCurrentScreen("browse");
         setCreateStep(1);
@@ -1230,7 +1250,9 @@ const TennisMatchApp = () => {
                     if (!inviteMatchId) {
                       try {
                         const payload = buildMatchPayload("draft");
-                        const created = await createMatch(payload);
+                        const created = await createMatchWithCompatibility(
+                          payload
+                        );
                         const newId =
                           created.match?.id || created.match_id || created.id;
                         if (newId) {
