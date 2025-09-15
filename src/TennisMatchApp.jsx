@@ -23,6 +23,7 @@ import {
   Clock,
   ChevronRight,
   Plus,
+  Minus,
   X,
   Check,
   Search,
@@ -776,7 +777,10 @@ const TennisMatchApp = () => {
                   location: match.location,
                   latitude: match.latitude,
                   longitude: match.longitude,
-
+                  format: match.format || "Doubles",
+                  playerCount: match.playerLimit || 4,
+                  skillLevel: match.skillLevel || DEFAULT_SKILL_LEVEL,
+                  occupied: match.occupied || 1,
                   notes: match.notes || "",
                 });
                 setShowEditModal(true);
@@ -827,6 +831,12 @@ const TennisMatchApp = () => {
                       .toISOString()
                       .slice(0, 16),
                     location: matchToEdit.location,
+                    latitude: matchToEdit.latitude,
+                    longitude: matchToEdit.longitude,
+                    format: matchToEdit.format || "Doubles",
+                    playerCount: matchToEdit.playerLimit || 4,
+                    skillLevel: matchToEdit.skillLevel || DEFAULT_SKILL_LEVEL,
+                    occupied: matchToEdit.occupied || 1,
                     notes: matchToEdit.notes || "",
                   });
                   setShowEditModal(true);
@@ -1802,7 +1812,7 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (err) {
+        } catch {
           if (!alive) return;
           setParticipants([]);
           setParticipantsError("Failed to load participants");
@@ -3032,7 +3042,7 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (_) {
+        } catch {
           // ignore
         } finally {
           if (alive) setLoadingParts(false);
@@ -3042,7 +3052,6 @@ const TennisMatchApp = () => {
         alive = false;
       };
     }, [showParticipantsModal, participantsMatchId]);
-
     const isHost = currentUser?.id && hostId && currentUser.id === hostId;
 
     const handleRemoveParticipant = async (playerId) => {
@@ -3052,7 +3061,7 @@ const TennisMatchApp = () => {
         await removeParticipant(participantsMatchId, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
         setRemoveErr("");
-      } catch (_) {
+      } catch {
         setRemoveErr("Failed to remove participant");
         setTimeout(() => setRemoveErr(""), 2500);
       }
@@ -3127,11 +3136,11 @@ const TennisMatchApp = () => {
 
   const EditModal = () => {
     // Always call hooks first; guard inside effects instead of early-returning
-    // Load participants for the match being edited so hosts can remove players
     const [participants, setParticipants] = React.useState([]);
     const [hostId, setHostId] = React.useState(null);
     const [loadingParts, setLoadingParts] = React.useState(true);
     const [removeErr, setRemoveErr] = React.useState("");
+    const [activeTab, setActiveTab] = React.useState("details");
 
     React.useEffect(() => {
       if (!showEditModal || !editMatch?.id) return;
@@ -3143,7 +3152,7 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (_) {
+        } catch {
           // ignore; leave list empty
         } finally {
           if (alive) setLoadingParts(false);
@@ -3154,22 +3163,32 @@ const TennisMatchApp = () => {
       };
     }, [showEditModal, editMatch?.id]);
 
-    const isHost = currentUser?.id && hostId && currentUser.id === hostId;
-
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
         if (!editMatch?.id) return;
         await removeParticipant(editMatch.id, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        setEditMatch((prev) => ({...prev, occupied: Math.max((prev.occupied||1)-1,0)}));
         setRemoveErr("");
-      } catch (_) {
+      } catch {
         setRemoveErr("Failed to remove participant");
         setTimeout(() => setRemoveErr(""), 2500);
       }
     };
 
     if (!showEditModal || !editMatch) return null;
+
+    const date = editMatch.dateTime?.slice(0,10) || "";
+    const time = editMatch.dateTime?.slice(11,16) || "";
+    const handleDateChange = (e) => {
+      const t = editMatch.dateTime?.slice(11,16) || "00:00";
+      setEditMatch({...editMatch, dateTime: `${e.target.value}T${t}`});
+    };
+    const handleTimeChange = (e) => {
+      const d = editMatch.dateTime?.slice(0,10) || date || "";
+      setEditMatch({...editMatch, dateTime: `${d}T${e.target.value}`});
+    };
 
     const handleSave = async () => {
       try {
@@ -3179,173 +3198,138 @@ const TennisMatchApp = () => {
           latitude: editMatch.latitude,
           longitude: editMatch.longitude,
           notes: editMatch.notes,
+          player_limit: editMatch.playerCount,
+          match_format: editMatch.format,
+          skill_level_min: editMatch.skillLevel,
         });
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
         fetchMatches();
       } catch (err) {
-        displayToast(
-          err.response?.data?.message || "Failed to update match",
-          "error"
-        );
+        displayToast(err.response?.data?.message || "Failed to update match", "error");
       }
     };
 
+    const skillLevels = [
+      "2.5 - Beginner",
+      "3.0 - Adv. Beginner",
+      "3.5 - Intermediate",
+      "4.0 - Adv. Intermediate",
+      "4.5+ - Advanced",
+    ];
+
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+        <div className="bg-white rounded-2xl max-w-xl w-full p-6 relative animate-slideUp">
           <button
-            onClick={() => {
-              setShowEditModal(false);
-              setEditMatch(null);
-            }}
+            onClick={() => { setShowEditModal(false); setEditMatch(null); }}
             className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Edit Match</h2>
-          <p className="text-sm text-gray-500 mb-6 font-semibold">
-            Changes will notify all confirmed players
-          </p>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Date & Time
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={editMatch.dateTime}
-                onChange={(e) =>
-                  setEditMatch({ ...editMatch, dateTime: e.target.value })
-                }
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Location
-              </label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-                <Autocomplete
-                  apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
-                  type="search"
-                  value={editMatch.location}
-                  onChange={(e) =>
-                    setEditMatch({
-                      ...editMatch,
-                      location: e.target.value,
-                      latitude: null,
-                      longitude: null,
-                    })
-                  }
-                  onPlaceSelected={(place) => {
-                    const address = place.formatted_address || place.name || "";
-                    const lat = place.geometry?.location?.lat();
-                    const lng = place.geometry?.location?.lng();
-                    setEditMatch({
-                      ...editMatch,
-                      location: address,
-                      latitude: lat,
-                      longitude: lng,
-                    });
-                  }}
-                  options={{
-                    types: ["geocode", "establishment"],
-                    fields: [
-                      "formatted_address",
-                      "geometry",
-                      "name",
-                      "address_components",
-                    ],
-                  }}
-                  className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                />
-              </div>
-              <input
-                type="text"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={editMatch.location}
-                onChange={(e) =>
-                  setEditMatch({ ...editMatch, location: e.target.value })
-                }
-              />
-
-            </div>
-
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Notes
-              </label>
-              <textarea
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                rows={3}
-                value={editMatch.notes}
-                onChange={(e) =>
-                  setEditMatch({ ...editMatch, notes: e.target.value })
-                }
-              />
-            </div>
-
-            {isHost && (
-              <div className="pt-2">
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider flex items-center gap-2">
-                  <Users className="w-4 h-4 text-gray-500" /> Participants
-                </label>
-                {removeErr && (
-                  <p className="text-red-600 text-sm font-semibold mb-2">{removeErr}</p>
-                )}
-                {loadingParts ? (
-                  <p className="text-sm text-gray-500">Loading participants…</p>
-                ) : participants.length ? (
-                  <ul className="divide-y divide-gray-100 border rounded-xl">
-                    {participants.map((p) => (
-                      <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                        <span className="text-gray-800">
-                          {p.profile?.full_name || `Player ${p.player_id}`}
-                          {p.player_id === hostId && (
-                            <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
-                          )}
-                        </span>
-                        {p.player_id !== hostId && (
-                          <button
-                            onClick={() => handleRemoveParticipant(p.player_id)}
-                            className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
-                          >
-                            <X className="w-4 h-4" />
-                            Remove
-                          </button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-500">No participants yet.</p>
-                )}
-              </div>
-            )}
+          <h2 className="text-2xl font-black text-gray-900 mb-4">Edit Match</h2>
+          <div className="flex gap-6 border-b mb-6">
+            {["details","players","settings"].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`pb-3 px-1 text-sm font-black transition-colors ${activeTab===tab ? "text-green-600 border-b-2 border-green-500" : "text-gray-400"}`}
+              >
+                {tab.charAt(0).toUpperCase()+tab.slice(1)}
+              </button>
+            ))}
           </div>
+
+          {activeTab === "details" && (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">Date & Time</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <input type="date" value={date} onChange={handleDateChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800" />
+                  <input type="time" value={time} onChange={handleTimeChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">Location</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
+                  <Autocomplete
+                    apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                    type="search"
+                    value={editMatch.location}
+                    onChange={(e) => setEditMatch({...editMatch, location:e.target.value, latitude:null, longitude:null})}
+                    onPlaceSelected={(place) => {
+                      const address = place.formatted_address || place.name || "";
+                      const lat = place.geometry?.location?.lat();
+                      const lng = place.geometry?.location?.lng();
+                      setEditMatch({...editMatch, location:address, latitude:lat, longitude:lng});
+                    }}
+                    options={{ types:["geocode","establishment"], fields:["formatted_address","geometry","name","address_components"] }}
+                    className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">Format & Players</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <select value={editMatch.format} onChange={(e)=>setEditMatch({...editMatch, format:e.target.value})} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800">
+                    <option>Singles</option>
+                    <option>Doubles</option>
+                  </select>
+                  <div className="flex items-center justify-between px-2 border-2 border-gray-200 rounded-xl">
+                    <button onClick={()=>setEditMatch({...editMatch, playerCount: Math.max(2, editMatch.playerCount-1)})} className="w-10 h-10 flex items-center justify-center text-gray-600 hover:text-gray-800"><Minus className="w-5 h-5" /></button>
+                    <span className="font-bold text-gray-800">{editMatch.playerCount}</span>
+                    <button onClick={()=>setEditMatch({...editMatch, playerCount: Math.min(8, editMatch.playerCount+1)})} className="w-10 h-10 flex items-center justify-center text-gray-600 hover:text-gray-800"><Plus className="w-5 h-5" /></button>
+                  </div>
+                  <select value={editMatch.skillLevel} onChange={(e)=>setEditMatch({...editMatch, skillLevel:e.target.value})} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800">
+                    {skillLevels.map(level => <option key={level} value={level}>{level.split(' - ')[0]}</option>)}
+                  </select>
+                </div>
+                <p className="text-xs font-semibold text-gray-500 text-right mt-2">{editMatch.occupied || 0}/{editMatch.playerCount} joined</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">Notes</label>
+                <textarea className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800" rows={3} value={editMatch.notes} onChange={(e)=>setEditMatch({...editMatch, notes:e.target.value})} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === "players" && (
+            <div className="pt-2">
+              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider flex items-center gap-2"><Users className="w-4 h-4 text-gray-500" /> Participants</label>
+              {removeErr && <p className="text-red-600 text-sm font-semibold mb-2">{removeErr}</p>}
+              {loadingParts ? (
+                <p className="text-sm text-gray-500">Loading participants…</p>
+              ) : participants.length ? (
+                <ul className="divide-y divide-gray-100 border rounded-xl">
+                  {participants.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="text-gray-800">{p.profile?.full_name || `Player ${p.player_id}`}{p.player_id === hostId && (<span className="ml-2 text-blue-700 text-xs font-bold">Host</span>)}</span>
+                      {p.player_id !== hostId && (
+                        <button onClick={() => handleRemoveParticipant(p.player_id)} className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"><X className="w-4 h-4" />Remove</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No participants yet.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <p className="text-sm text-gray-500 font-semibold">No settings available.</p>
+          )}
 
           <div className="flex gap-3 mt-8">
-            <button
-              onClick={() => {
-                setShowEditModal(false);
-                setEditMatch(null);
-              }}
-              className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
-            >
-              CANCEL
-            </button>
-            <button
-              onClick={handleSave}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg"
-            >
-              SAVE CHANGES
-            </button>
+            <button onClick={() => { setShowEditModal(false); setEditMatch(null); }} className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50">CANCEL</button>
+            <button onClick={handleSave} className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg">SAVE CHANGES</button>
           </div>
+          <p className="mt-3 text-center text-xs font-semibold text-gray-500">Saving changes will notify all confirmed players</p>
         </div>
       </div>
     );
