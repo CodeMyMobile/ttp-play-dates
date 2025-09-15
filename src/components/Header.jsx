@@ -43,7 +43,9 @@ export default function Header() {
       localStorage.removeItem("authToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-    } catch {}
+    } catch {
+      // ignore
+    }
     setUser(null);
     navigate("/", { replace: true });
   };
