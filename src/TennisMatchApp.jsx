@@ -1064,8 +1064,8 @@ const TennisMatchApp = () => {
     const handlePublish = async () => {
         try {
           const payload = {
-            status: "open",
-            type: matchData.type === "closed" ? "private" : "open",
+            status: "upcoming",
+            match_type: matchData.type === "closed" ? "private" : "open",
             dateTime: new Date(matchData.dateTime).toISOString(),
             location: matchData.location,
             latitude: matchData.latitude,
@@ -1207,7 +1207,8 @@ const TennisMatchApp = () => {
                       try {
                         const payload = {
                           status: "draft",
-                          type: matchData.type === "closed" ? "private" : "open",
+                          match_type:
+                            matchData.type === "closed" ? "private" : "open",
                           dateTime: new Date(matchData.dateTime).toISOString(),
                           location: matchData.location,
                           latitude: matchData.latitude,
