@@ -1103,7 +1103,12 @@ const TennisMatchApp = () => {
       try {
         return await createMatch(payload);
       } catch (err) {
-        const message = err?.message?.toLowerCase?.() || "";
+        const message = (
+          err.response?.data?.message ||
+          err.response?.data ||
+          err.message ||
+          ""
+        ).toLowerCase();
         const hasStatusFields = payload.status && payload.match_type;
         if (hasStatusFields && message.includes("match_status_enum")) {
           const fallbackPayload = {
@@ -1835,7 +1840,8 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (err) {
+        } catch (error) {
+          console.error(error);
           if (!alive) return;
           setParticipants([]);
           setParticipantsError("Failed to load participants");
@@ -3065,8 +3071,8 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (_) {
-          // ignore
+        } catch (error) {
+          console.error(error);
         } finally {
           if (alive) setLoadingParts(false);
         }
@@ -3085,7 +3091,8 @@ const TennisMatchApp = () => {
         await removeParticipant(participantsMatchId, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
         setRemoveErr("");
-      } catch (_) {
+      } catch (error) {
+        console.error(error);
         setRemoveErr("Failed to remove participant");
         setTimeout(() => setRemoveErr(""), 2500);
       }
@@ -3176,7 +3183,8 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (_) {
+        } catch (error) {
+          console.error(error);
           // ignore; leave list empty
         } finally {
           if (alive) setLoadingParts(false);
@@ -3196,7 +3204,8 @@ const TennisMatchApp = () => {
         await removeParticipant(editMatch.id, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
         setRemoveErr("");
-      } catch (_) {
+      } catch (error) {
+        console.error(error);
         setRemoveErr("Failed to remove participant");
         setTimeout(() => setRemoveErr(""), 2500);
       }
