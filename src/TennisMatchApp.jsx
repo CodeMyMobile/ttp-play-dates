@@ -1062,23 +1062,23 @@ const TennisMatchApp = () => {
     );
 
     const handlePublish = async () => {
-        try {
-          const payload = {
-            status: "open",
-            type: matchData.type === "closed" ? "private" : "open",
-            dateTime: new Date(matchData.dateTime).toISOString(),
-            location: matchData.location,
-            latitude: matchData.latitude,
-            longitude: matchData.longitude,
-            playerCount: matchData.playerCount,
-            skillLevel:
-              matchData.type === "closed"
-                ? DEFAULT_SKILL_LEVEL
-                : matchData.skillLevel,
-            format: matchData.format,
-            notes: matchData.notes,
-          };
-          await createMatch(payload);
+      try {
+        const payload = {
+          status: "upcoming",
+          type: matchData.type === "closed" ? "private" : "open",
+          dateTime: new Date(matchData.dateTime).toISOString(),
+          location: matchData.location,
+          latitude: matchData.latitude,
+          longitude: matchData.longitude,
+          playerCount: matchData.playerCount,
+          skillLevel:
+            matchData.type === "closed"
+              ? DEFAULT_SKILL_LEVEL
+              : matchData.skillLevel,
+          format: matchData.format,
+          notes: matchData.notes,
+        };
+        await createMatch(payload);
         displayToast("Match published successfully! 🎾");
         setCurrentScreen("browse");
         setCreateStep(1);
