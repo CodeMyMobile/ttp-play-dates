@@ -4,11 +4,13 @@ import { createHashRouter, RouterProvider, Navigate } from "react-router-dom";
 import InvitationPage from "./InvitationPage.jsx";
 import MatchPage from "./pages/MatchPage.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
+import TennisMatchCreatorComplete from "./pages/TennisMatchCreatorComplete.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
 
 const router = createHashRouter([
   // App home
   { path: "/", element: <TennisMatchApp /> },
+  { path: "/creator", element: <TennisMatchCreatorComplete /> },
 
   // Match details (direct link)
   { path: "/matches/:id", element: <MatchPage /> },

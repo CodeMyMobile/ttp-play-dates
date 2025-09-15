@@ -43,7 +43,11 @@ export default function Header() {
       localStorage.removeItem("authToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-    } catch {}
+    } catch (storageError) {
+      if (import.meta.env.DEV) {
+        console.warn("Unable to clear session storage", storageError);
+      }
+    }
     setUser(null);
     navigate("/", { replace: true });
   };

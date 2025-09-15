@@ -1062,23 +1062,23 @@ const TennisMatchApp = () => {
     );
 
     const handlePublish = async () => {
-        try {
-          const payload = {
-            status: "open",
-            type: matchData.type === "closed" ? "private" : "open",
-            dateTime: new Date(matchData.dateTime).toISOString(),
-            location: matchData.location,
-            latitude: matchData.latitude,
-            longitude: matchData.longitude,
-            playerCount: matchData.playerCount,
-            skillLevel:
-              matchData.type === "closed"
-                ? DEFAULT_SKILL_LEVEL
-                : matchData.skillLevel,
-            format: matchData.format,
-            notes: matchData.notes,
-          };
-          await createMatch(payload);
+      try {
+        const payload = {
+          status: "upcoming",
+          type: matchData.type === "closed" ? "private" : "open",
+          dateTime: new Date(matchData.dateTime).toISOString(),
+          location: matchData.location,
+          latitude: matchData.latitude,
+          longitude: matchData.longitude,
+          playerCount: matchData.playerCount,
+          skillLevel:
+            matchData.type === "closed"
+              ? DEFAULT_SKILL_LEVEL
+              : matchData.skillLevel,
+          format: matchData.format,
+          notes: matchData.notes,
+        };
+        await createMatch(payload);
         displayToast("Match published successfully! 🎾");
         setCurrentScreen("browse");
         setCreateStep(1);
@@ -1802,10 +1802,13 @@ const TennisMatchApp = () => {
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
-        } catch (err) {
+        } catch (error) {
           if (!alive) return;
           setParticipants([]);
           setParticipantsError("Failed to load participants");
+          if (import.meta.env.DEV) {
+            console.warn("Failed to load participants", error);
+          }
         } finally {
           if (alive) setParticipantsLoading(false);
         }
@@ -3025,19 +3028,21 @@ const TennisMatchApp = () => {
     React.useEffect(() => {
       if (!showParticipantsModal || !participantsMatchId) return;
       let alive = true;
-      (async () => {
-        try {
-          setLoadingParts(true);
-          const data = await getMatch(participantsMatchId);
-          if (!alive) return;
-          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
-          setHostId(data.match?.host_id ?? null);
-        } catch (_) {
-          // ignore
-        } finally {
-          if (alive) setLoadingParts(false);
-        }
-      })();
+        (async () => {
+          try {
+            setLoadingParts(true);
+            const data = await getMatch(participantsMatchId);
+            if (!alive) return;
+            setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+            setHostId(data.match?.host_id ?? null);
+          } catch (error) {
+            if (import.meta.env.DEV) {
+              console.warn("Failed to refresh participants", error);
+            }
+          } finally {
+            if (alive) setLoadingParts(false);
+          }
+        })();
       return () => {
         alive = false;
       };
@@ -3047,15 +3052,18 @@ const TennisMatchApp = () => {
 
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
-      try {
-        if (!participantsMatchId) return;
-        await removeParticipant(participantsMatchId, playerId);
-        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
-        setRemoveErr("");
-      } catch (_) {
-        setRemoveErr("Failed to remove participant");
-        setTimeout(() => setRemoveErr(""), 2500);
-      }
+        try {
+          if (!participantsMatchId) return;
+          await removeParticipant(participantsMatchId, playerId);
+          setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+          setRemoveErr("");
+        } catch (error) {
+          setRemoveErr("Failed to remove participant");
+          setTimeout(() => setRemoveErr(""), 2500);
+          if (import.meta.env.DEV) {
+            console.warn("Failed to remove participant", error);
+          }
+        }
     };
 
     if (!showParticipantsModal || !participantsMatchId) return null;
@@ -3136,19 +3144,21 @@ const TennisMatchApp = () => {
     React.useEffect(() => {
       if (!showEditModal || !editMatch?.id) return;
       let alive = true;
-      (async () => {
-        try {
-          setLoadingParts(true);
-          const data = await getMatch(editMatch.id);
-          if (!alive) return;
-          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
-          setHostId(data.match?.host_id ?? null);
-        } catch (_) {
-          // ignore; leave list empty
-        } finally {
-          if (alive) setLoadingParts(false);
-        }
-      })();
+        (async () => {
+          try {
+            setLoadingParts(true);
+            const data = await getMatch(editMatch.id);
+            if (!alive) return;
+            setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+            setHostId(data.match?.host_id ?? null);
+          } catch (error) {
+            if (import.meta.env.DEV) {
+              console.warn("Failed to refresh editable participants", error);
+            }
+          } finally {
+            if (alive) setLoadingParts(false);
+          }
+        })();
       return () => {
         alive = false;
       };
@@ -3158,15 +3168,18 @@ const TennisMatchApp = () => {
 
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
-      try {
-        if (!editMatch?.id) return;
-        await removeParticipant(editMatch.id, playerId);
-        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
-        setRemoveErr("");
-      } catch (_) {
-        setRemoveErr("Failed to remove participant");
-        setTimeout(() => setRemoveErr(""), 2500);
-      }
+        try {
+          if (!editMatch?.id) return;
+          await removeParticipant(editMatch.id, playerId);
+          setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+          setRemoveErr("");
+        } catch (error) {
+          setRemoveErr("Failed to remove participant");
+          setTimeout(() => setRemoveErr(""), 2500);
+          if (import.meta.env.DEV) {
+            console.warn("Failed to remove participant", error);
+          }
+        }
     };
 
     if (!showEditModal || !editMatch) return null;
