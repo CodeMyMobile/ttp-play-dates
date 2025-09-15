@@ -96,12 +96,20 @@ export default function InvitationPage() {
       if (access_token) {
         try {
           localStorage.setItem("authToken", access_token);
-        } catch {}
+        } catch (storageError) {
+          if (import.meta.env.DEV) {
+            console.warn("Unable to persist auth token", storageError);
+          }
+        }
       }
       if (refresh_token) {
         try {
           localStorage.setItem("refreshToken", refresh_token);
-        } catch {}
+        } catch (storageError) {
+          if (import.meta.env.DEV) {
+            console.warn("Unable to persist refresh token", storageError);
+          }
+        }
       }
 
       // Persist a lightweight user object for app state restore
@@ -122,7 +130,11 @@ export default function InvitationPage() {
         };
         try {
           localStorage.setItem("user", JSON.stringify(user));
-        } catch {}
+        } catch (storageError) {
+          if (import.meta.env.DEV) {
+            console.warn("Unable to persist user profile", storageError);
+          }
+        }
       }
 
       setPhase("done");
