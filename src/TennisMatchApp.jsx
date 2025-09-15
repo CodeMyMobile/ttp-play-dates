@@ -1061,24 +1061,48 @@ const TennisMatchApp = () => {
       </div>
     );
 
+    const buildMatchPayload = (status) => {
+      let isoDate;
+      if (matchData.dateTime) {
+        const parsed = new Date(matchData.dateTime);
+        if (!Number.isNaN(parsed.getTime())) {
+          isoDate = parsed.toISOString();
+        }
+      }
+
+      const privacy = matchData.type === "closed" ? "private" : "open";
+      const skillLevelValue =
+        matchData.type === "closed"
+          ? DEFAULT_SKILL_LEVEL
+          : matchData.skillLevel || undefined;
+
+      const basePayload = {
+        status,
+        match_type: privacy,
+        start_date_time: isoDate,
+        dateTime: isoDate,
+        location_text: matchData.location || undefined,
+        location: matchData.location || undefined,
+        latitude: matchData.latitude ?? undefined,
+        longitude: matchData.longitude ?? undefined,
+        player_limit: matchData.playerCount,
+        playerCount: matchData.playerCount,
+        skill_level_min: skillLevelValue,
+        skillLevel: skillLevelValue,
+        match_format: matchData.format || undefined,
+        format: matchData.format || undefined,
+        notes: matchData.notes || undefined,
+      };
+
+      return Object.fromEntries(
+        Object.entries(basePayload).filter(([, value]) => value !== undefined)
+      );
+    };
+
     const handlePublish = async () => {
-        try {
-          const payload = {
-            status: "upcoming",
-            match_type: matchData.type === "closed" ? "private" : "open",
-            dateTime: new Date(matchData.dateTime).toISOString(),
-            location: matchData.location,
-            latitude: matchData.latitude,
-            longitude: matchData.longitude,
-            playerCount: matchData.playerCount,
-            skillLevel:
-              matchData.type === "closed"
-                ? DEFAULT_SKILL_LEVEL
-                : matchData.skillLevel,
-            format: matchData.format,
-            notes: matchData.notes,
-          };
-          await createMatch(payload);
+      try {
+        const payload = buildMatchPayload("upcoming");
+        await createMatch(payload);
         displayToast("Match published successfully! 🎾");
         setCurrentScreen("browse");
         setCreateStep(1);
@@ -1086,7 +1110,7 @@ const TennisMatchApp = () => {
         fetchMatches();
       } catch (err) {
         displayToast(
-          err.response?.data?.message || "Failed to publish match",
+          err.response?.data?.message || err.message || "Failed to publish match",
           "error"
         );
       }
@@ -1205,22 +1229,7 @@ const TennisMatchApp = () => {
                   onClick={async () => {
                     if (!inviteMatchId) {
                       try {
-                        const payload = {
-                          status: "draft",
-                          match_type:
-                            matchData.type === "closed" ? "private" : "open",
-                          dateTime: new Date(matchData.dateTime).toISOString(),
-                          location: matchData.location,
-                          latitude: matchData.latitude,
-                          longitude: matchData.longitude,
-                          playerCount: matchData.playerCount,
-                          skillLevel:
-                            matchData.type === "closed"
-                              ? DEFAULT_SKILL_LEVEL
-                              : matchData.skillLevel,
-                          format: matchData.format,
-                          notes: matchData.notes,
-                        };
+                        const payload = buildMatchPayload("draft");
                         const created = await createMatch(payload);
                         const newId =
                           created.match?.id || created.match_id || created.id;
@@ -1234,6 +1243,7 @@ const TennisMatchApp = () => {
                       } catch (err) {
                         displayToast(
                           err.response?.data?.message ||
+                            err.message ||
                             "Failed to create match",
                           "error"
                         );
