@@ -96,12 +96,16 @@ export default function InvitationPage() {
       if (access_token) {
         try {
           localStorage.setItem("authToken", access_token);
-        } catch {}
+        } catch {
+          // ignore localStorage write errors
+        }
       }
       if (refresh_token) {
         try {
           localStorage.setItem("refreshToken", refresh_token);
-        } catch {}
+        } catch {
+          // ignore localStorage write errors
+        }
       }
 
       // Persist a lightweight user object for app state restore
@@ -122,7 +126,9 @@ export default function InvitationPage() {
         };
         try {
           localStorage.setItem("user", JSON.stringify(user));
-        } catch {}
+        } catch {
+          // ignore localStorage write errors
+        }
       }
 
       setPhase("done");
