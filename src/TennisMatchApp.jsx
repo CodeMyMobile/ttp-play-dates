@@ -14,6 +14,7 @@ import {
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
+import CreateMatchModal from "./components/CreateMatchModal";
 import { getInviteByToken } from "./services/invites";
 import { login, signup, updatePersonalDetails, forgotPassword } from "./services/auth";
 import {
@@ -68,6 +69,7 @@ const TennisMatchApp = () => {
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [inviteMatchId, setInviteMatchId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateMatchModal, setShowCreateMatchModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [participantsMatchId, setParticipantsMatchId] = useState(null);
   const [showMatchMenu, setShowMatchMenu] = useState(null);
@@ -140,6 +142,11 @@ const TennisMatchApp = () => {
   const displayToast = (message, type = "success") => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
+  };
+
+  const handleMatchCreated = () => {
+    displayToast("Match created successfully! 🎾");
+    fetchMatches(); // Refresh the matches list
   };
 
   useEffect(() => {
@@ -415,8 +422,7 @@ const TennisMatchApp = () => {
               if (!currentUser) {
                 setShowSignInModal(true);
               } else {
-                setCurrentScreen("create");
-                setCreateStep(1);
+                setShowCreateMatchModal(true);
               }
             }}
             className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
@@ -3443,6 +3449,11 @@ const TennisMatchApp = () => {
       {SignInModal()}
       {EditModal()}
       {ParticipantsModal()}
+      <CreateMatchModal
+        isOpen={showCreateMatchModal}
+        onClose={() => setShowCreateMatchModal(false)}
+        onCreated={handleMatchCreated}
+      />
       {Toast()}
       <ProfileManager
         isOpen={showProfileManager}
