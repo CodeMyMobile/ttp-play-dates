@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   listMatches,
   createMatch,
@@ -57,6 +58,7 @@ import Autocomplete from "react-google-autocomplete";
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
 const TennisMatchApp = () => {
+  const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
   const [currentScreen, setCurrentScreen] = useState("browse");
   const [activeFilter, setActiveFilter] = useState("my");
@@ -415,8 +417,7 @@ const TennisMatchApp = () => {
               if (!currentUser) {
                 setShowSignInModal(true);
               } else {
-                setCurrentScreen("create");
-                setCreateStep(1);
+                navigate("/create");
               }
             }}
             className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
