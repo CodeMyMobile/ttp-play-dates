@@ -36,7 +36,7 @@ jobs:
         run: npm ci
       - name: Build preview
         if: github.event.action != 'closed'
-        run: npm run build
+        run: npm run build -- --base="/ttp-play-dates/pr-preview/pr-${{ github.event.number }}/"
       - name: Ensure dist directory exists for teardown
         if: github.event.action == 'closed'
         run: mkdir -p dist
