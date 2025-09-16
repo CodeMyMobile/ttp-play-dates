@@ -59,3 +59,7 @@ This project can be hosted on GitHub Pages. Run the deploy script to build the s
 ```
 npm run deploy
 ```
+
+## Pull Request Previews
+
+Every pull request automatically builds with GitHub Actions and publishes a preview to GitHub Pages. Open the pull request's **Deployments** section to launch the preview and verify the changes before merging. Preview links refresh after each push and are removed when the pull request is closed.
