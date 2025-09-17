@@ -1392,16 +1392,38 @@ const TennisMatchApp = () => {
                       }))
                     }
                     onPlaceSelected={(place) => {
-                      const address = place.formatted_address || place.name || "";
-                      const lat = place.geometry?.location?.lat();
-                      const lng = place.geometry?.location?.lng();
-                      setMatchData((prev) => ({
-                        ...prev,
-                        location: address,
-                        latitude: lat,
-                        longitude: lng,
-                        mapUrl: buildMapsUrl(lat, lng, address),
-                      }));
+                      const placeName =
+                        typeof place?.name === "string" ? place.name.trim() : "";
+                      const formattedAddress =
+                        typeof place?.formatted_address === "string"
+                          ? place.formatted_address.trim()
+                          : "";
+                      const lat = place.geometry?.location?.lat?.();
+                      const lng = place.geometry?.location?.lng?.();
+                      const mapQuery = formattedAddress || placeName || "";
+                      setMatchData((prev) => {
+                        const nextLocation =
+                          placeName || formattedAddress || prev.location || "";
+                        const nextLat =
+                          typeof lat === "number"
+                            ? lat
+                            : (prev.latitude ?? null);
+                        const nextLng =
+                          typeof lng === "number"
+                            ? lng
+                            : (prev.longitude ?? null);
+                        return {
+                          ...prev,
+                          location: nextLocation,
+                          latitude: nextLat,
+                          longitude: nextLng,
+                          mapUrl: buildMapsUrl(
+                            nextLat,
+                            nextLng,
+                            mapQuery || nextLocation
+                          ),
+                        };
+                      });
                     }}
                     options={{
                       types: ["geocode", "establishment"],
@@ -3286,14 +3308,32 @@ const TennisMatchApp = () => {
                     })
                   }
                   onPlaceSelected={(place) => {
-                    const address = place.formatted_address || place.name || "";
-                    const lat = place.geometry?.location?.lat();
-                    const lng = place.geometry?.location?.lng();
-                    setEditMatch({
-                      ...editMatch,
-                      location: address,
-                      latitude: lat,
-                      longitude: lng,
+                    const placeName =
+                      typeof place?.name === "string" ? place.name.trim() : "";
+                    const formattedAddress =
+                      typeof place?.formatted_address === "string"
+                        ? place.formatted_address.trim()
+                        : "";
+                    const lat = place.geometry?.location?.lat?.();
+                    const lng = place.geometry?.location?.lng?.();
+                    setEditMatch((prev) => {
+                      const current = prev ?? {};
+                      const nextLocation =
+                        placeName || formattedAddress || current.location || "";
+                      const nextLat =
+                        typeof lat === "number"
+                          ? lat
+                          : (current.latitude ?? null);
+                      const nextLng =
+                        typeof lng === "number"
+                          ? lng
+                          : (current.longitude ?? null);
+                      return {
+                        ...current,
+                        location: nextLocation,
+                        latitude: nextLat,
+                        longitude: nextLng,
+                      };
                     });
                   }}
                   options={{

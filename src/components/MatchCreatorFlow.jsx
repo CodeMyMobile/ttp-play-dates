@@ -640,18 +640,26 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   }))
                 }
                 onPlaceSelected={(place) => {
-                  const address = place.formatted_address || place.name || matchData.location;
+                  const placeName =
+                    typeof place?.name === "string" ? place.name.trim() : "";
+                  const formattedAddress =
+                    typeof place?.formatted_address === "string"
+                      ? place.formatted_address.trim()
+                      : "";
+                  const locationLabel =
+                    placeName || formattedAddress || matchData.location || "";
                   const lat = place.geometry?.location?.lat?.();
                   const lng = place.geometry?.location?.lng?.();
                   setMatchData((prev) => ({
                     ...prev,
-                    location: address,
+                    location: locationLabel,
                     latitude: typeof lat === "number" ? lat : prev.latitude,
                     longitude: typeof lng === "number" ? lng : prev.longitude,
                   }));
                 }}
                 options={{
                   types: ["establishment"],
+                  fields: ["formatted_address", "geometry", "name"],
                 }}
                 className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="e.g., Oceanside Tennis Center"
