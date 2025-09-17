@@ -650,7 +650,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     longitude: typeof lng === "number" ? lng : prev.longitude,
                   }));
                 }}
-                types={["establishment"]}
+                options={{
+                  types: ["establishment"],
+                }}
                 className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="e.g., Oceanside Tennis Center"
               />
