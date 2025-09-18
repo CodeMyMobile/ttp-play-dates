@@ -63,11 +63,11 @@ export const removeParticipant = (matchId, playerId) =>
     })
   );
 
-export const sendInvites = (matchId, userIds) =>
+export const sendInvites = (matchId, { playerIds = [], phoneNumbers = [] } = {}) =>
   unwrap(
     api(`/matches/${matchId}/invites`, {
       method: "POST",
-      body: JSON.stringify({ playerIds: userIds }),
+      body: JSON.stringify({ playerIds, phoneNumbers }),
     })
   );
 

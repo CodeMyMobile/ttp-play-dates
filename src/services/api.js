@@ -28,7 +28,15 @@ export const unwrap = (p) =>
     }
     if (!r.ok) {
       const msg = data?.error || r.statusText || "API_ERROR";
-      throw new Error(msg);
+      const error = new Error(msg);
+      error.status = r.status;
+      error.data = data;
+      error.response = {
+        data,
+        status: r.status,
+        statusText: r.statusText,
+      };
+      throw error;
     }
     return data;
   });

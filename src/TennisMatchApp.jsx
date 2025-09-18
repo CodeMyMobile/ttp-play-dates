@@ -43,6 +43,7 @@ import {
   Copy,
   Mail,
   MessageCircle,
+  Phone,
   AlertCircle,
   ArrowRight,
   Zap,
@@ -68,6 +69,10 @@ const TennisMatchApp = () => {
   const [createStep, setCreateStep] = useState(1);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
+  const [manualContacts, setManualContacts] = useState(new Map());
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactError, setContactError] = useState("");
   const [inviteMatchId, setInviteMatchId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
@@ -117,6 +122,8 @@ const TennisMatchApp = () => {
   const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
   const [viewMatch, setViewMatch] = useState(null);
+
+  const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
 
   useEffect(() => {
     setMatchPage(1);
@@ -183,6 +190,33 @@ const TennisMatchApp = () => {
       : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
   };
 
+  const normalizePhoneValue = (value) => {
+    if (!value) return "";
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("+")) {
+      const cleaned = `+${trimmed.slice(1).replace(/\D/g, "")}`;
+      return cleaned.length > 1 ? cleaned : "";
+    }
+    const digits = trimmed.replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return `+${digits}`;
+  };
+
+  const formatPhoneDisplay = (value) => {
+    if (!value) return "";
+    const digits = value.replace(/\D/g, "");
+    const clean = digits.length === 11 && digits.startsWith("1")
+      ? digits.slice(1)
+      : digits;
+    if (clean.length === 10) {
+      return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+    }
+    return value;
+  };
+
   const buildMapsUrl = (lat, lng, address) => {
     if (lat && lng) {
       return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
@@ -193,6 +227,39 @@ const TennisMatchApp = () => {
       )}`;
     }
     return "";
+  };
+
+  const handleAddManualContact = () => {
+    setContactError("");
+    const normalized = normalizePhoneValue(contactPhone);
+    if (!normalized) {
+      setContactError("Enter a valid phone number with country code or 10 digits.");
+      return;
+    }
+    if (manualContacts.has(normalized)) {
+      setContactError("That phone number is already selected.");
+      return;
+    }
+    const name = contactName.trim();
+    setManualContacts((prev) => {
+      const next = new Map(prev);
+      next.set(normalized, {
+        key: normalized,
+        phone: normalized,
+        name,
+      });
+      return next;
+    });
+    setContactName("");
+    setContactPhone("");
+  };
+
+  const handleRemoveManualContact = (key) => {
+    setManualContacts((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
   };
 
   const handleViewDetails = async (matchId) => {
@@ -948,6 +1015,10 @@ const TennisMatchApp = () => {
                   });
 
                   setSelectedPlayers(initial);
+                  setManualContacts(new Map());
+                  setContactName("");
+                  setContactPhone("");
+                  setContactError("");
                   setExistingPlayerIds(
                     new Set([...participantIds, ...inviteeIds])
                   );
@@ -2169,17 +2240,77 @@ const TennisMatchApp = () => {
                   </button>
                 </div>
               )}
-            </div>
+          </div>
 
-            {/* Selected players display */}
-            {selectedPlayers.size > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          {/* Selected players display */}
+          <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-6 mb-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Phone className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
+                  Invite by phone number
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Enter a mobile number and we'll text them a magic link so they can RSVP
+                  instantly.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <input
+                type="text"
+                value={contactName}
+                onChange={(e) => {
+                  setContactName(e.target.value);
+                  setContactError("");
+                }}
+                placeholder="Full name (optional)"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
+              />
+              <input
+                type="tel"
+                value={contactPhone}
+                onChange={(e) => {
+                  setContactPhone(e.target.value);
+                  setContactError("");
+                }}
+                placeholder="+15551234567"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
+              />
+            </div>
+            {contactError && (
+              <p className="text-xs font-semibold text-red-600 mb-2">{contactError}</p>
+            )}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-xs text-gray-500">
+                Phone-only contacts will still get SMS reminders and a magic-link login.
+              </p>
+              <button
+                onClick={handleAddManualContact}
+                disabled={!contactPhone.trim()}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add contact
+              </button>
+            </div>
+          </div>
+
+          {totalSelectedInvitees > 0 && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
-                    Selected ({selectedPlayers.size})
+                    Selected ({totalSelectedInvitees})
                   </h3>
                   <button
-                    onClick={() => setSelectedPlayers(new Map())}
+                    onClick={() => {
+                      setSelectedPlayers(new Map());
+                      setManualContacts(new Map());
+                      setContactName("");
+                      setContactPhone("");
+                      setContactError("");
+                    }}
                     className="text-sm text-gray-500 hover:text-gray-700 font-bold"
                   >
                     Clear all
@@ -2217,6 +2348,22 @@ const TennisMatchApp = () => {
                       )}
                     </span>
                     ))}
+                  {Array.from(manualContacts.values()).map((contact) => (
+                    <span
+                      key={contact.key}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-sm font-bold text-blue-700"
+                    >
+                      {contact.name || formatPhoneDisplay(contact.phone)}
+                      <span className="ml-1 text-xs text-blue-500">SMS</span>
+                      <button
+                        onClick={() => handleRemoveManualContact(contact.key)}
+                        className="ml-1 text-blue-600 hover:text-blue-800"
+                        aria-label={`Remove ${contact.name || contact.phone}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -2231,6 +2378,10 @@ const TennisMatchApp = () => {
                     setShowPreview(false);
                     setCreateStep(1);
                     setSelectedPlayers(new Map());
+                    setManualContacts(new Map());
+                    setContactName("");
+                    setContactPhone("");
+                    setContactError("");
                     setExistingPlayerIds(new Set());
                     setInviteMatchId(null);
                     fetchMatches();
@@ -2241,8 +2392,8 @@ const TennisMatchApp = () => {
                 </button>
                 <button
                   onClick={async () => {
-                  if (selectedPlayers.size === 0) {
-                    displayToast("Please select at least one player", "error");
+                  if (totalSelectedInvitees === 0) {
+                    displayToast("Please add at least one invitee", "error");
                     return;
                   }
                   if (!inviteMatchId) {
@@ -2255,20 +2406,36 @@ const TennisMatchApp = () => {
                         .filter(
                           (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id)
                         );
-                      if (newIds.length === 0) {
-                        displayToast("No new players selected", "error");
+                      const phoneNumbers = Array.from(manualContacts.values()).map(
+                        (contact) =>
+                          contact.name
+                            ? { phone: contact.phone, fullName: contact.name }
+                            : contact.phone
+                      );
+                      if (newIds.length === 0 && phoneNumbers.length === 0) {
+                        displayToast("Everyone you picked is already invited", "error");
                         return;
                       }
                       await updateMatch(inviteMatchId, { status: "upcoming" });
-                      await sendInvites(inviteMatchId, newIds);
+                      const response = await sendInvites(inviteMatchId, {
+                        playerIds: newIds,
+                        phoneNumbers,
+                      });
 
-                      displayToast(
-                        `Invites sent to ${newIds.length} ${
-                          newIds.length === 1 ? "player" : "players"
-                        }! 🎾`
-                      );
+                      const message = response?.message
+                        ? response.message
+                        : `Invites sent to ${newIds.length + phoneNumbers.length} ${
+                            newIds.length + phoneNumbers.length === 1
+                              ? "player"
+                              : "players"
+                          }! 🎾`;
+                      displayToast(message);
                       setCurrentScreen("browse");
                       setSelectedPlayers(new Map());
+                      setManualContacts(new Map());
+                      setContactName("");
+                      setContactPhone("");
+                      setContactError("");
                       setExistingPlayerIds(new Set());
 
                       setShowPreview(false);
@@ -2276,17 +2443,27 @@ const TennisMatchApp = () => {
                       setInviteMatchId(null);
                       fetchMatches();
                     } catch (err) {
-                    displayToast(
-                      err.response?.data?.message || "Failed to send invites",
-                      "error"
-                    );
+                    if (
+                      err.data?.error === "invalid_phone_numbers" &&
+                      Array.isArray(err.data?.details)
+                    ) {
+                      displayToast(
+                        `Fix these numbers: ${err.data.details.join(", ")}`,
+                        "error"
+                      );
+                    } else {
+                      displayToast(
+                        err.response?.data?.message || err.message || "Failed to send invites",
+                        "error"
+                      );
+                    }
                   }
                 }}
                 className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
               >
                 <Send className="w-5 h-5" />
                 SEND INVITES
-                {selectedPlayers.size > 0 && ` (${selectedPlayers.size})`}
+                {totalSelectedInvitees > 0 && ` (${totalSelectedInvitees})`}
               </button>
             </div>
           </div>
@@ -2401,8 +2578,43 @@ const TennisMatchApp = () => {
             {invitees.length ? (
               <ul className="space-y-1">
                 {invitees.map((i) => (
-                  <li key={i.id} className="text-gray-700">
-                    {i.profile?.full_name || `Player ${i.invitee_id}`} - {i.status}
+                  <li
+                    key={i.id || i.invitee_id}
+                    className="flex items-start justify-between gap-3 text-gray-700 bg-gray-50 rounded-lg px-3 py-2"
+                  >
+                    <div>
+                      <div className="font-semibold">
+                        {i.profile?.full_name || `Player ${i.invitee_id}`}
+                      </div>
+                      {(() => {
+                        const phone =
+                          i.profile?.phone ||
+                          i.profile?.phone_number ||
+                          i.phone_number ||
+                          i.phone;
+                        const email = i.profile?.email;
+                        const isPlaceholderEmail =
+                          typeof email === "string" && email.endsWith("@ttpplaydates.com");
+                        return (
+                          <>
+                            {phone && (
+                              <div className="text-xs text-gray-500 flex items-center gap-1">
+                                <Phone className="w-3 h-3" />
+                                {formatPhoneDisplay(String(phone))}
+                              </div>
+                            )}
+                            {isPlaceholderEmail && (
+                              <div className="text-xs text-blue-600 font-semibold">
+                                SMS invite active
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      {i.status}
+                    </span>
                   </li>
                 ))}
               </ul>
