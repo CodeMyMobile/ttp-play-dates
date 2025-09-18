@@ -13,6 +13,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Phone,
   Edit,
   Plus,
   Search,
@@ -59,6 +60,7 @@ const initialMatchData = () => {
     format: "Doubles",
     notes: "",
     invitedPlayers: [],
+    manualInvitees: [],
   };
 };
 
@@ -140,6 +142,33 @@ const formatRelativeDate = (isoValue) => {
   return `${diffMonths} months ago`;
 };
 
+const normalizePhoneValue = (value) => {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("+")) {
+    const cleaned = `+${trimmed.slice(1).replace(/\D/g, "")}`;
+    return cleaned.length > 1 ? cleaned : "";
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return `+${digits}`;
+};
+
+const formatPhoneDisplay = (value) => {
+  if (!value) return "";
+  const digits = value.replace(/\D/g, "");
+  const clean = digits.length === 11 && digits.startsWith("1")
+    ? digits.slice(1)
+    : digits;
+  if (clean.length === 10) {
+    return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+  }
+  return value;
+};
+
 const normalizePlayer = (player) => {
   const id = Number(player?.user_id ?? player?.id);
   const name = player?.full_name || player?.name || player?.email || "Player";
@@ -202,6 +231,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState(null);
   const [quickDates] = useState(() => quickDateOptions());
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactError, setContactError] = useState("");
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -214,6 +246,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setSearchResults([]);
     setShareLink("");
     setCurrentStep(1);
+    setContactName("");
+    setContactPhone("");
+    setContactError("");
   }, []);
 
   const invitedPlayers = useMemo(
@@ -221,7 +256,40 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     [matchData.invitedPlayers]
   );
 
-  const invitedCount = invitedPlayers.length;
+  const manualInvitees = useMemo(
+    () => matchData.manualInvitees || [],
+    [matchData.manualInvitees]
+  );
+
+  const combinedInvitees = useMemo(
+    () => [
+      ...invitedPlayers.map((player) => ({
+        type: "player",
+        id: player.id,
+        name: player.name,
+        avatar: player.avatar,
+        subtitle: [
+          player.ntrp ? `NTRP ${player.ntrp}` : "",
+          player.lastPlayed ? `Played ${player.lastPlayed}` : "",
+        ]
+          .filter(Boolean)
+          .join(" • "),
+      })),
+      ...manualInvitees.map((contact) => ({
+        type: "contact",
+        id: contact.id,
+        name: contact.name || formatPhoneDisplay(contact.phone),
+        avatar:
+          contact.name?.charAt(0).toUpperCase() ||
+          contact.displayPhone?.charAt(0) ||
+          "📱",
+        subtitle: formatPhoneDisplay(contact.phone),
+      })),
+    ],
+    [invitedPlayers, manualInvitees]
+  );
+
+  const invitedCount = combinedInvitees.length;
   const totalPlayers = matchData.totalPlayers || 4;
 
   const canInviteMore = useCallback(() => {
@@ -252,6 +320,41 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setMatchData((prev) => ({
       ...prev,
       invitedPlayers: invitedPlayers.filter((p) => p.id !== playerId),
+    }));
+  };
+
+  const handleAddManualInvite = () => {
+    setContactError("");
+    const normalized = normalizePhoneValue(contactPhone);
+    if (!normalized) {
+      setContactError("Enter a valid phone number with country code or 10 digits.");
+      return;
+    }
+    if (manualInvitees.some((invite) => invite.phone === normalized)) {
+      setContactError("That phone number is already on your invite list.");
+      return;
+    }
+    const name = contactName.trim();
+    setMatchData((prev) => ({
+      ...prev,
+      manualInvitees: [
+        ...(prev.manualInvitees || []),
+        {
+          id: `phone:${normalized}`,
+          phone: normalized,
+          displayPhone: formatPhoneDisplay(normalized),
+          name,
+        },
+      ],
+    }));
+    setContactName("");
+    setContactPhone("");
+  };
+
+  const handleRemoveManualInvite = (id) => {
+    setMatchData((prev) => ({
+      ...prev,
+      manualInvitees: (prev.manualInvitees || []).filter((invite) => invite.id !== id),
     }));
   };
 
@@ -303,6 +406,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     }
 
     setCreating(true);
+    let inviteMessage = "";
     try {
       const result = await createMatch(payload);
       const created = result?.match || result;
@@ -313,8 +417,29 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         const ids = invitedPlayers
           .map((p) => Number(p.id))
           .filter((id) => Number.isFinite(id));
-        if (ids.length) {
-          await sendInvites(matchId, ids);
+        const phoneNumbers = manualInvitees.map((invite) =>
+          invite.name
+            ? { phone: invite.phone, fullName: invite.name }
+            : invite.phone
+        );
+        if (ids.length || phoneNumbers.length) {
+          try {
+            const response = await sendInvites(matchId, {
+              playerIds: ids,
+              phoneNumbers,
+            });
+            inviteMessage = response?.message || inviteMessage;
+          } catch (inviteError) {
+            if (
+              inviteError.data?.error === "invalid_phone_numbers" &&
+              Array.isArray(inviteError.data?.details)
+            ) {
+              throw new Error(
+                `Invalid phone numbers: ${inviteError.data.details.join(", ")}`
+              );
+            }
+            throw inviteError;
+          }
         }
       }
 
@@ -330,7 +455,10 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       setShareLink(link);
       setCurrentStep(4);
       onMatchCreated?.(matchId);
-      showToast("Match created successfully!");
+      const successMessage = inviteMessage
+        ? `Match created successfully! ${inviteMessage}`
+        : "Match created successfully!";
+      showToast(successMessage);
     } catch (error) {
       console.error(error);
       showToast(error.message || "Failed to create match", "error");
@@ -835,20 +963,41 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   <div className="text-sm text-green-600">Organizer</div>
                 </div>
               </div>
-              {invitedPlayers.map((player) => (
-                <div key={player.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
-                    {player.avatar}
-                  </div>
+              {combinedInvitees.map((invitee) => (
+                <div
+                  key={invitee.id}
+                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
+                >
+                  {invitee.type === "contact" ? (
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                      <Phone size={18} />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+                      {invitee.avatar}
+                    </div>
+                  )}
                   <div className="flex-1">
-                    <div className="font-medium text-gray-900">{player.name}</div>
+                    <div className="font-medium text-gray-900">{invitee.name}</div>
                     <div className="text-sm text-gray-600">
-                      {player.ntrp ? `NTRP ${player.ntrp} • ` : ""}
-                      {player.lastPlayed}
+                      {invitee.type === "contact" ? (
+                        <span>
+                          {invitee.subtitle}
+                          <span className="ml-2 inline-flex items-center text-xs font-semibold text-blue-600">
+                            SMS magic link
+                          </span>
+                        </span>
+                      ) : (
+                        invitee.subtitle
+                      )}
                     </div>
                   </div>
                   <button
-                    onClick={() => handleRemovePlayer(player.id)}
+                    onClick={() =>
+                      invitee.type === "contact"
+                        ? handleRemoveManualInvite(invitee.id)
+                        : handleRemovePlayer(invitee.id)
+                    }
                     className="p-1 text-red-500 hover:bg-red-50 rounded-full"
                   >
                     <X size={16} />
@@ -949,6 +1098,57 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   )}
                 </div>
               )}
+              <div className="bg-white border-2 border-dashed border-blue-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <Phone size={18} />
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    <p className="font-semibold text-gray-800">Invite by phone number</p>
+                    <p>
+                      We'll text your contact a magic link so they can join even if they
+                      haven't set up email yet.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={contactName}
+                    onChange={(e) => {
+                      setContactName(e.target.value);
+                      setContactError("");
+                    }}
+                    placeholder="Full name (optional)"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  />
+                  <input
+                    type="tel"
+                    value={contactPhone}
+                    onChange={(e) => {
+                      setContactPhone(e.target.value);
+                      setContactError("");
+                    }}
+                    placeholder="+15551234567"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  />
+                </div>
+                {contactError && (
+                  <p className="text-xs font-semibold text-red-600">{contactError}</p>
+                )}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <p className="text-xs text-gray-500">
+                    Contacts without emails still receive an SMS invite instantly.
+                  </p>
+                  <button
+                    onClick={handleAddManualInvite}
+                    disabled={!contactPhone.trim()}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus size={16} /> Add contact
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
