@@ -844,8 +844,12 @@ const TennisMatchApp = () => {
                   location: match.location,
                   latitude: match.latitude,
                   longitude: match.longitude,
-
                   notes: match.notes || "",
+                  // add editable fields
+                  playerLimit: match.playerLimit,
+                  format: match.format,
+                  skillLevel: match.skillLevel,
+                  privacy: match.privacy,
                 });
                 setShowEditModal(true);
               }}
@@ -895,7 +899,13 @@ const TennisMatchApp = () => {
                       .toISOString()
                       .slice(0, 16),
                     location: matchToEdit.location,
+                    latitude: matchToEdit.latitude,
+                    longitude: matchToEdit.longitude,
                     notes: matchToEdit.notes || "",
+                    playerLimit: matchToEdit.playerLimit,
+                    format: matchToEdit.format,
+                    skillLevel: matchToEdit.skillLevel,
+                    privacy: matchToEdit.privacy,
                   });
                   setShowEditModal(true);
                 }
@@ -3450,13 +3460,19 @@ const TennisMatchApp = () => {
 
     const handleSave = async () => {
       try {
-        await updateMatch(editMatch.id, {
+        const payload = {
           start_date_time: new Date(editMatch.dateTime).toISOString(),
           location_text: editMatch.location,
           latitude: editMatch.latitude,
           longitude: editMatch.longitude,
           notes: editMatch.notes,
-        });
+          player_limit: Number(editMatch.playerLimit) || undefined,
+          match_format: editMatch.format,
+        };
+        if (editMatch?.privacy === "open") {
+          payload.skill_level_min = editMatch.skillLevel || undefined;
+        }
+        await updateMatch(editMatch.id, payload);
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
@@ -3570,6 +3586,63 @@ const TennisMatchApp = () => {
               />
 
             </div>
+
+            <div>
+              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                Player Limit
+              </label>
+              <input
+                type="number"
+                min={2}
+                step={1}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                value={editMatch.playerLimit ?? 4}
+                onChange={(e) =>
+                  setEditMatch({
+                    ...editMatch,
+                    playerLimit: Math.max(2, Number(e.target.value) || 2),
+                  })
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                Match Format
+              </label>
+              <select
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                value={editMatch.format || "Doubles"}
+                onChange={(e) => setEditMatch({ ...editMatch, format: e.target.value })}
+              >
+                <option>Singles</option>
+                <option>Doubles</option>
+                <option>Mixed Doubles</option>
+                <option>Dingles</option>
+                <option>Round Robin</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            {editMatch?.privacy === "open" && (
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                  Skill Level (NTRP)
+                </label>
+                <select
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  value={editMatch.skillLevel || ""}
+                  onChange={(e) => setEditMatch({ ...editMatch, skillLevel: e.target.value })}
+                >
+                  <option value="">Any Level</option>
+                  <option value="2.5">2.5</option>
+                  <option value="3.0">3.0</option>
+                  <option value="3.5">3.5</option>
+                  <option value="4.0">4.0</option>
+                  <option value="4.5">4.5+</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
