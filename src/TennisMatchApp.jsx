@@ -109,9 +109,6 @@ const TennisMatchApp = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [manualContacts, setManualContacts] = useState(new Map());
-  const [contactName, setContactName] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactError, setContactError] = useState("");
   const [inviteMatchId, setInviteMatchId] = useState(() =>
     deriveInviteMatchId(initialPath),
   );
@@ -280,9 +277,6 @@ const TennisMatchApp = () => {
 
         setSelectedPlayers(initial);
         setManualContacts(new Map());
-        setContactName("");
-        setContactPhone("");
-        setContactError("");
         setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
         lastInviteLoadRef.current = numericMatchId;
         setMatchData((prev) => ({
@@ -430,43 +424,7 @@ const TennisMatchApp = () => {
     return value;
   };
 
-  const handleAddManualContact = () => {
-    setContactError("");
-    const normalized = normalizePhoneValue(contactPhone);
-    if (!normalized) {
-      setContactError("Enter a valid phone number with country code or 10 digits.");
-      return;
-    }
-    if (manualContacts.has(normalized)) {
-      setContactError("That phone number is already selected.");
-      return;
-    }
-    const name = contactName.trim();
-    setManualContacts((prev) => {
-      const next = new Map(prev);
-      next.set(normalized, {
-        key: normalized,
-        phone: normalized,
-        name,
-      });
-      return next;
-    });
-    setContactName("");
-    setContactPhone("");
-  };
-
-  const handleManualContactSubmit = (event) => {
-    event.preventDefault();
-    handleAddManualContact();
-  };
-
-  const handleRemoveManualContact = (key) => {
-    setManualContacts((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-  };
+  // Manual contact handlers live inside InviteScreen
 
   const handleViewDetails = async (matchId) => {
     try {
@@ -1977,6 +1935,46 @@ const TennisMatchApp = () => {
     const [participantsError, setParticipantsError] = useState("");
     const [hostId, setHostId] = useState(null);
 
+    // Local state for manual phone invites (isolated from search input)
+    const [localContactName, setLocalContactName] = useState("");
+    const [localContactPhone, setLocalContactPhone] = useState("");
+    const [localContactError, setLocalContactError] = useState("");
+
+    const addManualContact = () => {
+      setLocalContactError("");
+      const normalized = normalizePhoneValue(localContactPhone);
+      if (!normalized) {
+        setLocalContactError(
+          "Enter a valid phone number with country code or 10 digits."
+        );
+        return;
+      }
+      if (manualContacts.has(normalized)) {
+        setLocalContactError("That phone number is already selected.");
+        return;
+      }
+      const name = localContactName.trim();
+      setManualContacts((prev) => {
+        const next = new Map(prev);
+        next.set(normalized, {
+          key: normalized,
+          phone: normalized,
+          name,
+        });
+        return next;
+      });
+      setLocalContactName("");
+      setLocalContactPhone("");
+    };
+
+    const handleRemoveManualContact = (key) => {
+      setManualContacts((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    };
+
     const buildShareMessage = () => {
       const parts = [];
       const host = matchData.hostName || currentUser?.name || currentUser?.email || "";
@@ -2383,7 +2381,10 @@ const TennisMatchApp = () => {
           {/* Selected players display */}
           <form
             className="bg-white rounded-2xl shadow-lg border border-blue-100 p-6 mb-6"
-            onSubmit={handleManualContactSubmit}
+            onSubmit={(e) => {
+              e.preventDefault();
+              addManualContact();
+            }}
           >
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -2402,27 +2403,27 @@ const TennisMatchApp = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
               <input
                 type="text"
-                value={contactName}
+                value={localContactName}
                 onChange={(e) => {
-                  setContactName(e.target.value);
-                  setContactError("");
+                  setLocalContactName(e.target.value);
+                  setLocalContactError("");
                 }}
                 placeholder="Full name (optional)"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
               />
               <input
                 type="tel"
-                value={contactPhone}
+                value={localContactPhone}
                 onChange={(e) => {
-                  setContactPhone(e.target.value);
-                  setContactError("");
+                  setLocalContactPhone(e.target.value);
+                  setLocalContactError("");
                 }}
                 placeholder="+15551234567"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
               />
             </div>
-            {contactError && (
-              <p className="text-xs font-semibold text-red-600 mb-2">{contactError}</p>
+            {localContactError && (
+              <p className="text-xs font-semibold text-red-600 mb-2">{localContactError}</p>
             )}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <p className="text-xs text-gray-500">
@@ -2430,7 +2431,7 @@ const TennisMatchApp = () => {
               </p>
               <button
                 type="submit"
-                disabled={!contactPhone.trim()}
+                disabled={!localContactPhone.trim()}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
               >
                 <Plus className="w-4 h-4" /> Add contact
@@ -2449,9 +2450,9 @@ const TennisMatchApp = () => {
                     onClick={() => {
                       setSelectedPlayers(new Map());
                       setManualContacts(new Map());
-                      setContactName("");
-                      setContactPhone("");
-                      setContactError("");
+                      setLocalContactName("");
+                      setLocalContactPhone("");
+                      setLocalContactError("");
                     }}
                     className="text-sm text-gray-500 hover:text-gray-700 font-bold"
                   >
@@ -2523,9 +2524,9 @@ const TennisMatchApp = () => {
                     setCreateStep(1);
                     setSelectedPlayers(new Map());
                     setManualContacts(new Map());
-                    setContactName("");
-                    setContactPhone("");
-                    setContactError("");
+                    setLocalContactName("");
+                    setLocalContactPhone("");
+                    setLocalContactError("");
                     setExistingPlayerIds(new Set());
                     setInviteMatchId(null);
                     fetchMatches();
@@ -2577,9 +2578,9 @@ const TennisMatchApp = () => {
                       goToBrowse();
                       setSelectedPlayers(new Map());
                       setManualContacts(new Map());
-                      setContactName("");
-                      setContactPhone("");
-                      setContactError("");
+                      setLocalContactName("");
+                      setLocalContactPhone("");
+                      setLocalContactError("");
                       setExistingPlayerIds(new Set());
 
                       setShowPreview(false);
