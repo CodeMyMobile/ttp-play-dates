@@ -10,6 +10,8 @@ import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/ap
 const router = createHashRouter([
   // App home
   { path: "/", element: <TennisMatchApp /> },
+  { path: "/invites", element: <TennisMatchApp /> },
+  { path: "/matches/:id/invite", element: <TennisMatchApp /> },
   { path: "/create", element: <CreateMatchPage /> },
 
   // Match details (direct link)
