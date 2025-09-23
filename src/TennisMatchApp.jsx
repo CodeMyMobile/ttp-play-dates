@@ -55,6 +55,9 @@ import {
   FileText,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
+import AppHeader from "./components/AppHeader";
+import InviteScreen from "./components/InviteScreen";
+import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -353,7 +356,9 @@ const TennisMatchApp = () => {
     }
 
     lastInviteLoadRef.current = null;
-    if (currentScreen !== "browse") {
+    // Do not override other in-app screens (e.g., details/create) when the URL
+    // doesn't explicitly target a special route.
+    if (currentScreen !== "browse" && currentScreen !== "details" && currentScreen !== "create") {
       setCurrentScreen("browse");
     }
   }, [currentScreen, location.pathname, openInviteScreen]);
@@ -388,41 +393,7 @@ const TennisMatchApp = () => {
     });
   };
 
-  const formatPhoneNumber = (value) => {
-    const phone = value.replace(/\D/g, "");
-    const match = phone.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-    if (!match) return value;
-    return !match[2]
-      ? match[1]
-      : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
-  };
-
-  const normalizePhoneValue = (value) => {
-    if (!value) return "";
-    const trimmed = value.trim();
-    if (!trimmed) return "";
-    if (trimmed.startsWith("+")) {
-      const cleaned = `+${trimmed.slice(1).replace(/\D/g, "")}`;
-      return cleaned.length > 1 ? cleaned : "";
-    }
-    const digits = trimmed.replace(/\D/g, "");
-    if (!digits) return "";
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-    return `+${digits}`;
-  };
-
-  const formatPhoneDisplay = (value) => {
-    if (!value) return "";
-    const digits = value.replace(/\D/g, "");
-    const clean = digits.length === 11 && digits.startsWith("1")
-      ? digits.slice(1)
-      : digits;
-    if (clean.length === 10) {
-      return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
-    }
-    return value;
-  };
+  // phone helpers imported from ./services/phone
 
   // Manual contact handlers live inside InviteScreen
 
@@ -519,106 +490,7 @@ const TennisMatchApp = () => {
     fetchMatches();
   }, [fetchMatches]);
 
-  // Removed static sample players; will fetch real player list in InviteScreen
-
-  const Header = () => (
-    <div className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/95">
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        {currentScreen === "browse" ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white text-2xl">🎾</span>
-              </div>
-              <h1 className="text-2xl font-black bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                Matchplay
-              </h1>
-            </div>
-            {currentUser ? (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={goToInvites}
-                  className="relative p-2.5 hover:bg-gray-50 rounded-xl transition-colors"
-                >
-                  <Bell className="w-5 h-5 text-gray-600" />
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                </button>
-                <button
-                  onClick={() => setShowProfileManager(true)}
-                  className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-all"
-                >
-                  <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
-                    {currentUser.avatar}
-                  </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm font-bold text-gray-800">
-                      {currentUser.name.split(" ")[0]}
-                    </span>
-                    {currentUser.skillLevel && (
-                      <span className="text-xs font-semibold text-gray-500">
-                        NTRP {currentUser.skillLevel}
-                      </span>
-                    )}
-                  </div>
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-all"
-                >
-                  <LogOut className="w-5 h-5 text-gray-600" />
-                  <span className="text-sm font-bold text-gray-800">Log Out</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowSignInModal(true)}
-                className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:shadow-xl hover:scale-105 transition-all shadow-lg"
-              >
-                Sign In
-              </button>
-            )}
-          </div>
-        ) : currentScreen === "invites" ? (
-          <div className="flex items-center justify-between">
-            <button
-              onClick={goToBrowse}
-              className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5 text-gray-600" />
-              <span className="text-gray-700 font-bold">Back</span>
-            </button>
-            <h1 className="text-xl font-black text-gray-800">Invites</h1>
-            {currentUser && (
-              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
-                {currentUser.avatar}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => {
-                if (showPreview) {
-                  setShowPreview(false);
-                } else {
-                  goToBrowse();
-                }
-              }}
-              className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5 text-gray-600" />
-              <span className="text-gray-700 font-bold">Back</span>
-            </button>
-            {currentUser && (
-              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
-                {currentUser.avatar}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  // Removed inline Header in favor of components/AppHeader
 
   const BrowseScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
@@ -3871,17 +3743,43 @@ const TennisMatchApp = () => {
     <div className="min-h-screen bg-gray-50">
       <style>{styles}</style>
 
-      {Header()}
+      <AppHeader
+        currentScreen={currentScreen}
+        currentUser={currentUser}
+        showPreview={showPreview}
+        goToInvites={goToInvites}
+        goToBrowse={() => goToBrowse()}
+        onOpenProfile={() => setShowProfileManager(true)}
+        onLogout={handleLogout}
+        onOpenSignIn={() => setShowSignInModal(true)}
+        setShowPreview={setShowPreview}
+      />
 
-        {currentScreen === "browse" && BrowseScreen()}
-        {currentScreen === "create" && CreateMatchScreen()}
-        {currentScreen === "invite" && (
-          <InviteScreen matchId={inviteMatchId} onToast={displayToast} />
-        )}
-        {currentScreen === "details" && <MatchDetailsScreen />}
-        {currentScreen === "invites" && (
-          <InvitesList onInviteResponse={fetchMatches} />
-        )}
+      {currentScreen === "browse" && BrowseScreen()}
+      {currentScreen === "create" && CreateMatchScreen()}
+      {currentScreen === "invite" && (
+        <InviteScreen
+          matchId={inviteMatchId}
+          currentUser={currentUser}
+          matchData={matchData}
+          setMatchData={setMatchData}
+          selectedPlayers={selectedPlayers}
+          setSelectedPlayers={setSelectedPlayers}
+          existingPlayerIds={existingPlayerIds}
+          setExistingPlayerIds={setExistingPlayerIds}
+          onToast={displayToast}
+          onDone={() => {
+            setCurrentScreen("browse");
+            setInviteMatchId(null);
+            fetchMatches();
+          }}
+          formatDateTime={formatDateTime}
+        />
+      )}
+      {currentScreen === "details" && <MatchDetailsScreen />}
+      {currentScreen === "invites" && (
+        <InvitesList onInviteResponse={fetchMatches} />
+      )}
 
       {SignInModal()}
       <EditModal isOpen={showEditModal} matchToEdit={editMatch} />
