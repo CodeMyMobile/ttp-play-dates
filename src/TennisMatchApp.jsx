@@ -148,14 +148,14 @@ const TennisMatchApp = () => {
   });
 
   const [matches, setMatches] = useState([]);
-    const [matchCounts, setMatchCounts] = useState({
-      my: 0,
-      open: 0,
-      today: 0,
-      tomorrow: 0,
-      weekend: 0,
-      draft: 0,
-    });
+  const [matchCounts, setMatchCounts] = useState({
+    my: 0,
+    open: 0,
+    today: 0,
+    tomorrow: 0,
+    weekend: 0,
+    draft: 0,
+  });
   const [matchPagination, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchSearch, setMatchSearch] = useState("");
@@ -188,36 +188,6 @@ const TennisMatchApp = () => {
     }
   }, []);
 
-  useEffect(() => {
-    const path = location.pathname;
-    if (path === "/invites") {
-      lastInviteLoadRef.current = null;
-      if (currentScreen !== "invites") {
-        setCurrentScreen("invites");
-      }
-      return;
-    }
-
-    const inviteRouteMatch = path.match(/^\/matches\/(\d+)\/invite$/);
-    if (inviteRouteMatch) {
-      const matchIdFromPath = Number(inviteRouteMatch[1]);
-      if (Number.isFinite(matchIdFromPath)) {
-        if (lastInviteLoadRef.current !== matchIdFromPath) {
-          lastInviteLoadRef.current = matchIdFromPath;
-          openInviteScreen(matchIdFromPath, { skipNavigation: true });
-        } else if (currentScreen !== "invite") {
-          setCurrentScreen("invite");
-        }
-      }
-      return;
-    }
-
-    lastInviteLoadRef.current = null;
-    if (currentScreen !== "browse") {
-      setCurrentScreen("browse");
-    }
-  }, [currentScreen, location.pathname, openInviteScreen]);
-
   const displayToast = useCallback((message, type = "success") => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
@@ -239,130 +209,6 @@ const TennisMatchApp = () => {
       navigate("/invites");
     }
   }, [location.pathname, navigate]);
-
-  useEffect(() => {
-    const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
-    if (tokenMatch) {
-      const token = tokenMatch[1];
-      getInviteByToken(token)
-        .then(async (invite) => {
-          const matchId = invite.match?.id || invite.match_id;
-          if (matchId) {
-            const data = await getMatch(matchId);
-            setViewMatch(data);
-            setCurrentScreen("details");
-          }
-        })
-        .catch(() => {
-          displayToast("Failed to open match", "error");
-        });
-    }
-  }, [displayToast]);
-
-  const formatDateTime = (dateTime) => {
-    const date = new Date(dateTime);
-    return date.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-
-  const formatPhoneNumber = (value) => {
-    const phone = value.replace(/\D/g, "");
-    const match = phone.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-    if (!match) return value;
-    return !match[2]
-      ? match[1]
-      : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
-  };
-
-  const normalizePhoneValue = (value) => {
-    if (!value) return "";
-    const trimmed = value.trim();
-    if (!trimmed) return "";
-    if (trimmed.startsWith("+")) {
-      const cleaned = `+${trimmed.slice(1).replace(/\D/g, "")}`;
-      return cleaned.length > 1 ? cleaned : "";
-    }
-    const digits = trimmed.replace(/\D/g, "");
-    if (!digits) return "";
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-    return `+${digits}`;
-  };
-
-  const formatPhoneDisplay = (value) => {
-    if (!value) return "";
-    const digits = value.replace(/\D/g, "");
-    const clean = digits.length === 11 && digits.startsWith("1")
-      ? digits.slice(1)
-      : digits;
-    if (clean.length === 10) {
-      return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
-    }
-    return value;
-  };
-
-  const handleAddManualContact = () => {
-    setContactError("");
-    const normalized = normalizePhoneValue(contactPhone);
-    if (!normalized) {
-      setContactError("Enter a valid phone number with country code or 10 digits.");
-      return;
-    }
-    if (manualContacts.has(normalized)) {
-      setContactError("That phone number is already selected.");
-      return;
-    }
-    const name = contactName.trim();
-    setManualContacts((prev) => {
-      const next = new Map(prev);
-      next.set(normalized, {
-        key: normalized,
-        phone: normalized,
-        name,
-      });
-      return next;
-    });
-    setContactName("");
-    setContactPhone("");
-  };
-
-  const handleManualContactSubmit = (event) => {
-    event.preventDefault();
-    handleAddManualContact();
-  };
-
-  const handleRemoveManualContact = (key) => {
-    setManualContacts((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-  };
-
-  const handleViewDetails = async (matchId) => {
-    try {
-      const data = await getMatch(matchId);
-      setViewMatch(data);
-      setCurrentScreen("details");
-    } catch (err) {
-      displayToast(
-        err.response?.data?.message || "Failed to load match details",
-        "error"
-      );
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("refreshToken");
-    setCurrentUser(null);
-    displayToast("Logged out", "success");
-  };
 
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
@@ -488,31 +334,185 @@ const TennisMatchApp = () => {
     [displayToast, goToBrowse, navigate],
   );
 
-    const fetchMatches = useCallback(async () => {
-      if (!currentUser) {
-        setMatches([]);
-        setMatchCounts({});
-        setMatchPagination(null);
-        return;
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === "/invites") {
+      lastInviteLoadRef.current = null;
+      if (currentScreen !== "invites") {
+        setCurrentScreen("invites");
       }
-      try {
-        const filter = activeFilter === "draft" ? "my" : activeFilter;
-        const status = activeFilter === "draft" ? "draft" : undefined;
-        const data = await listMatches(filter, {
-          status,
-          search: matchSearch,
-          page: matchPage,
-          perPage: 10,
+      return;
+    }
+
+    const inviteRouteMatch = path.match(/^\/matches\/(\d+)\/invite$/);
+    if (inviteRouteMatch) {
+      const matchIdFromPath = Number(inviteRouteMatch[1]);
+      if (Number.isFinite(matchIdFromPath)) {
+        if (lastInviteLoadRef.current !== matchIdFromPath) {
+          lastInviteLoadRef.current = matchIdFromPath;
+          openInviteScreen(matchIdFromPath, { skipNavigation: true });
+        } else if (currentScreen !== "invite") {
+          setCurrentScreen("invite");
+        }
+      }
+      return;
+    }
+
+    lastInviteLoadRef.current = null;
+    if (currentScreen !== "browse") {
+      setCurrentScreen("browse");
+    }
+  }, [currentScreen, location.pathname, openInviteScreen]);
+
+  useEffect(() => {
+    const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
+    if (tokenMatch) {
+      const token = tokenMatch[1];
+      getInviteByToken(token)
+        .then(async (invite) => {
+          const matchId = invite.match?.id || invite.match_id;
+          if (matchId) {
+            const data = await getMatch(matchId);
+            setViewMatch(data);
+            setCurrentScreen("details");
+          }
+        })
+        .catch(() => {
+          displayToast("Failed to open match", "error");
         });
+    }
+  }, [displayToast]);
+
+  const formatDateTime = (dateTime) => {
+    const date = new Date(dateTime);
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
+  const formatPhoneNumber = (value) => {
+    const phone = value.replace(/\D/g, "");
+    const match = phone.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+    if (!match) return value;
+    return !match[2]
+      ? match[1]
+      : `(${match[1]}) ${match[2]}${match[3] ? `-${match[3]}` : ""}`;
+  };
+
+  const normalizePhoneValue = (value) => {
+    if (!value) return "";
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("+")) {
+      const cleaned = `+${trimmed.slice(1).replace(/\D/g, "")}`;
+      return cleaned.length > 1 ? cleaned : "";
+    }
+    const digits = trimmed.replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return `+${digits}`;
+  };
+
+  const formatPhoneDisplay = (value) => {
+    if (!value) return "";
+    const digits = value.replace(/\D/g, "");
+    const clean = digits.length === 11 && digits.startsWith("1")
+      ? digits.slice(1)
+      : digits;
+    if (clean.length === 10) {
+      return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+    }
+    return value;
+  };
+
+  const handleAddManualContact = () => {
+    setContactError("");
+    const normalized = normalizePhoneValue(contactPhone);
+    if (!normalized) {
+      setContactError("Enter a valid phone number with country code or 10 digits.");
+      return;
+    }
+    if (manualContacts.has(normalized)) {
+      setContactError("That phone number is already selected.");
+      return;
+    }
+    const name = contactName.trim();
+    setManualContacts((prev) => {
+      const next = new Map(prev);
+      next.set(normalized, {
+        key: normalized,
+        phone: normalized,
+        name,
+      });
+      return next;
+    });
+    setContactName("");
+    setContactPhone("");
+  };
+
+  const handleManualContactSubmit = (event) => {
+    event.preventDefault();
+    handleAddManualContact();
+  };
+
+  const handleRemoveManualContact = (key) => {
+    setManualContacts((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  const handleViewDetails = async (matchId) => {
+    try {
+      const data = await getMatch(matchId);
+      setViewMatch(data);
+      setCurrentScreen("details");
+    } catch (err) {
+      displayToast(
+        err.response?.data?.message || "Failed to load match details",
+        "error"
+      );
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("refreshToken");
+    setCurrentUser(null);
+    displayToast("Logged out", "success");
+  };
+  const fetchMatches = useCallback(async () => {
+    if (!currentUser) {
+      setMatches([]);
+      setMatchCounts({});
+      setMatchPagination(null);
+      return;
+    }
+
+    try {
+      const filter = activeFilter === "draft" ? "my" : activeFilter;
+      const status = activeFilter === "draft" ? "draft" : undefined;
+      const data = await listMatches(filter, {
+        status,
+        search: matchSearch,
+        page: matchPage,
+        perPage: 10,
+      });
       const rawMatches = data.matches || [];
       setMatchCounts(data.counts || {});
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
         const participantCount = (m.participants || []).filter(
-          (p) => p.status !== "left"
+          (p) => p.status !== "left",
         ).length;
         const acceptedInvites = (m.invitees || []).filter(
-          (i) => i.status === "accepted"
+          (i) => i.status === "accepted",
         ).length;
         const occupied = participantCount + acceptedInvites;
 
