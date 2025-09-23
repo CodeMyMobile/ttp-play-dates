@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   listMatches,
   createMatch,
@@ -58,10 +58,49 @@ import Autocomplete from "react-google-autocomplete";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
+const getInitialPath = () => {
+  if (typeof window === "undefined") return "/";
+  const hash = window.location.hash || "";
+  if (hash.startsWith("#")) {
+    const pathFromHash = hash.slice(1);
+    return pathFromHash || "/";
+  }
+  return window.location.pathname || "/";
+};
+
+const deriveScreenFromPath = (path) => {
+  if (path === "/invites") return "invites";
+  if (/^\/matches\/[^/]+\/invite$/.test(path)) return "invite";
+  return "browse";
+};
+
+const deriveInviteMatchId = (path) => {
+  const match = path.match(/^\/matches\/(\d+)\/invite$/);
+  if (!match) return null;
+  const numeric = Number(match[1]);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const buildMapsUrl = (lat, lng, address) => {
+  if (lat && lng) {
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
+  if (address) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      address,
+    )}`;
+  }
+  return "";
+};
+
 const TennisMatchApp = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const initialPath = getInitialPath();
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentScreen, setCurrentScreen] = useState("browse");
+  const [currentScreen, setCurrentScreen] = useState(() =>
+    deriveScreenFromPath(initialPath),
+  );
   const [activeFilter, setActiveFilter] = useState("my");
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showToast, setShowToast] = useState(null);
@@ -69,10 +108,6 @@ const TennisMatchApp = () => {
   const [createStep, setCreateStep] = useState(1);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
-  const [manualContacts, setManualContacts] = useState(new Map());
-  const [contactName, setContactName] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactError, setContactError] = useState("");
   const [inviteMatchId, setInviteMatchId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
@@ -107,14 +142,14 @@ const TennisMatchApp = () => {
   });
 
   const [matches, setMatches] = useState([]);
-    const [matchCounts, setMatchCounts] = useState({
-      my: 0,
-      open: 0,
-      today: 0,
-      tomorrow: 0,
-      weekend: 0,
-      draft: 0,
-    });
+  const [matchCounts, setMatchCounts] = useState({
+    my: 0,
+    open: 0,
+    today: 0,
+    tomorrow: 0,
+    weekend: 0,
+    draft: 0,
+  });
   const [matchPagination, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchSearch, setMatchSearch] = useState("");
@@ -122,8 +157,6 @@ const TennisMatchApp = () => {
   const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
   const [viewMatch, setViewMatch] = useState(null);
-
-  const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
 
   useEffect(() => {
     setMatchPage(1);
@@ -146,10 +179,178 @@ const TennisMatchApp = () => {
     }
   }, []);
 
-  const displayToast = (message, type = "success") => {
+  const displayToast = useCallback((message, type = "success") => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
-  };
+  }, []);
+
+  const goToBrowse = useCallback(
+    (options = {}) => {
+      setCurrentScreen("browse");
+      if (location.pathname !== "/") {
+        navigate("/", { replace: options.replace ?? false });
+      }
+    },
+    [location.pathname, navigate],
+  );
+
+  const goToInvites = useCallback(() => {
+    setCurrentScreen("invites");
+    if (location.pathname !== "/invites") {
+      navigate("/invites");
+    }
+  }, [location.pathname, navigate]);
+
+  const openInviteScreen = useCallback(
+    async (matchId, { skipNavigation = false, onClose } = {}) => {
+      const numericMatchId = Number(matchId);
+      if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) {
+        displayToast("Match not found", "error");
+        return;
+      }
+
+      try {
+        const data = await getMatch(numericMatchId);
+        const match = data.match || {};
+        const participantsSource = Array.isArray(data.participants)
+          ? data.participants
+          : match.participants || [];
+        const inviteesSource = Array.isArray(data.invitees)
+          ? data.invitees
+          : match.invitees || [];
+
+        const validParticipants = participantsSource.filter(
+          (p) => p && p.status !== "left",
+        );
+        const acceptedInvites = inviteesSource.filter(
+          (i) => i && i.status === "accepted",
+        ).length;
+        const participantIds = validParticipants
+          .map((p) => Number(p.player_id))
+          .filter((id) => Number.isFinite(id) && id > 0);
+        const inviteeIds = inviteesSource
+          .map((i) => Number(i.invitee_id))
+          .filter((id) => Number.isFinite(id) && id > 0);
+
+        const initial = new Map();
+        const hostParticipant = validParticipants.find(
+          (p) => p.status === "hosting",
+        );
+        const computedHostId = hostParticipant?.player_id || match.host_id;
+        const computedHostName = hostParticipant
+          ? hostParticipant.profile?.full_name ||
+            `Player ${hostParticipant.player_id}`
+          : match.host_profile?.full_name ||
+            match.host_name ||
+            (computedHostId ? `Player ${computedHostId}` : "");
+        const occupied = validParticipants.length + acceptedInvites;
+
+        validParticipants.forEach((p) => {
+          const pid = Number(p.player_id);
+          if (!Number.isFinite(pid) || pid <= 0) return;
+          const profile = p.profile || {};
+          initial.set(pid, {
+            user_id: pid,
+            full_name: profile.full_name || `Player ${pid}`,
+            email: profile.email,
+            hosting: p.status === "hosting" || pid === match.host_id,
+          });
+        });
+
+        inviteesSource.forEach((i) => {
+          const id = Number(i.invitee_id);
+          if (!Number.isFinite(id) || id <= 0) return;
+          const profile = i.profile || {};
+          initial.set(id, {
+            user_id: id,
+            full_name: profile.full_name || `Player ${id}`,
+            email: profile.email,
+            hosting: false,
+          });
+        });
+
+        setSelectedPlayers(initial);
+        setManualContacts(new Map());
+        setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
+        lastInviteLoadRef.current = numericMatchId;
+        setMatchData((prev) => ({
+          ...prev,
+          type:
+            match.match_type === "private" || match.match_type === "closed"
+              ? "closed"
+              : "open",
+          skillLevel:
+            match.skill_level_min || match.skill_level || prev.skillLevel || "",
+          format: match.match_format || prev.format || "",
+          playerCount: match.player_limit ?? prev.playerCount,
+          occupied,
+          dateTime: match.start_date_time || prev.dateTime,
+          location: match.location_text || prev.location,
+          latitude: match.latitude ?? prev.latitude,
+          longitude: match.longitude ?? prev.longitude,
+          mapUrl: buildMapsUrl(
+            match.latitude,
+            match.longitude,
+            match.location_text,
+          ),
+          notes: match.notes || "",
+          hostId: computedHostId ?? prev.hostId,
+          hostName: computedHostName || prev.hostName || "",
+        }));
+        setInviteMatchId((prev) =>
+          prev === numericMatchId ? prev : numericMatchId,
+        );
+        setCurrentScreen("invite");
+
+        if (typeof onClose === "function") {
+          onClose();
+        }
+
+        if (!skipNavigation) {
+          navigate(`/matches/${numericMatchId}/invite`);
+        }
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message || "Failed to load match details",
+          "error",
+        );
+        lastInviteLoadRef.current = null;
+        setInviteMatchId((prev) => (prev === numericMatchId ? null : prev));
+        goToBrowse({ replace: true });
+      }
+    },
+    [displayToast, goToBrowse, navigate],
+  );
+
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === "/invites") {
+      lastInviteLoadRef.current = null;
+      if (currentScreen !== "invites") {
+        setCurrentScreen("invites");
+      }
+      return;
+    }
+
+    const inviteRouteMatch = path.match(/^\/matches\/(\d+)\/invite$/);
+    if (inviteRouteMatch) {
+      const matchIdFromPath = Number(inviteRouteMatch[1]);
+      if (Number.isFinite(matchIdFromPath)) {
+        if (lastInviteLoadRef.current !== matchIdFromPath) {
+          lastInviteLoadRef.current = matchIdFromPath;
+          openInviteScreen(matchIdFromPath, { skipNavigation: true });
+        } else if (currentScreen !== "invite") {
+          setCurrentScreen("invite");
+        }
+      }
+      return;
+    }
+
+    lastInviteLoadRef.current = null;
+    if (currentScreen !== "browse") {
+      setCurrentScreen("browse");
+    }
+  }, [currentScreen, location.pathname, openInviteScreen]);
 
   useEffect(() => {
     const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
@@ -168,7 +369,7 @@ const TennisMatchApp = () => {
           displayToast("Failed to open match", "error");
         });
     }
-  }, []);
+  }, [displayToast]);
 
   const formatDateTime = (dateTime) => {
     const date = new Date(dateTime);
@@ -217,49 +418,31 @@ const TennisMatchApp = () => {
     return value;
   };
 
-  const buildMapsUrl = (lat, lng, address) => {
-    if (lat && lng) {
-      return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  const normalizePhoneValue = (value) => {
+    if (!value) return "";
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("+")) {
+      const cleaned = `+${trimmed.slice(1).replace(/\D/g, "")}`;
+      return cleaned.length > 1 ? cleaned : "";
     }
-    if (address) {
-      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-        address
-      )}`;
-    }
-    return "";
+    const digits = trimmed.replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return `+${digits}`;
   };
 
-  const handleAddManualContact = () => {
-    setContactError("");
-    const normalized = normalizePhoneValue(contactPhone);
-    if (!normalized) {
-      setContactError("Enter a valid phone number with country code or 10 digits.");
-      return;
+  const formatPhoneDisplay = (value) => {
+    if (!value) return "";
+    const digits = value.replace(/\D/g, "");
+    const clean = digits.length === 11 && digits.startsWith("1")
+      ? digits.slice(1)
+      : digits;
+    if (clean.length === 10) {
+      return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
     }
-    if (manualContacts.has(normalized)) {
-      setContactError("That phone number is already selected.");
-      return;
-    }
-    const name = contactName.trim();
-    setManualContacts((prev) => {
-      const next = new Map(prev);
-      next.set(normalized, {
-        key: normalized,
-        phone: normalized,
-        name,
-      });
-      return next;
-    });
-    setContactName("");
-    setContactPhone("");
-  };
-
-  const handleRemoveManualContact = (key) => {
-    setManualContacts((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
+    return value;
   };
 
   const handleViewDetails = async (matchId) => {
@@ -281,32 +464,32 @@ const TennisMatchApp = () => {
     setCurrentUser(null);
     displayToast("Logged out", "success");
   };
+  const fetchMatches = useCallback(async () => {
+    if (!currentUser) {
+      setMatches([]);
+      setMatchCounts({});
+      setMatchPagination(null);
+      return;
+    }
 
-    const fetchMatches = useCallback(async () => {
-      if (!currentUser) {
-        setMatches([]);
-        setMatchCounts({});
-        setMatchPagination(null);
-        return;
-      }
-      try {
-        const filter = activeFilter === "draft" ? "my" : activeFilter;
-        const status = activeFilter === "draft" ? "draft" : undefined;
-        const data = await listMatches(filter, {
-          status,
-          search: matchSearch,
-          page: matchPage,
-          perPage: 10,
-        });
+    try {
+      const filter = activeFilter === "draft" ? "my" : activeFilter;
+      const status = activeFilter === "draft" ? "draft" : undefined;
+      const data = await listMatches(filter, {
+        status,
+        search: matchSearch,
+        page: matchPage,
+        perPage: 10,
+      });
       const rawMatches = data.matches || [];
       setMatchCounts(data.counts || {});
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
         const participantCount = (m.participants || []).filter(
-          (p) => p.status !== "left"
+          (p) => p.status !== "left",
         ).length;
         const acceptedInvites = (m.invitees || []).filter(
-          (i) => i.status === "accepted"
+          (i) => i.status === "accepted",
         ).length;
         const occupied = participantCount + acceptedInvites;
 
@@ -349,7 +532,7 @@ const TennisMatchApp = () => {
         "error"
       );
     }
-  }, [activeFilter, currentUser, matchPage, matchSearch]);
+  }, [activeFilter, currentUser, displayToast, matchPage, matchSearch]);
 
   useEffect(() => {
     fetchMatches();
@@ -373,7 +556,7 @@ const TennisMatchApp = () => {
             {currentUser ? (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setCurrentScreen("invites")}
+                  onClick={goToInvites}
                   className="relative p-2.5 hover:bg-gray-50 rounded-xl transition-colors"
                 >
                   <Bell className="w-5 h-5 text-gray-600" />
@@ -417,7 +600,7 @@ const TennisMatchApp = () => {
         ) : currentScreen === "invites" ? (
           <div className="flex items-center justify-between">
             <button
-              onClick={() => setCurrentScreen("browse")}
+              onClick={goToBrowse}
               className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
             >
               <ChevronLeft className="w-5 h-5 text-gray-600" />
@@ -437,7 +620,7 @@ const TennisMatchApp = () => {
                 if (showPreview) {
                   setShowPreview(false);
                 } else {
-                  setCurrentScreen("browse");
+                  goToBrowse();
                 }
               }}
               className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
@@ -1025,10 +1208,6 @@ const TennisMatchApp = () => {
                   });
 
                   setSelectedPlayers(initial);
-                  setManualContacts(new Map());
-                  setContactName("");
-                  setContactPhone("");
-                  setContactError("");
                   setExistingPlayerIds(
                     new Set([...participantIds, ...inviteeIds])
                   );
@@ -1211,7 +1390,7 @@ const TennisMatchApp = () => {
         const payload = buildMatchPayload("upcoming");
         await createMatchWithCompatibility(payload);
         displayToast("Match published successfully! 🎾");
-        setCurrentScreen("browse");
+        goToBrowse();
         setCreateStep(1);
         setShowPreview(false);
         fetchMatches();
@@ -1334,7 +1513,8 @@ const TennisMatchApp = () => {
                 </button>
                 <button
                   onClick={async () => {
-                    if (!inviteMatchId) {
+                    let targetMatchId = inviteMatchId;
+                    if (!targetMatchId) {
                       try {
                         const payload = buildMatchPayload("draft");
                         const created = await createMatchWithCompatibility(
@@ -1343,10 +1523,8 @@ const TennisMatchApp = () => {
                         const newId =
                           created.match?.id || created.match_id || created.id;
                         if (newId) {
+                          targetMatchId = newId;
                           setInviteMatchId(newId);
-                          if (currentUser?.id) {
-                            setExistingPlayerIds(new Set([currentUser.id]));
-                          }
                           fetchMatches();
                         }
                       } catch (err) {
@@ -1360,7 +1538,9 @@ const TennisMatchApp = () => {
                       }
                     }
                     setShowPreview(false);
-                    setCurrentScreen("invite");
+                    if (targetMatchId) {
+                      await openInviteScreen(targetMatchId);
+                    }
                   }}
                   className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
                 >
@@ -1570,7 +1750,7 @@ const TennisMatchApp = () => {
               <div className="max-w-2xl mx-auto flex gap-3">
                 <button
                   onClick={() => {
-                    setCurrentScreen("browse");
+                    goToBrowse();
                     setShowPreview(false);
                     setCreateStep(1);
                   }}
@@ -1850,7 +2030,7 @@ const TennisMatchApp = () => {
     return null; // Add a null return for completeness
   };
 
-  const InviteScreen = () => {
+  const InviteScreen = ({ matchId, onToast }) => {
     const searchInputRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [players, setPlayers] = useState([]);
@@ -1863,6 +2043,46 @@ const TennisMatchApp = () => {
     const [participantsLoading, setParticipantsLoading] = useState(false);
     const [participantsError, setParticipantsError] = useState("");
     const [hostId, setHostId] = useState(null);
+
+    // Local state for manual phone invites (isolated from search input)
+    const [localContactName, setLocalContactName] = useState("");
+    const [localContactPhone, setLocalContactPhone] = useState("");
+    const [localContactError, setLocalContactError] = useState("");
+
+    const addManualContact = () => {
+      setLocalContactError("");
+      const normalized = normalizePhoneValue(localContactPhone);
+      if (!normalized) {
+        setLocalContactError(
+          "Enter a valid phone number with country code or 10 digits."
+        );
+        return;
+      }
+      if (manualContacts.has(normalized)) {
+        setLocalContactError("That phone number is already selected.");
+        return;
+      }
+      const name = localContactName.trim();
+      setManualContacts((prev) => {
+        const next = new Map(prev);
+        next.set(normalized, {
+          key: normalized,
+          phone: normalized,
+          name,
+        });
+        return next;
+      });
+      setLocalContactName("");
+      setLocalContactPhone("");
+    };
+
+    const handleRemoveManualContact = (key) => {
+      setManualContacts((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    };
 
     const buildShareMessage = () => {
       const parts = [];
@@ -1889,7 +2109,7 @@ const TennisMatchApp = () => {
       if (!shareLink) return;
       const text = encodeURIComponent(buildShareMessage());
       const url = `https://wa.me/?text=${text}`;
-      displayToast("Opening WhatsApp...");
+      onToast("Opening WhatsApp...");
       window.open(url, "_blank");
     };
 
@@ -1898,7 +2118,7 @@ const TennisMatchApp = () => {
       const body = encodeURIComponent(buildShareMessage());
       // Using query parameter form to maximize cross-platform support
       const url = `sms:?body=${body}`;
-      displayToast("Opening messages...");
+      onToast("Opening messages...");
       window.location.href = url;
     };
 
@@ -1907,7 +2127,7 @@ const TennisMatchApp = () => {
       const subject = encodeURIComponent(buildEmailSubject());
       const body = encodeURIComponent(buildShareMessage());
       const url = `mailto:?subject=${subject}&body=${body}`;
-      displayToast("Opening email...");
+      onToast("Opening email...");
       window.location.href = url;
     };
 
@@ -1918,29 +2138,32 @@ const TennisMatchApp = () => {
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
+    const toastShareError = React.useCallback(
+      (error) => {
+        onToast(
+          error?.response?.data?.message || "Failed to generate share link",
+          "error",
+        );
+      },
+      [onToast],
+    );
+
     useEffect(() => {
-      if (inviteMatchId) {
-        getShareLink(inviteMatchId)
-          .then(({ shareUrl }) => setShareLink(shareUrl))
-          .catch((err) =>
-            displayToast(
-              err.response?.data?.message || "Failed to generate share link",
-              "error",
-            ),
-          );
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [inviteMatchId]);
+      if (!matchId) return;
+      getShareLink(matchId)
+        .then(({ shareUrl }) => setShareLink(shareUrl))
+        .catch(toastShareError);
+    }, [matchId, toastShareError]);
 
     // Load current participants for the match being invited
     useEffect(() => {
-      if (!inviteMatchId) return;
+      if (!matchId) return;
       let alive = true;
       (async () => {
         try {
           setParticipantsLoading(true);
           setParticipantsError("");
-          const data = await getMatch(inviteMatchId);
+          const data = await getMatch(matchId);
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
@@ -1956,7 +2179,7 @@ const TennisMatchApp = () => {
       return () => {
         alive = false;
       };
-    }, [inviteMatchId]);
+    }, [matchId]);
 
     useEffect(() => {
       if (searchTerm === "" || searchTerm.length >= 2) {
@@ -1966,7 +2189,7 @@ const TennisMatchApp = () => {
             setPagination(data.pagination);
           })
           .catch((err) =>
-            displayToast(
+            onToast(
               err.response?.data?.message || "Failed to load players",
               "error"
             )
@@ -1975,12 +2198,23 @@ const TennisMatchApp = () => {
         setPlayers([]);
         setPagination(null);
       }
-    }, [searchTerm, page]);
+    }, [searchTerm, page, onToast]);
 
-    // Keep search input focused after each render when typing
+    // Focus the search box when the invite screen opens, but don't steal focus
+    // from other inputs (like the phone contact form) while the host is typing.
     useEffect(() => {
-      searchInputRef.current?.focus();
-    }, [searchTerm]);
+      const input = searchInputRef.current;
+      if (!input) return;
+      const activeElement = document.activeElement;
+      const isEditingAnotherField =
+        activeElement &&
+        activeElement !== input &&
+        ((activeElement.tagName === "INPUT" && activeElement.type !== "hidden") ||
+          activeElement.tagName === "TEXTAREA" ||
+          activeElement.isContentEditable);
+      if (isEditingAnotherField) return;
+      input.focus();
+    }, []);
 
     const canRemove = (pid) => {
       const host = hostId ?? currentUser?.id;
@@ -1988,9 +2222,10 @@ const TennisMatchApp = () => {
     };
 
     const handleRemoveParticipant = async (playerId) => {
+      if (!matchId) return;
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
-        await removeParticipant(inviteMatchId, playerId);
+        await removeParticipant(matchId, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
         setExistingPlayerIds((prev) => {
           const next = new Set([...prev]);
@@ -2001,9 +2236,9 @@ const TennisMatchApp = () => {
           ...prev,
           occupied: Math.max((prev.occupied || 1) - 1, 0),
         }));
-        displayToast("Participant removed");
+        onToast("Participant removed");
       } catch (err) {
-        displayToast(
+        onToast(
           err?.response?.data?.message || "Failed to remove participant",
           "error"
         );
@@ -2252,75 +2487,15 @@ const TennisMatchApp = () => {
               )}
           </div>
 
-          {/* Selected players display */}
-          <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-6 mb-6">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Phone className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
-                  Invite by phone number
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Enter a mobile number and we'll text them a magic link so they can RSVP
-                  instantly.
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <input
-                type="text"
-                value={contactName}
-                onChange={(e) => {
-                  setContactName(e.target.value);
-                  setContactError("");
-                }}
-                placeholder="Full name (optional)"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
-              />
-              <input
-                type="tel"
-                value={contactPhone}
-                onChange={(e) => {
-                  setContactPhone(e.target.value);
-                  setContactError("");
-                }}
-                placeholder="+15551234567"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
-              />
-            </div>
-            {contactError && (
-              <p className="text-xs font-semibold text-red-600 mb-2">{contactError}</p>
-            )}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <p className="text-xs text-gray-500">
-                Phone-only contacts will still get SMS reminders and a magic-link login.
-              </p>
-              <button
-                onClick={handleAddManualContact}
-                disabled={!contactPhone.trim()}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-4 h-4" /> Add contact
-              </button>
-            </div>
-          </div>
-
-          {totalSelectedInvitees > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+            {/* Selected players display */}
+            {selectedPlayers.size > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
                     Selected ({totalSelectedInvitees})
                   </h3>
                   <button
-                    onClick={() => {
-                      setSelectedPlayers(new Map());
-                      setManualContacts(new Map());
-                      setContactName("");
-                      setContactPhone("");
-                      setContactError("");
-                    }}
+                    onClick={() => setSelectedPlayers(new Map())}
                     className="text-sm text-gray-500 hover:text-gray-700 font-bold"
                   >
                     Clear all
@@ -2343,6 +2518,7 @@ const TennisMatchApp = () => {
                       )}
                       {!existingPlayerIds.has(player.user_id) && (
                         <button
+                          type="button"
                           onClick={() =>
                             setSelectedPlayers((prev) => {
                               const m = new Map(prev);
@@ -2358,22 +2534,6 @@ const TennisMatchApp = () => {
                       )}
                     </span>
                     ))}
-                  {Array.from(manualContacts.values()).map((contact) => (
-                    <span
-                      key={contact.key}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-sm font-bold text-blue-700"
-                    >
-                      {contact.name || formatPhoneDisplay(contact.phone)}
-                      <span className="ml-1 text-xs text-blue-500">SMS</span>
-                      <button
-                        onClick={() => handleRemoveManualContact(contact.key)}
-                        className="ml-1 text-blue-600 hover:text-blue-800"
-                        aria-label={`Remove ${contact.name || contact.phone}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
                 </div>
               </div>
             )}
@@ -2383,15 +2543,11 @@ const TennisMatchApp = () => {
               <div className="max-w-2xl mx-auto flex gap-3">
                 <button
                   onClick={async () => {
-                    displayToast("Match saved as draft!");
-                    setCurrentScreen("browse");
+                    onToast("Match saved as draft!");
+                    goToBrowse();
                     setShowPreview(false);
                     setCreateStep(1);
                     setSelectedPlayers(new Map());
-                    setManualContacts(new Map());
-                    setContactName("");
-                    setContactPhone("");
-                    setContactError("");
                     setExistingPlayerIds(new Set());
                     setInviteMatchId(null);
                     fetchMatches();
@@ -2402,12 +2558,12 @@ const TennisMatchApp = () => {
                 </button>
                 <button
                   onClick={async () => {
-                  if (totalSelectedInvitees === 0) {
-                    displayToast("Please add at least one invitee", "error");
+                  if (selectedPlayers.size === 0) {
+                    displayToast("Please select at least one player", "error");
                     return;
                   }
-                  if (!inviteMatchId) {
-                    displayToast("No match selected for invites", "error");
+                  if (!matchId) {
+                    onToast("No match selected for invites", "error");
                     return;
                   }
                     try {
@@ -2416,36 +2572,20 @@ const TennisMatchApp = () => {
                         .filter(
                           (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id)
                         );
-                      const phoneNumbers = Array.from(manualContacts.values()).map(
-                        (contact) =>
-                          contact.name
-                            ? { phone: contact.phone, fullName: contact.name }
-                            : contact.phone
-                      );
-                      if (newIds.length === 0 && phoneNumbers.length === 0) {
-                        displayToast("Everyone you picked is already invited", "error");
+                      if (newIds.length === 0) {
+                        displayToast("No new players selected", "error");
                         return;
                       }
                       await updateMatch(inviteMatchId, { status: "upcoming" });
-                      const response = await sendInvites(inviteMatchId, {
-                        playerIds: newIds,
-                        phoneNumbers,
-                      });
+                      await sendInvites(inviteMatchId, newIds);
 
-                      const message = response?.message
-                        ? response.message
-                        : `Invites sent to ${newIds.length + phoneNumbers.length} ${
-                            newIds.length + phoneNumbers.length === 1
-                              ? "player"
-                              : "players"
-                          }! 🎾`;
-                      displayToast(message);
+                      displayToast(
+                        `Invites sent to ${newIds.length} ${
+                          newIds.length === 1 ? "player" : "players"
+                        }! 🎾`
+                      );
                       setCurrentScreen("browse");
                       setSelectedPlayers(new Map());
-                      setManualContacts(new Map());
-                      setContactName("");
-                      setContactPhone("");
-                      setContactError("");
                       setExistingPlayerIds(new Set());
 
                       setShowPreview(false);
@@ -2453,20 +2593,10 @@ const TennisMatchApp = () => {
                       setInviteMatchId(null);
                       fetchMatches();
                     } catch (err) {
-                    if (
-                      err.data?.error === "invalid_phone_numbers" &&
-                      Array.isArray(err.data?.details)
-                    ) {
-                      displayToast(
-                        `Fix these numbers: ${err.data.details.join(", ")}`,
-                        "error"
-                      );
-                    } else {
-                      displayToast(
-                        err.response?.data?.message || err.message || "Failed to send invites",
-                        "error"
-                      );
-                    }
+                    displayToast(
+                      err.response?.data?.message || "Failed to send invites",
+                      "error"
+                    );
                   }
                 }}
                 className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
@@ -2506,7 +2636,7 @@ const TennisMatchApp = () => {
           <button
             onClick={() => {
               setViewMatch(null);
-              setCurrentScreen("browse");
+              goToBrowse();
             }}
             className="mb-4 flex items-center text-sm font-bold text-gray-600 hover:text-gray-800"
           >
@@ -3299,7 +3429,7 @@ const TennisMatchApp = () => {
     );
   }; // FIX: Removed comma here
 
-  const ParticipantsModal = () => {
+  const ParticipantsModal = ({ isOpen, matchId }) => {
     // Always call hooks first; guard inside effects instead of early-returning
     const [participants, setParticipants] = React.useState([]);
     const [hostId, setHostId] = React.useState(null);
@@ -3307,12 +3437,12 @@ const TennisMatchApp = () => {
     const [removeErr, setRemoveErr] = React.useState("");
 
     React.useEffect(() => {
-      if (!showParticipantsModal || !participantsMatchId) return;
+      if (!isOpen || !matchId) return;
       let alive = true;
       (async () => {
         try {
           setLoadingParts(true);
-          const data = await getMatch(participantsMatchId);
+          const data = await getMatch(matchId);
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
@@ -3325,15 +3455,15 @@ const TennisMatchApp = () => {
       return () => {
         alive = false;
       };
-    }, [showParticipantsModal, participantsMatchId]);
+    }, [isOpen, matchId]);
 
     const isHost = currentUser?.id && hostId && currentUser.id === hostId;
 
     const handleRemoveParticipant = async (playerId) => {
+      if (!matchId) return;
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
-        if (!participantsMatchId) return;
-        await removeParticipant(participantsMatchId, playerId);
+        await removeParticipant(matchId, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
         setRemoveErr("");
       } catch (error) {
@@ -3343,7 +3473,7 @@ const TennisMatchApp = () => {
       }
     };
 
-    if (!showParticipantsModal || !participantsMatchId) return null;
+    if (!isOpen || !matchId) return null;
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -3410,7 +3540,7 @@ const TennisMatchApp = () => {
     );
   };
 
-  const EditModal = () => {
+  const EditModal = ({ isOpen, matchToEdit }) => {
     // Always call hooks first; guard inside effects instead of early-returning
     // Load participants for the match being edited so hosts can remove players
     const [participants, setParticipants] = React.useState([]);
@@ -3419,12 +3549,12 @@ const TennisMatchApp = () => {
     const [removeErr, setRemoveErr] = React.useState("");
 
     React.useEffect(() => {
-      if (!showEditModal || !editMatch?.id) return;
+      if (!isOpen || !matchToEdit?.id) return;
       let alive = true;
       (async () => {
         try {
           setLoadingParts(true);
-          const data = await getMatch(editMatch.id);
+          const data = await getMatch(matchToEdit.id);
           if (!alive) return;
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
@@ -3438,15 +3568,15 @@ const TennisMatchApp = () => {
       return () => {
         alive = false;
       };
-    }, [showEditModal, editMatch?.id]);
+    }, [isOpen, matchToEdit?.id]);
 
     const isHost = currentUser?.id && hostId && currentUser.id === hostId;
 
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
-        if (!editMatch?.id) return;
-        await removeParticipant(editMatch.id, playerId);
+        if (!matchToEdit?.id) return;
+        await removeParticipant(matchToEdit.id, playerId);
         setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
         setRemoveErr("");
       } catch (error) {
@@ -3456,23 +3586,18 @@ const TennisMatchApp = () => {
       }
     };
 
-    if (!showEditModal || !editMatch) return null;
+    if (!isOpen || !matchToEdit) return null;
 
     const handleSave = async () => {
+      if (!matchToEdit?.id) return;
       try {
-        const payload = {
+        await updateMatch(editMatch.id, {
           start_date_time: new Date(editMatch.dateTime).toISOString(),
           location_text: editMatch.location,
           latitude: editMatch.latitude,
           longitude: editMatch.longitude,
           notes: editMatch.notes,
-          player_limit: Number(editMatch.playerLimit) || undefined,
-          match_format: editMatch.format,
-        };
-        if (editMatch?.privacy === "open") {
-          payload.skill_level_min = editMatch.skillLevel || undefined;
-        }
-        await updateMatch(editMatch.id, payload);
+        });
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
@@ -3510,9 +3635,9 @@ const TennisMatchApp = () => {
               <input
                 type="datetime-local"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={editMatch.dateTime}
+                value={matchToEdit.dateTime}
                 onChange={(e) =>
-                  setEditMatch({ ...editMatch, dateTime: e.target.value })
+                  setEditMatch({ ...matchToEdit, dateTime: e.target.value })
                 }
               />
             </div>
@@ -3526,10 +3651,10 @@ const TennisMatchApp = () => {
                 <Autocomplete
                   apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
                   type="search"
-                  value={editMatch.location}
+                  value={matchToEdit.location}
                   onChange={(e) =>
                     setEditMatch({
-                      ...editMatch,
+                      ...matchToEdit,
                       location: e.target.value,
                       latitude: null,
                       longitude: null,
@@ -3579,9 +3704,9 @@ const TennisMatchApp = () => {
               <input
                 type="text"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={editMatch.location}
+                value={matchToEdit.location}
                 onChange={(e) =>
-                  setEditMatch({ ...editMatch, location: e.target.value })
+                  setEditMatch({ ...matchToEdit, location: e.target.value })
                 }
               />
 
@@ -3651,9 +3776,9 @@ const TennisMatchApp = () => {
               <textarea
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
                 rows={3}
-                value={editMatch.notes}
+                value={matchToEdit.notes}
                 onChange={(e) =>
-                  setEditMatch({ ...editMatch, notes: e.target.value })
+                  setEditMatch({ ...matchToEdit, notes: e.target.value })
                 }
               />
             </div>
@@ -3802,15 +3927,20 @@ const TennisMatchApp = () => {
 
         {currentScreen === "browse" && BrowseScreen()}
         {currentScreen === "create" && CreateMatchScreen()}
-        {currentScreen === "invite" && <InviteScreen />}
+        {currentScreen === "invite" && (
+          <InviteScreen matchId={inviteMatchId} onToast={displayToast} />
+        )}
         {currentScreen === "details" && <MatchDetailsScreen />}
         {currentScreen === "invites" && (
           <InvitesList onInviteResponse={fetchMatches} />
         )}
 
       {SignInModal()}
-      {EditModal()}
-      {ParticipantsModal()}
+      <EditModal isOpen={showEditModal} matchToEdit={editMatch} />
+      <ParticipantsModal
+        isOpen={showParticipantsModal}
+        matchId={participantsMatchId}
+      />
       {Toast()}
       <ProfileManager
         isOpen={showProfileManager}
