@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   listMatches,
@@ -15,7 +15,12 @@ import {
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
-import { getInviteByToken } from "./services/invites";
+import {
+  getInviteByToken,
+  listInvites,
+  acceptInvite,
+  rejectInvite,
+} from "./services/invites";
 import { login, signup, updatePersonalDetails, forgotPassword } from "./services/auth";
 import {
   Calendar,
@@ -96,6 +101,40 @@ const buildMapsUrl = (lat, lng, address) => {
   return "";
 };
 
+const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
+  const parsedLat1 = Number(lat1);
+  const parsedLon1 = Number(lon1);
+  const parsedLat2 = Number(lat2);
+  const parsedLon2 = Number(lon2);
+
+  if (
+    [parsedLat1, parsedLon1, parsedLat2, parsedLon2].some((value) =>
+      Number.isNaN(value),
+    )
+  ) {
+    return null;
+  }
+
+  const toRad = (value) => (value * Math.PI) / 180;
+  const earthRadiusMiles = 3958.8;
+
+  const dLat = toRad(parsedLat2 - parsedLat1);
+  const dLon = toRad(parsedLon2 - parsedLon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(parsedLat1)) *
+      Math.cos(toRad(parsedLat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = earthRadiusMiles * c;
+
+  if (!Number.isFinite(distance)) return null;
+  return Math.round(distance * 10) / 10;
+};
+
 const TennisMatchApp = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -163,6 +202,30 @@ const TennisMatchApp = () => {
   const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
   const [viewMatch, setViewMatch] = useState(null);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [invitesError, setInvitesError] = useState("");
+  const [locationFilter, setLocationFilter] = useState(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const stored = window.localStorage.getItem("matchLocationFilter");
+      return stored ? JSON.parse(stored) : null;
+    } catch (err) {
+      console.warn("Failed to read stored location filter", err);
+      return null;
+    }
+  });
+  const [distanceFilter, setDistanceFilter] = useState(() => {
+    if (typeof window === "undefined") return 5;
+    const stored = Number(window.localStorage.getItem("matchDistanceFilter"));
+    return Number.isFinite(stored) && stored > 0 ? stored : 5;
+  });
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [geoError, setGeoError] = useState("");
+  const [locationSearchTerm, setLocationSearchTerm] = useState(
+    () => locationFilter?.label || "",
+  );
 
   const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
   const lastInviteLoadRef = useRef(null);
@@ -182,6 +245,27 @@ const TennisMatchApp = () => {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (locationFilter?.lat && locationFilter?.lng) {
+      window.localStorage.setItem(
+        "matchLocationFilter",
+        JSON.stringify(locationFilter),
+      );
+    } else {
+      window.localStorage.removeItem("matchLocationFilter");
+    }
+  }, [locationFilter]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("matchDistanceFilter", String(distanceFilter));
+  }, [distanceFilter]);
+
+  useEffect(() => {
+    setLocationSearchTerm(locationFilter?.label || "");
+  }, [locationFilter]);
+
+  useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
       setCurrentUser(JSON.parse(storedUser));
@@ -192,6 +276,100 @@ const TennisMatchApp = () => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
   }, []);
+
+  const fetchPendingInvites = useCallback(async () => {
+    if (!currentUser) {
+      setPendingInvites([]);
+      setInvitesError("");
+      return;
+    }
+
+    try {
+      setInvitesLoading(true);
+      const data = await listInvites({ status: "pending", perPage: 50 });
+      const invitesArray = Array.isArray(data?.invites) ? data.invites : data || [];
+      setPendingInvites(invitesArray);
+      setInvitesError("");
+    } catch (err) {
+      console.error("Failed to load invites", err);
+      setInvitesError(
+        err?.response?.data?.message || err?.message || "Failed to load invites",
+      );
+    } finally {
+      setInvitesLoading(false);
+    }
+  }, [currentUser]);
+
+  const detectCurrentLocation = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoError("Geolocation is not supported in this browser.");
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    setGeoError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position?.coords || {};
+        if (
+          typeof latitude === "number" &&
+          !Number.isNaN(latitude) &&
+          typeof longitude === "number" &&
+          !Number.isNaN(longitude)
+        ) {
+          setLocationFilter({
+            label: "Current location",
+            lat: latitude,
+            lng: longitude,
+          });
+          setShowLocationPicker(false);
+        } else {
+          setGeoError("Could not determine your location. Try searching manually.");
+        }
+        setIsDetectingLocation(false);
+      },
+      (error) => {
+        setGeoError(
+          error?.message || "Unable to retrieve your location. Please search manually.",
+        );
+        setIsDetectingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      },
+    );
+  }, []);
+
+  const respondToInvite = useCallback(
+    async (token, action) => {
+      if (!token) return;
+      try {
+        if (action === "accept") {
+          await acceptInvite(token);
+          displayToast("Invite accepted! See you on the court. 🎾");
+        } else {
+          await rejectInvite(token);
+          displayToast("Invite declined", "info");
+        }
+        fetchPendingInvites();
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err?.response?.data?.message || err?.message || "Failed to update invite",
+          "error",
+        );
+      }
+    },
+    [displayToast, fetchMatches, fetchPendingInvites],
+  );
+
+  const handleInviteResponse = useCallback(() => {
+    fetchMatches();
+    fetchPendingInvites();
+  }, [fetchMatches, fetchPendingInvites]);
 
   const goToBrowse = useCallback(
     (options = {}) => {
@@ -461,8 +639,20 @@ const TennisMatchApp = () => {
           privacy: m.match_type || "open",
           dateTime: m.start_date_time,
           location: m.location_text,
-          latitude: m.latitude,
-          longitude: m.longitude,
+          latitude: (() => {
+            const numeric =
+              typeof m.latitude === "string"
+                ? Number.parseFloat(m.latitude)
+                : m.latitude;
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
+          longitude: (() => {
+            const numeric =
+              typeof m.longitude === "string"
+                ? Number.parseFloat(m.longitude)
+                : m.longitude;
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
           mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
           format: m.match_format,
           skillLevel: m.skill_level_min,
@@ -490,7 +680,56 @@ const TennisMatchApp = () => {
     fetchMatches();
   }, [fetchMatches]);
 
+  useEffect(() => {
+    fetchPendingInvites();
+  }, [fetchPendingInvites]);
+
   // Removed inline Header in favor of components/AppHeader
+
+  const hasLocationFilter = Boolean(
+    locationFilter?.lat && locationFilter?.lng,
+  );
+
+  const matchesWithDistance = useMemo(() => {
+    return matches.map((match) => {
+      const distance = hasLocationFilter
+        ? calculateDistanceMiles(
+            locationFilter.lat,
+            locationFilter.lng,
+            match.latitude,
+            match.longitude,
+          )
+        : match.distanceMiles ?? null;
+      return { ...match, distanceMiles: distance };
+    });
+  }, [hasLocationFilter, locationFilter, matches]);
+
+  const displayedMatches = useMemo(() => {
+    if (!hasLocationFilter) {
+      return matchesWithDistance;
+    }
+
+    const filtered = matchesWithDistance.filter((match) => {
+      if (!Number.isFinite(match.distanceMiles)) return false;
+      return match.distanceMiles <= distanceFilter;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const distanceA = Number.isFinite(a.distanceMiles)
+        ? a.distanceMiles
+        : Number.POSITIVE_INFINITY;
+      const distanceB = Number.isFinite(b.distanceMiles)
+        ? b.distanceMiles
+        : Number.POSITIVE_INFINITY;
+      if (distanceA === distanceB) return 0;
+      return distanceA - distanceB;
+    });
+  }, [distanceFilter, hasLocationFilter, matchesWithDistance]);
+
+  const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
+  const activeLocationLabel = hasLocationFilter
+    ? locationFilter?.label || "Saved location"
+    : "";
 
   const BrowseScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
@@ -535,6 +774,249 @@ const TennisMatchApp = () => {
 
       {currentUser ? (
         <>
+          <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
+            <section className="bg-white/80 border border-gray-100 rounded-3xl shadow-sm p-5 space-y-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-semibold shadow ${
+                      hasLocationFilter
+                        ? "bg-gradient-to-r from-purple-500 to-indigo-500 text-white"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    <MapPin className="w-4 h-4" />
+                    <span className="truncate max-w-[220px] sm:max-w-[320px]">
+                      {hasLocationFilter
+                        ? activeLocationLabel
+                        : "Showing matches from every location"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowLocationPicker((prev) => !prev);
+                      setGeoError("");
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold shadow hover:bg-gray-700 transition-colors"
+                  >
+                    {showLocationPicker
+                      ? "Hide location tools"
+                      : hasLocationFilter
+                      ? "Change location"
+                      : "Set location"}
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {distanceOptions.map((distance) => (
+                    <button
+                      key={distance}
+                      onClick={() => setDistanceFilter(distance)}
+                      disabled={!hasLocationFilter && distance !== distanceFilter}
+                      className={`px-3 py-1.5 text-sm font-bold rounded-full border transition-colors ${
+                        distanceFilter === distance
+                          ? "bg-green-500 text-white border-green-500 shadow"
+                          : "bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600"
+                      } ${
+                        !hasLocationFilter && distance !== distanceFilter
+                          ? "opacity-50 cursor-not-allowed"
+                          : ""
+                      }`}
+                      type="button"
+                    >
+                      {distance} mi
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {hasLocationFilter && (
+                <p className="text-xs font-semibold text-gray-500">
+                  Showing matches within {distanceFilter} miles of your selected location.
+                </p>
+              )}
+              {showLocationPicker && (
+                <div className="pt-4 border-t border-gray-100 space-y-4">
+                  <Autocomplete
+                    apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                    placeholder="Search for a city, club, or court"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm font-semibold text-gray-700"
+                    value={locationSearchTerm}
+                    onChange={(event) => setLocationSearchTerm(event.target.value)}
+                    onPlaceSelected={(place) => {
+                      if (!place) {
+                        setGeoError("Please choose a location from the suggestions.");
+                        return;
+                      }
+                      const lat = place.geometry?.location?.lat?.();
+                      const lng = place.geometry?.location?.lng?.();
+                      const label =
+                        place.formatted_address || place.name || locationSearchTerm || "Custom location";
+                      if (
+                        typeof lat === "number" &&
+                        !Number.isNaN(lat) &&
+                        typeof lng === "number" &&
+                        !Number.isNaN(lng)
+                      ) {
+                        setLocationFilter({ label, lat, lng });
+                        setGeoError("");
+                        setShowLocationPicker(false);
+                      } else {
+                        setGeoError(
+                          "We couldn't read that location's coordinates. Try another search.",
+                        );
+                      }
+                    }}
+                    types={["geocode"]}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={detectCurrentLocation}
+                      disabled={isDetectingLocation}
+                      className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-sm border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isDetectingLocation ? "Detecting location..." : "Use my current location"}
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {hasLocationFilter && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationFilter(null);
+                            setLocationSearchTerm("");
+                            setShowLocationPicker(false);
+                            setGeoError("");
+                          }}
+                          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm hover:bg-gray-200 transition-colors"
+                        >
+                          Clear location
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowLocationPicker(false);
+                          setGeoError("");
+                          setLocationSearchTerm(locationFilter?.label || "");
+                        }}
+                        className="px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-sm hover:bg-gray-700 transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  {geoError && (
+                    <p className="text-sm font-semibold text-red-600">{geoError}</p>
+                  )}
+                  {!import.meta.env.VITE_GOOGLE_API_KEY && (
+                    <p className="text-xs text-amber-600 font-semibold">
+                      Tip: Provide a Google Places API key to enable location search suggestions.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {invitesLoading ? (
+              <div className="bg-white border border-gray-100 rounded-3xl shadow-sm p-6 text-sm text-gray-500 font-semibold">
+                Checking for outstanding invites...
+              </div>
+            ) : invitesError ? (
+              <div className="bg-red-50 border border-red-200 rounded-3xl shadow-sm p-6 text-sm text-red-700 font-semibold">
+                {invitesError}
+              </div>
+            ) : pendingInvites.length > 0 ? (
+              <section className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white rounded-3xl shadow-xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide font-bold text-white/80">
+                      Pending Invites
+                    </p>
+                    <h3 className="text-2xl font-black leading-tight">
+                      You have {pendingInvites.length} invite
+                      {pendingInvites.length === 1 ? "" : "s"} waiting for a response
+                    </h3>
+                  </div>
+                  <button
+                    onClick={goToInvites}
+                    className="px-4 py-2 rounded-xl bg-white text-amber-600 font-bold text-sm shadow hover:bg-amber-50 transition-colors"
+                  >
+                    Review all
+                  </button>
+                </div>
+                <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+                  {pendingInvites.slice(0, 4).map((invite) => {
+                    const startTime = invite.match?.start_date_time
+                      ? new Date(invite.match.start_date_time).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "TBD";
+                    return (
+                      <div
+                        key={invite.token}
+                        className="min-w-[220px] bg-white/15 backdrop-blur-sm rounded-2xl p-4 flex flex-col gap-3 border border-white/30"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-white/90">
+                            {invite.match?.match_format || "Match Invite"}
+                          </div>
+                          <span className="px-2 py-1 text-[10px] font-black tracking-wide rounded-full bg-white/25 text-white">
+                            PENDING
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-lg font-black leading-tight">
+                            {invite.match?.location_text || "Location TBA"}
+                          </p>
+                          <p className="text-sm text-white/80 font-semibold">{startTime}</p>
+                        </div>
+                        <div className="text-xs font-semibold text-white/80 space-y-1">
+                          <p className="flex items-center gap-1">
+                            <Users className="w-3.5 h-3.5" />
+                            {invite.match?.player_limit || "Open"} player cap
+                          </p>
+                          {invite.inviter?.full_name && (
+                            <p className="flex items-center gap-1">
+                              <User className="w-3.5 h-3.5" /> Hosted by {invite.inviter.full_name}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-auto">
+                          <button
+                            onClick={() => respondToInvite(invite.token, "reject")}
+                            className="flex-1 px-3 py-1.5 rounded-xl bg-white/15 text-white font-bold text-xs border border-white/30 hover:bg-white/25 transition-colors"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            onClick={() => respondToInvite(invite.token, "accept")}
+                            className="flex-1 px-3 py-1.5 rounded-xl bg-white text-amber-600 font-black text-xs shadow hover:bg-amber-50 transition-colors"
+                          >
+                            Accept
+                          </button>
+                          {invite.match?.id && (
+                            <button
+                              onClick={() => handleViewDetails(invite.match.id)}
+                              className="w-full px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold text-xs border border-white/30 hover:bg-white/20 transition-colors"
+                            >
+                              View details
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <div className="bg-white border border-gray-100 rounded-3xl shadow-sm p-6 text-sm text-gray-500 font-semibold">
+                You're all caught up on invites. 🎉
+              </div>
+            )}
+          </div>
+
       {/* Filter Tabs */}
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
@@ -656,13 +1138,19 @@ const TennisMatchApp = () => {
           />
         </div>
 
+        {hasLocationFilter && displayedMatches.length === 0 && (
+          <div className="bg-white border border-dashed border-emerald-200 rounded-2xl p-8 text-center text-sm font-semibold text-emerald-700 mb-6">
+            No matches within {distanceFilter} miles of your location yet. Try expanding the distance filter or check back soon!
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {matches.map((match) => (
+          {displayedMatches.map((match) => (
             <MatchCard key={match.id} match={match} />
           ))}
         </div>
 
-        {matchPagination && (
+        {matchPagination && !hasLocationFilter && (
           <div className="flex items-center justify-between mt-6">
             <button
               onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
@@ -724,6 +1212,25 @@ const TennisMatchApp = () => {
       const ntrp = skillLevel.split(" - ")[0];
       return ntrp;
     };
+
+    const formatDistance = (value) => {
+      if (!Number.isFinite(value)) return null;
+      const normalized = Math.round(value * 10) / 10;
+      const display = Number.isInteger(normalized)
+        ? normalized.toString()
+        : normalized.toFixed(1);
+      const plural = Math.abs(normalized - 1) < 0.05 ? "" : "s";
+      return `${display} mile${plural} away`;
+    };
+
+    const distanceLabel = formatDistance(match.distanceMiles);
+    const locationSubtitle = distanceLabel
+      ? distanceLabel
+      : hasLocationFilter
+      ? "Distance unavailable"
+      : match.mapUrl
+      ? "Tap for directions"
+      : "Location details coming soon";
 
     return (
       <div className="bg-white rounded-2xl shadow-sm hover:shadow-2xl transition-all p-6 border border-gray-100 group hover:scale-[1.02]">
@@ -790,9 +1297,6 @@ const TennisMatchApp = () => {
               <p className="text-sm font-black text-gray-900">
                 {formatDateTime(match.dateTime)}
               </p>
-              <p className="text-xs font-semibold text-gray-500">
-                Duration: 2 hours
-              </p>
             </div>
           </div>
           <div className="flex items-start gap-3">
@@ -801,18 +1305,24 @@ const TennisMatchApp = () => {
             </div>
             <div>
               <p className="text-sm font-black text-gray-900">
-                <a
-                  href={match.mapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:underline"
-                >
-                  {match.location}
-                </a>
+                {match.location ? (
+                  match.mapUrl ? (
+                    <a
+                      href={match.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      {match.location}
+                    </a>
+                  ) : (
+                    match.location
+                  )
+                ) : (
+                  "Location TBA"
+                )}
               </p>
-              <p className="text-xs font-semibold text-gray-500">
-                2.3 miles away
-              </p>
+              <p className="text-xs font-semibold text-gray-500">{locationSubtitle}</p>
             </div>
           </div>
         </div>
@@ -847,30 +1357,38 @@ const TennisMatchApp = () => {
           </span>
         </div>
 
-            {match.type === "available" && (
-              <button
-                onClick={async () => {
-                  if (!currentUser) {
-                    setShowSignInModal(true);
-                  } else {
-                    try {
-                      await joinMatch(match.id);
-                      displayToast("Successfully joined the match! 🎾");
-                      fetchMatches();
-                    } catch (err) {
-                      displayToast(
-                        err.response?.data?.message || "Failed to join match",
-                        "error"
-                      );
-                    }
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => handleViewDetails(match.id)}
+            className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+          >
+            View details
+          </button>
+          {match.type === "available" && (
+            <button
+              onClick={async () => {
+                if (!currentUser) {
+                  setShowSignInModal(true);
+                } else {
+                  try {
+                    await joinMatch(match.id);
+                    displayToast("Successfully joined the match! 🎾");
+                    fetchMatches();
+                    fetchPendingInvites();
+                  } catch (err) {
+                    displayToast(
+                      err.response?.data?.message || "Failed to join match",
+                      "error",
+                    );
                   }
-                }}
-                className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all flex items-center gap-1.5 shadow-lg"
-              >
-                <Zap className="w-4 h-4" />
-                JOIN
-              </button>
-            )}
+                }
+              }}
+              className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-105 transition-all flex items-center gap-1.5 shadow-lg"
+            >
+              <Zap className="w-4 h-4" />
+              Join match
+            </button>
+          )}
           {isHosted && (
             <button
               onClick={() => {
@@ -880,24 +1398,16 @@ const TennisMatchApp = () => {
                   location: match.location,
                   latitude: match.latitude,
                   longitude: match.longitude,
-
                   notes: match.notes || "",
                 });
                 setShowEditModal(true);
               }}
-              className="px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-110 transition-all shadow-lg"
+              className="px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
             >
-              MANAGE
+              Manage match
             </button>
           )}
-          {isJoined && (
-          <button
-            onClick={() => handleViewDetails(match.id)}
-            className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-black hover:bg-gray-200 transition-all"
-          >
-            DETAILS
-          </button>
-        )}
+        </div>
       </div>
     );
   };
@@ -2490,9 +3000,26 @@ const TennisMatchApp = () => {
   };
 
   const MatchDetailsScreen = () => {
-    if (!viewMatch) return null;
-    const { match, participants = [], invitees = [] } = viewMatch;
+    const [joining, setJoining] = useState(false);
+    const matchData = viewMatch;
+    if (!matchData) return null;
+    const { match, participants = [], invitees = [] } = matchData;
     const isHost = currentUser?.id === match.host_id;
+    const isJoined = participants.some(
+      (p) => p.player_id === currentUser?.id && p.status !== "left",
+    );
+    const committedParticipants = participants.filter((p) => p.status !== "left");
+    const acceptedInviteCount = invitees.filter((i) => i.status === "accepted").length;
+    const totalCommitted = committedParticipants.length + acceptedInviteCount;
+    const remainingSpots =
+      typeof match.player_limit === "number"
+        ? Math.max(match.player_limit - totalCommitted, 0)
+        : null;
+    const canJoin =
+      !isHost &&
+      !isJoined &&
+      match.status === "upcoming" &&
+      (remainingSpots === null || remainingSpots > 0);
 
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
@@ -2503,10 +3030,36 @@ const TennisMatchApp = () => {
           participants: participants.filter((p) => p.player_id !== playerId),
         });
         setShowToast("Participant removed");
+        fetchMatches();
       } catch {
         setShowToast("Failed to remove participant");
       }
     };
+
+    const handleJoinMatch = async () => {
+      if (!currentUser) {
+        setShowSignInModal(true);
+        return;
+      }
+
+      try {
+        setJoining(true);
+        await joinMatch(match.id);
+        displayToast("You're in! Match details updated. 🎾");
+        fetchMatches();
+        fetchPendingInvites();
+        const updated = await getMatch(match.id);
+        setViewMatch(updated);
+      } catch (err) {
+        displayToast(
+          err?.response?.data?.message || err?.message || "Failed to join match",
+          "error",
+        );
+      } finally {
+        setJoining(false);
+      }
+    };
+
     return (
       <div className="max-w-2xl mx-auto p-4">
         <div className="bg-white rounded-xl shadow p-6">
@@ -2554,6 +3107,27 @@ const TennisMatchApp = () => {
                 </p>
               )}
             </div>
+          )}
+          {canJoin && (
+            <div className="mb-6">
+              <button
+                onClick={handleJoinMatch}
+                disabled={joining}
+                className="w-full px-5 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {joining ? "Joining match..." : "Join this match"}
+              </button>
+              {remainingSpots !== null && (
+                <p className="text-xs text-gray-500 font-semibold mt-2 text-center">
+                  {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
+                </p>
+              )}
+            </div>
+          )}
+          {!canJoin && !isHost && !isJoined && remainingSpots === 0 && (
+            <p className="mb-6 text-sm font-semibold text-red-500">
+              This match is currently full. Check back later or explore other matches.
+            </p>
           )}
           <div className="mb-6">
             <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
@@ -3778,7 +4352,7 @@ const TennisMatchApp = () => {
       )}
       {currentScreen === "details" && <MatchDetailsScreen />}
       {currentScreen === "invites" && (
-        <InvitesList onInviteResponse={fetchMatches} />
+        <InvitesList onInviteResponse={handleInviteResponse} />
       )}
 
       {SignInModal()}
