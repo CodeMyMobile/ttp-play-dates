@@ -18,7 +18,6 @@ import {
   updateMatch,
   sendInvites,
 } from "../services/matches";
-import { formatPhoneDisplay, normalizePhoneValue } from "../services/phone";
 
 const InviteScreen = ({
   matchId,
@@ -47,28 +46,10 @@ const InviteScreen = ({
   const [hostId, setHostId] = useState(null);
 
   // Local state for manual phone invites (isolated from search input)
-  const [localContactName, setLocalContactName] = useState("");
-  const [localContactPhone, setLocalContactPhone] = useState("");
-  const [localContactError, setLocalContactError] = useState("");
-
   const totalSelectedInvitees = useMemo(
     () => selectedPlayers.size,
     [selectedPlayers]
   );
-
-  const addManualContact = () => {
-    setLocalContactError("");
-    const normalized = normalizePhoneValue(localContactPhone);
-    if (!normalized) {
-      setLocalContactError(
-        "Enter a valid phone number with country code or 10 digits."
-      );
-      return;
-    }
-    // For now, manual phone invites are not persisted in this screen.
-    // Could be extended to push SMS-only invites as in create flow.
-    setLocalContactError("Manual phone invites not enabled on this screen");
-  };
 
   const copyLink = () => {
     if (!shareLink) return;
@@ -101,7 +82,7 @@ const InviteScreen = ({
         if (!alive) return;
         setParticipants((data.participants || []).filter((p) => p.status !== "left"));
         setHostId(data.match?.host_id ?? null);
-      } catch (error) {
+      } catch {
         if (!alive) return;
         setParticipants([]);
         setParticipantsError("Failed to load participants");
