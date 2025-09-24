@@ -21,6 +21,14 @@ export const verifyInviteCode = (token, code) =>
     })
   );
 
+export const claimInvite = (token, payload) =>
+  unwrap(
+    api(`/invites/${token}/claim`, {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    })
+  );
+
 export const listInvites = ({ status, page, perPage } = {}) => {
   const params = new URLSearchParams();
   if (status) params.set("status", status);

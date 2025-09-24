@@ -16,6 +16,7 @@ import {
   getInvitePreview,
   beginInviteVerification,
   verifyInviteCode,
+  claimInvite,
 } from "./services/invites";
 import Header from "./components/Header.jsx";
 
@@ -34,6 +35,13 @@ export default function InvitationPage() {
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [identifier, setIdentifier] = useState("");
   const [lastChannel, setLastChannel] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [claiming, setClaiming] = useState(false);
 
   // 1s ticker for resend countdown
   useEffect(() => {
@@ -49,6 +57,9 @@ export default function InvitationPage() {
   // Load minimal invite preview
   useEffect(() => {
     let alive = true;
+    setLoading(true);
+    setError("");
+    setLoadError(null);
     (async () => {
       try {
         const data = await getInvitePreview(token);
@@ -64,14 +75,99 @@ export default function InvitationPage() {
         setLastChannel(null);
         setShowPicker(false);
         setIdentifier("");
-      } catch {
+        const invitee = data?.invitee || null;
+        if (invitee) {
+          setFullName(invitee.full_name || "");
+          setEmail(invitee.email || "");
+          setPhone(invitee.phone || "");
+        } else {
+          setFullName("");
+          setEmail("");
+          setPhone("");
+        }
+        setPassword("");
+        setAgreeTerms(false);
+      } catch (err) {
+        if (!alive) return;
         setPreview(null);
+        setPhase("preview");
+        setSelectedChannel(null);
+        setLastChannel(null);
+        setShowPicker(false);
+        setIdentifier("");
+        const isNotFound = err?.status === 404 || err?.message === "not_found";
+        setLoadError(
+          isNotFound
+            ? {
+                emoji: "🔍",
+                title: "Invite not found",
+                message:
+                  "This invite link is invalid or has expired. Ask the host to send a new one.",
+              }
+            : {
+                emoji: "😵",
+                title: "Something went wrong",
+                message:
+                  "We couldn't load this invite. Refresh the page or try again later.",
+              }
+        );
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [token]);
+
+  const persistSession = (data) => {
+    if (!data) return;
+    const {
+      access_token,
+      refresh_token,
+      profile,
+      user_id,
+      user_type,
+    } = data || {};
+
+    if (access_token) {
+      try {
+        localStorage.setItem("authToken", access_token);
+      } catch {
+        // ignore localStorage write errors
+      }
+    }
+    if (refresh_token) {
+      try {
+        localStorage.setItem("refreshToken", refresh_token);
+      } catch {
+        // ignore localStorage write errors
+      }
+    }
+
+    if (user_id || profile) {
+      const name = (profile?.full_name || "").trim() || "Player";
+      const user = {
+        id: user_id,
+        type: user_type,
+        name,
+        email: profile?.email || "",
+        phone: profile?.phone || "",
+        avatar: name
+          .split(" ")
+          .filter(Boolean)
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase(),
+        skillLevel: profile?.usta_rating || "",
+      };
+      try {
+        localStorage.setItem("user", JSON.stringify(user));
+      } catch {
+        // ignore localStorage write errors
+      }
+    }
+  };
 
   const begin = async () => {
     setError("");
@@ -95,53 +191,7 @@ export default function InvitationPage() {
     try {
       const data = await verifyInviteCode(token, code);
 
-      // If verification returns tokens/profile, start a session
-      const {
-        access_token,
-        refresh_token,
-        profile,
-        user_id,
-        user_type,
-      } = data || {};
-
-      if (access_token) {
-        try {
-          localStorage.setItem("authToken", access_token);
-        } catch {
-          // ignore localStorage write errors
-        }
-      }
-      if (refresh_token) {
-        try {
-          localStorage.setItem("refreshToken", refresh_token);
-        } catch {
-          // ignore localStorage write errors
-        }
-      }
-
-      // Persist a lightweight user object for app state restore
-      if (user_id || profile) {
-        const name = (profile?.full_name || "").trim() || "Player";
-        const user = {
-          id: user_id,
-          type: user_type,
-          name,
-          email: profile?.email || "",
-          phone: profile?.phone || "",
-          avatar: name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase(),
-          skillLevel: profile?.usta_rating || "",
-        };
-        try {
-          localStorage.setItem("user", JSON.stringify(user));
-        } catch {
-          // ignore localStorage write errors
-        }
-      }
-
+      persistSession(data);
       setPhase("done");
       navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
     } catch {
@@ -152,6 +202,55 @@ export default function InvitationPage() {
   const resend = async () => {
     if (!canResend) return;
     await begin();
+  };
+
+  const handleClaimSubmit = async (event) => {
+    event.preventDefault();
+    if (claiming) return;
+    setError("");
+
+    const trimmedEmail = email.trim();
+    const trimmedName = fullName.trim();
+
+    if (!trimmedEmail || !password) {
+      setError("Please enter your email and create a password.");
+      return;
+    }
+    if (!agreeTerms) {
+      setError("Please accept the invite terms to continue.");
+      return;
+    }
+
+    setClaiming(true);
+    try {
+      const payload = {
+        email: trimmedEmail,
+        password,
+      };
+      if (trimmedName) payload.fullName = trimmedName;
+      const data = await claimInvite(token, payload);
+      persistSession(data);
+      navigate(data.redirect || `/matches/${data.matchId}`, {
+        replace: true,
+      });
+    } catch (err) {
+      const claimMessage = mapClaimError(err);
+      if (err?.status === 404 || err?.message === "not_found") {
+        setPreview(null);
+        setLoadError({
+          emoji: "🔍",
+          title: "Invite not found",
+          message:
+            "This invite is no longer available. Ask the host to send a new link.",
+        });
+      } else if (claimMessage) {
+        setError(claimMessage);
+      } else {
+        setError("We couldn't complete your signup. Try again later.");
+      }
+    } finally {
+      setClaiming(false);
+    }
   };
 
   // Render states
@@ -169,9 +268,12 @@ export default function InvitationPage() {
     return (
       <InvitationLayout>
         <StatusCard
-          emoji="😕"
-          title="Invite not found"
-          message="This invite may have been removed or the link is incorrect."
+          emoji={loadError?.emoji || "😕"}
+          title={loadError?.title || "Invite not found"}
+          message={
+            loadError?.message ||
+            "This invite may have been removed or the link is incorrect."
+          }
         />
       </InvitationLayout>
     );
@@ -256,6 +358,11 @@ export default function InvitationPage() {
   const maskedIdentifier = preview?.maskedIdentifier;
   const activeChannel = lastChannel || selectedChannel;
   const activeChannelMeta = getChannelMeta(activeChannel);
+  const isInviteeClaim = Boolean(preview?.invitee);
+  const identifierDisplay = maskedIdentifier || phone || email;
+  const channelLabels = availableChannels.map(
+    (ch) => getChannelMeta(ch).label,
+  );
 
   const infoItems = [];
   if (startDate) {
@@ -285,6 +392,137 @@ export default function InvitationPage() {
       value: matchType,
     });
   }
+
+  const claimSection = (
+    <form
+      onSubmit={handleClaimSubmit}
+      className="space-y-5 rounded-[28px] border border-slate-100 bg-white/95 p-6 text-left shadow-xl"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+          <Users className="h-5 w-5" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-slate-900">
+            Quick signup to join the match
+          </p>
+          <p className="text-sm text-slate-500">
+            We pre-filled your details from the invite so you can claim your
+            profile and get playing faster.
+          </p>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
+        <dl className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <dt className="font-semibold text-emerald-900/80">Status</dt>
+            <dd className="text-right capitalize">
+              {prettyInviteStatus(preview.status)}
+            </dd>
+          </div>
+          {identifierDisplay && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="font-semibold text-emerald-900/80">Sent to</dt>
+              <dd className="text-right text-emerald-900">
+                {identifierDisplay}
+              </dd>
+            </div>
+          )}
+          {channelLabels.length > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="font-semibold text-emerald-900/80">Delivery</dt>
+              <dd className="text-right text-emerald-900">
+                {channelLabels.join(", ")}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+      <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-slate-700">
+            Your Name
+          </span>
+          <input
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+            value={fullName}
+            onChange={(event) => setFullName(event.target.value)}
+            placeholder="Enter your name"
+            autoComplete="name"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-slate-700">
+            Email
+          </span>
+          <input
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@email.com"
+            autoComplete="email"
+            required
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-slate-700">
+            Phone
+          </span>
+          <input
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 placeholder:text-slate-400 focus:outline-none"
+            value={phone}
+            readOnly
+            disabled
+            placeholder="+1 (555) 123-4567"
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            We'll connect this invite to your profile after signup.
+          </p>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-slate-700">
+            Create Password
+          </span>
+          <input
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Min. 8 characters"
+            autoComplete="new-password"
+            required
+          />
+        </label>
+      </div>
+      <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+          checked={agreeTerms}
+          onChange={(event) => setAgreeTerms(event.target.checked)}
+        />
+        <span>
+          I accept the match invite and agree to Matchplay's terms.
+        </span>
+      </label>
+      <PrimaryButton
+        type="submit"
+        disabled={claiming}
+        className="w-full"
+      >
+        {claiming ? (
+          "Completing signup..."
+        ) : (
+          <>
+            Join Match
+            <ArrowRight className="h-4 w-4" />
+          </>
+        )}
+      </PrimaryButton>
+      {error && <ErrorText>{error}</ErrorText>}
+    </form>
+  );
 
   const channelPicker = showPicker ? (
     <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-5 shadow-inner backdrop-blur">
@@ -562,7 +800,11 @@ export default function InvitationPage() {
               </div>
             </div>
             <div className="mt-6 space-y-4">
-              {phase === "preview" ? (
+              {isInviteeClaim ? (
+                claimSection
+              ) : phase === "otp" ? (
+                otpSection
+              ) : (
                 <>
                   <PrimaryButton
                     onClick={() => {
@@ -582,8 +824,6 @@ export default function InvitationPage() {
                   {channelPicker}
                   {!showPicker && error && <ErrorText>{error}</ErrorText>}
                 </>
-              ) : (
-                otpSection
               )}
             </div>
           </div>
@@ -606,9 +846,16 @@ function InvitationLayout({ children }) {
   );
 }
 
-function PrimaryButton({ onClick, children, className = "", disabled }) {
+function PrimaryButton({
+  onClick,
+  children,
+  className = "",
+  disabled,
+  type = "button",
+}) {
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500 px-6 py-3 text-base font-semibold text-white shadow-xl shadow-emerald-500/30 transition-transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-emerald-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 ${className}`}
@@ -656,9 +903,39 @@ function mapBeginError(code) {
     case "not_found":
       return "Invite not found.";
     case "bad_request":
-      return "Couldn’t send code. Check details and try again.";
+      return "Couldn't send code. Check details and try again.";
     default:
-      return "Couldn’t send code. Please try again.";
+      return "Couldn't send code. Please try again.";
+  }
+}
+
+function mapClaimError(error) {
+  if (!error) return null;
+  if (error.status === 409 || error.message === "email_in_use") {
+    return "That email is already in use. Try a different email or sign in instead.";
+  }
+  if (error.status === 404 || error.message === "not_found") {
+    return null;
+  }
+  if (error.status >= 500) {
+    return "We couldn't complete your signup. Try again later.";
+  }
+  if (error.data?.message) return error.data.message;
+  switch (error.message) {
+    case "email_required":
+      return "Email is required. Enter a valid email address.";
+    case "invalid_email":
+      return "That email doesn't look right. Double-check and try again.";
+    case "password_required":
+      return "Create a password to continue.";
+    case "invalid_status":
+      return "This invite can't be claimed right now.";
+    case "expired":
+      return "This invite has expired. Ask the host for a new link.";
+    case "invitee_missing":
+      return "We couldn't find the invitee profile for this link.";
+    default:
+      return "We couldn't complete your signup. Check your details and try again.";
   }
 }
 
@@ -717,6 +994,12 @@ function getInitials(name) {
 function asNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function prettyInviteStatus(status) {
+  if (!status) return "Unknown";
+  const normalized = status.replace(/_/g, " ");
+  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function getActiveParticipants(match, preview) {
