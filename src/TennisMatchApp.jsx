@@ -343,6 +343,97 @@ const TennisMatchApp = () => {
     );
   }, []);
 
+  // Match loading helpers
+  const fetchMatches = useCallback(async () => {
+    if (!currentUser) {
+      setMatches([]);
+      setMatchCounts({});
+      setMatchPagination(null);
+      return;
+    }
+
+    try {
+      const filter = activeFilter === "draft" ? "my" : activeFilter;
+      const status = activeFilter === "draft" ? "draft" : undefined;
+      const data = await listMatches(filter, {
+        status,
+        search: matchSearch,
+        page: matchPage,
+        perPage: 10,
+      });
+      const rawMatches = data.matches || [];
+      setMatchCounts(data.counts || {});
+      setMatchPagination(data.pagination);
+      let transformed = rawMatches.map((m) => {
+        const participantCount = (m.participants || []).filter(
+          (p) => p.status !== "left",
+        ).length;
+        const acceptedInvites = (m.invitees || []).filter(
+          (i) => i.status === "accepted",
+        ).length;
+        const occupied = participantCount + acceptedInvites;
+
+        const matchId = m.match_id || m.id;
+        const isHost = m.host_id === currentUser?.id;
+        const isJoined =
+          !isHost &&
+          (m.joined_at ||
+            (m.participants || []).some(
+              (p) => p.player_id === currentUser?.id && p.status !== "left",
+            ));
+
+        return {
+          id: matchId,
+          type: isHost ? "hosted" : isJoined ? "joined" : "available",
+          status: m.status || "upcoming",
+          privacy: m.match_type || "open",
+          dateTime: m.start_date_time,
+          location: m.location_text,
+          latitude: (() => {
+            const numeric =
+              typeof m.latitude === "string"
+                ? Number.parseFloat(m.latitude)
+                : m.latitude;
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
+          longitude: (() => {
+            const numeric =
+              typeof m.longitude === "string"
+                ? Number.parseFloat(m.longitude)
+                : m.longitude;
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
+          mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
+          format: m.match_format,
+          skillLevel: m.skill_level_min,
+          notes: m.notes,
+          invitees: m.invitees || [],
+          participants: m.participants || [],
+          playerLimit: m.player_limit,
+          occupied,
+          spotsAvailable: Math.max(m.player_limit - occupied, 0),
+        };
+      });
+      if (activeFilter === "draft") {
+        transformed = transformed.filter((m) => m.status === "draft");
+      }
+      setMatches(transformed);
+    } catch (err) {
+      displayToast(
+        err.response?.data?.message || "Failed to load matches",
+        "error",
+      );
+    }
+  }, [activeFilter, currentUser, displayToast, matchPage, matchSearch]);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [fetchMatches]);
+
+  useEffect(() => {
+    fetchPendingInvites();
+  }, [fetchPendingInvites]);
+
   const respondToInvite = useCallback(
     async (token, action) => {
       if (!token) return;
@@ -594,96 +685,6 @@ const TennisMatchApp = () => {
     setCurrentUser(null);
     displayToast("Logged out", "success");
   };
-  const fetchMatches = useCallback(async () => {
-    if (!currentUser) {
-      setMatches([]);
-      setMatchCounts({});
-      setMatchPagination(null);
-      return;
-    }
-
-    try {
-      const filter = activeFilter === "draft" ? "my" : activeFilter;
-      const status = activeFilter === "draft" ? "draft" : undefined;
-      const data = await listMatches(filter, {
-        status,
-        search: matchSearch,
-        page: matchPage,
-        perPage: 10,
-      });
-      const rawMatches = data.matches || [];
-      setMatchCounts(data.counts || {});
-      setMatchPagination(data.pagination);
-      let transformed = rawMatches.map((m) => {
-        const participantCount = (m.participants || []).filter(
-          (p) => p.status !== "left",
-        ).length;
-        const acceptedInvites = (m.invitees || []).filter(
-          (i) => i.status === "accepted",
-        ).length;
-        const occupied = participantCount + acceptedInvites;
-
-        const matchId = m.match_id || m.id;
-        const isHost = m.host_id === currentUser?.id;
-        const isJoined =
-          !isHost &&
-          (m.joined_at ||
-            (m.participants || []).some(
-              (p) => p.player_id === currentUser?.id && p.status !== "left",
-            ));
-
-        return {
-          id: matchId,
-          type: isHost ? "hosted" : isJoined ? "joined" : "available",
-          status: m.status || "upcoming",
-          privacy: m.match_type || "open",
-          dateTime: m.start_date_time,
-          location: m.location_text,
-          latitude: (() => {
-            const numeric =
-              typeof m.latitude === "string"
-                ? Number.parseFloat(m.latitude)
-                : m.latitude;
-            return Number.isFinite(numeric) ? numeric : null;
-          })(),
-          longitude: (() => {
-            const numeric =
-              typeof m.longitude === "string"
-                ? Number.parseFloat(m.longitude)
-                : m.longitude;
-            return Number.isFinite(numeric) ? numeric : null;
-          })(),
-          mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
-          format: m.match_format,
-          skillLevel: m.skill_level_min,
-          notes: m.notes,
-          invitees: m.invitees || [],
-          participants: m.participants || [],
-          playerLimit: m.player_limit,
-          occupied,
-          spotsAvailable: Math.max(m.player_limit - occupied, 0),
-        };
-      });
-      if (activeFilter === "draft") {
-        transformed = transformed.filter((m) => m.status === "draft");
-      }
-      setMatches(transformed);
-    } catch (err) {
-      displayToast(
-        err.response?.data?.message || "Failed to load matches",
-        "error"
-      );
-    }
-  }, [activeFilter, currentUser, displayToast, matchPage, matchSearch]);
-
-  useEffect(() => {
-    fetchMatches();
-  }, [fetchMatches]);
-
-  useEffect(() => {
-    fetchPendingInvites();
-  }, [fetchPendingInvites]);
-
   // Removed inline Header in favor of components/AppHeader
 
   const hasLocationFilter = Boolean(
