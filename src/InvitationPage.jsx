@@ -64,9 +64,11 @@ export default function InvitationPage() {
     return now >= new Date(resendAt).getTime();
   }, [resendAt, now]);
 
-  const inviteeRequiresAccountClaim = Boolean(
-    preview?.invitee && !preview?.invitee?.user_id,
-  );
+  const inviteeEmail = preview?.invitee?.email || "";
+  const inviteeRequiresAccountClaim = useMemo(() => {
+    if (!inviteeEmail) return false;
+    return inviteeEmail.toLowerCase().endsWith("@ttpplaydates.com");
+  }, [inviteeEmail]);
 
   // Load minimal invite preview
   useEffect(() => {
