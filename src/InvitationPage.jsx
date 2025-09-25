@@ -64,6 +64,10 @@ export default function InvitationPage() {
     return now >= new Date(resendAt).getTime();
   }, [resendAt, now]);
 
+  const inviteeRequiresAccountClaim = Boolean(
+    preview?.invitee && !preview?.invitee?.user_id,
+  );
+
   // Load minimal invite preview
   useEffect(() => {
     let alive = true;
@@ -212,7 +216,7 @@ export default function InvitationPage() {
 
   useEffect(() => {
     if (!preview || !codeFromQuery) return;
-    if (preview?.invitee) return; // signup flow continues unchanged
+    if (inviteeRequiresAccountClaim) return; // signup flow continues unchanged
 
     const attemptKey = `${token}:${codeFromQuery}`;
     if (autoVerifyAttemptRef.current === attemptKey) return;
@@ -234,17 +238,22 @@ export default function InvitationPage() {
         const message = mapAutoVerifyError(err);
         setError(message);
         setCode("");
-        setPhase("preview");
-        const channels = preview?.availableChannels || [];
-        const needsPicker = channels.length > 1 || preview?.identifierRequired;
-        setShowPicker(needsPicker);
+        setPhase("otp");
+        setShowPicker(false);
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [codeFromQuery, navigate, persistSession, preview, token]);
+  }, [
+    codeFromQuery,
+    inviteeRequiresAccountClaim,
+    navigate,
+    persistSession,
+    preview,
+    token,
+  ]);
 
   const resend = async () => {
     if (!canResend) return;
@@ -405,7 +414,7 @@ export default function InvitationPage() {
   const maskedIdentifier = preview?.maskedIdentifier;
   const activeChannel = lastChannel || selectedChannel;
   const activeChannelMeta = getChannelMeta(activeChannel);
-  const isInviteeClaim = Boolean(preview?.invitee);
+  const isInviteeClaim = inviteeRequiresAccountClaim;
   const identifierDisplay = maskedIdentifier || phone || email;
   const channelLabels = availableChannels.map(
     (ch) => getChannelMeta(ch).label,
