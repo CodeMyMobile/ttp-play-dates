@@ -35,10 +35,15 @@ export const updateMatch = (id, updates) =>
     })
   );
 
-export const cancelMatch = (id) =>
+export const cancelMatch = (id, { reason } = {}) =>
   unwrap(
     api(`/matches/${id}`, {
       method: "DELETE",
+      ...(reason
+        ? {
+            body: JSON.stringify({ reason }),
+          }
+        : {}),
     })
   );
 
