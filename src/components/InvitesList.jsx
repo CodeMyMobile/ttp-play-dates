@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listInvites, acceptInvite, rejectInvite } from '../services/invites';
+import { filterActiveInvites } from '../services/inviteFilters';
 import {
   Check,
   X,
@@ -27,7 +28,8 @@ const InvitesList = ({ onInviteResponse }) => {
       try {
         setLoading(true);
         const data = await listInvites();
-        setInvites(data.invites || data || []);
+        const invitesArray = Array.isArray(data?.invites) ? data.invites : data || [];
+        setInvites(filterActiveInvites(invitesArray));
       } catch (err) {
         console.error(err);
         setError('Failed to load invites');

@@ -22,6 +22,7 @@ import {
   rejectInvite,
 } from "./services/invites";
 import { login, signup, updatePersonalDetails, forgotPassword } from "./services/auth";
+import { filterActiveInvites } from "./services/inviteFilters";
 import {
   Calendar,
   MapPin,
@@ -288,7 +289,7 @@ const TennisMatchApp = () => {
       setInvitesLoading(true);
       const data = await listInvites({ status: "pending", perPage: 50 });
       const invitesArray = Array.isArray(data?.invites) ? data.invites : data || [];
-      setPendingInvites(invitesArray);
+      setPendingInvites(filterActiveInvites(invitesArray));
       setInvitesError("");
     } catch (err) {
       console.error("Failed to load invites", err);
