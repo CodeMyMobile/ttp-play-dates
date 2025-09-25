@@ -1,6 +1,6 @@
 // src/InvitationPage.jsx
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   CalendarDays,
   MapPin,
@@ -23,6 +23,7 @@ import Header from "./components/Header.jsx";
 export default function InvitationPage() {
   const { token } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState(null);
@@ -42,6 +43,15 @@ export default function InvitationPage() {
   const [password, setPassword] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const autoVerifyAttemptRef = useRef(null);
+
+  const codeFromQuery = useMemo(() => {
+    const search = location?.search || "";
+    if (!search) return "";
+    const params = new URLSearchParams(search);
+    const raw = params.get("code");
+    return (raw || "").trim();
+  }, [location?.search]);
 
   // 1s ticker for resend countdown
   useEffect(() => {
@@ -120,7 +130,7 @@ export default function InvitationPage() {
     };
   }, [token]);
 
-  const persistSession = (data) => {
+  const persistSession = useCallback((data) => {
     if (!data) return;
     const {
       access_token,
@@ -167,7 +177,7 @@ export default function InvitationPage() {
         // ignore localStorage write errors
       }
     }
-  };
+  }, []);
 
   const begin = async () => {
     setError("");
@@ -179,6 +189,7 @@ export default function InvitationPage() {
       if (resp?.channel) setLastChannel(resp.channel);
       setResendAt(resp?.resendAt || null);
       setPhase("otp");
+      setCode("");
       setShowPicker(false);
     } catch (e) {
       const msg = mapBeginError(e?.message);
@@ -198,6 +209,42 @@ export default function InvitationPage() {
       setError("Invalid or expired code. Try again.");
     }
   };
+
+  useEffect(() => {
+    if (!preview || !codeFromQuery) return;
+    if (preview?.invitee) return; // signup flow continues unchanged
+
+    const attemptKey = `${token}:${codeFromQuery}`;
+    if (autoVerifyAttemptRef.current === attemptKey) return;
+    autoVerifyAttemptRef.current = attemptKey;
+
+    let alive = true;
+    setError("");
+    setCode(codeFromQuery);
+
+    (async () => {
+      try {
+        const data = await verifyInviteCode(token, codeFromQuery);
+        if (!alive) return;
+        persistSession(data);
+        setPhase("done");
+        navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
+      } catch (err) {
+        if (!alive) return;
+        const message = mapAutoVerifyError(err);
+        setError(message);
+        setCode("");
+        setPhase("preview");
+        const channels = preview?.availableChannels || [];
+        const needsPicker = channels.length > 1 || preview?.identifierRequired;
+        setShowPicker(needsPicker);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [codeFromQuery, navigate, persistSession, preview, token]);
 
   const resend = async () => {
     if (!canResend) return;
@@ -907,6 +954,36 @@ function mapBeginError(code) {
     default:
       return "Couldn't send code. Please try again.";
   }
+}
+
+function mapAutoVerifyError(error) {
+  if (!error) {
+    return "We couldn't verify this link. Request a new code below.";
+  }
+
+  const message =
+    (typeof error === "string" && error) ||
+    error?.message ||
+    error?.data?.message ||
+    error?.data?.error ||
+    "";
+  const normalized = message.toString().toLowerCase();
+
+  if (normalized.includes("expired")) {
+    return "This login link has expired. Request a new code below.";
+  }
+  if (normalized.includes("invalid")) {
+    return "This login link is invalid. Request a new code below.";
+  }
+  if (normalized.includes("not_found")) {
+    return "This login link is no longer valid. Request a new code below.";
+  }
+
+  if (error?.status && error.status >= 500) {
+    return "We're having trouble verifying this link. Request a new code below.";
+  }
+
+  return "We couldn't verify this link. Request a new code below.";
 }
 
 function mapClaimError(error) {
