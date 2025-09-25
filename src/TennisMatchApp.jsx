@@ -235,6 +235,8 @@ const TennisMatchApp = () => {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
           status: m.match_type === "private" ? "closed" : m.status || "open",
+          privacy: m.match_type || m.type || (m.status === "closed" ? "private" : "open"),
+          hostId: m.host_id,
           dateTime: m.start_date_time,
           location: m.location_text,
           latitude: m.latitude,
@@ -760,20 +762,75 @@ const TennisMatchApp = () => {
         {type === "host" ? (
           <>
             <button
-              onClick={() => {
-                const matchToEdit = matches.find((m) => m.id === matchId);
-                if (matchToEdit) {
+              onClick={async () => {
+                const matchFromList = matches.find((m) => m.id === matchId);
+                try {
+                  const data = await getMatch(matchId);
+                  const match = data.match || matchFromList || {};
+                  const participants = data.participants || matchFromList?.participants || [];
+                  const invitees = data.invitees || matchFromList?.invitees || [];
+                  const activeParticipants = participants.filter((p) => p.status !== "left");
+
                   setEditMatch({
-                    id: matchToEdit.id,
-                    dateTime: new Date(matchToEdit.dateTime)
+                    id: match.id || match.match_id || matchId,
+                    hostId: match.host_id || matchFromList?.hostId || currentUser?.id,
+                    privacy:
+                      match.match_type ||
+                      match.type ||
+                      matchFromList?.privacy ||
+                      (matchFromList?.status === "closed" ? "private" : "open"),
+                    dateTime: new Date(match.start_date_time || matchFromList?.dateTime || Date.now())
                       .toISOString()
                       .slice(0, 16),
-                    location: matchToEdit.location,
-                    notes: matchToEdit.notes || "",
+                    location: match.location_text || matchFromList?.location || "",
+                    latitude: match.latitude ?? matchFromList?.latitude ?? null,
+                    longitude: match.longitude ?? matchFromList?.longitude ?? null,
+                    notes: match.notes || matchFromList?.notes || "",
+                    format: match.match_format || matchFromList?.format || "",
+                    skillLevel: match.skill_level_min || matchFromList?.skillLevel || "",
+                    playerLimit:
+                      match.player_limit ||
+                      matchFromList?.playerLimit ||
+                      activeParticipants.length ||
+                      4,
+                    participants: activeParticipants,
+                    invitees,
                   });
                   setShowEditModal(true);
+                  onClose();
+                } catch (err) {
+                  if (!matchFromList) {
+                    displayToast(
+                      err.response?.data?.message || "Failed to load match details",
+                      "error",
+                    );
+                    return;
+                  }
+
+                  const fallbackParticipants = (matchFromList.participants || []).filter(
+                    (p) => p.status !== "left",
+                  );
+
+                  setEditMatch({
+                    id: matchFromList.id,
+                    hostId: currentUser?.id,
+                    privacy:
+                      matchFromList.privacy ||
+                      (matchFromList.status === "closed" ? "private" : "open"),
+                    dateTime: new Date(matchFromList.dateTime).toISOString().slice(0, 16),
+                    location: matchFromList.location,
+                    latitude: matchFromList.latitude,
+                    longitude: matchFromList.longitude,
+                    notes: matchFromList.notes || "",
+                    format: matchFromList.format || "",
+                    skillLevel: matchFromList.skillLevel || "",
+                    playerLimit: matchFromList.playerLimit || fallbackParticipants.length || 4,
+                    participants: fallbackParticipants,
+                    invitees: matchFromList.invitees || [],
+                  });
+                  setShowEditModal(true);
+                  onClose();
                 }
-                onClose();
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
             >
@@ -2674,18 +2731,251 @@ const TennisMatchApp = () => {
   }; // FIX: Removed comma here
 
   const EditModal = () => {
+    const [searchTerm, setSearchTerm] = useState("");
+    const [searchResults, setSearchResults] = useState([]);
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [playersToRemove, setPlayersToRemove] = useState(new Set());
+    const [playersToAdd, setPlayersToAdd] = useState(new Map());
+    const [smsInvites, setSmsInvites] = useState([]);
+    const [smsInviteName, setSmsInviteName] = useState("");
+    const [smsInvitePhone, setSmsInvitePhone] = useState("");
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    const getInviteeKey = (invitee) =>
+      invitee?.invitee_id ??
+      invitee?.player_id ??
+      invitee?.user_id ??
+      invitee?.id ??
+      invitee?.phone ??
+      invitee?.email;
+
+    const editingMatchId = editMatch?.id;
+
+    useEffect(() => {
+      if (!editingMatchId) return;
+      setPlayersToRemove(new Set());
+      setPlayersToAdd(new Map());
+      setSmsInvites([]);
+      setSmsInviteName("");
+      setSmsInvitePhone("");
+      setSearchTerm("");
+      setSearchResults([]);
+      setConfirmDelete(false);
+    }, [editingMatchId]);
+
+    useEffect(() => {
+      if (!editingMatchId) {
+        setSearchResults([]);
+        setSearchLoading(false);
+        return;
+      }
+      const trimmed = searchTerm.trim();
+      if (trimmed.length < 2) {
+        setSearchResults([]);
+        setSearchLoading(false);
+        return;
+      }
+
+      let cancelled = false;
+      setSearchLoading(true);
+      searchPlayers({ search: trimmed, perPage: 6 })
+        .then((data) => {
+          if (cancelled) return;
+          setSearchResults(data.players || []);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          displayToast(
+            err.response?.data?.message || "Failed to load players",
+            "error"
+          );
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setSearchLoading(false);
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [searchTerm, editingMatchId]);
+
     if (!showEditModal || !editMatch) return null;
 
+    const isPrivate = editMatch.privacy === "private";
+
+    const activeParticipants = (editMatch.participants || []).filter(
+      (p) => p.status !== "left" && !playersToRemove.has(p.player_id)
+    );
+    const activeInvitees = (editMatch.invitees || []).filter((invitee) => {
+      const key = getInviteeKey(invitee);
+      return key ? !playersToRemove.has(key) : true;
+    });
+
+    const removedPlayersDetails = [...playersToRemove].map((id) => {
+      const participantMatch = (editMatch.participants || []).find(
+        (p) => p.player_id === id
+      );
+      if (participantMatch) {
+        return {
+          id,
+          name:
+            participantMatch.profile?.full_name || `Player ${participantMatch.player_id}`,
+        };
+      }
+
+      const inviteeMatch = (editMatch.invitees || []).find(
+        (invitee) => getInviteeKey(invitee) === id
+      );
+
+      if (inviteeMatch) {
+        const name =
+          inviteeMatch.profile?.full_name || inviteeMatch.phone || inviteeMatch.email;
+        return {
+          id,
+          name: name || `Invitee ${inviteeMatch.id || ""}`,
+        };
+      }
+
+      return null;
+    }).filter(Boolean);
+
+    const existingParticipantIds = (editMatch.participants || [])
+      .filter((p) => p.status !== "left")
+      .map((p) => p.player_id)
+      .filter(Boolean);
+    const existingInviteeIds = (editMatch.invitees || [])
+      .map((invitee) => invitee.invitee_id)
+      .filter(Boolean);
+    const existingIds = new Set([
+      ...existingParticipantIds,
+      ...existingInviteeIds,
+      ...playersToRemove,
+    ]);
+    const pendingAdds = [...playersToAdd.values()];
+
+    const handleClose = () => {
+      setShowEditModal(false);
+      setEditMatch(null);
+    };
+
+    const handleRemovePlayer = (playerId) => {
+      if (!playerId) return;
+      if (playerId === editMatch.hostId) {
+        displayToast("Hosts cannot be removed from their own match", "error");
+        return;
+      }
+      setPlayersToRemove((prev) => {
+        const updated = new Set(prev);
+        updated.add(playerId);
+        return updated;
+      });
+    };
+
+    const handleUndoRemoval = (playerId) => {
+      setPlayersToRemove((prev) => {
+        const updated = new Set(prev);
+        updated.delete(playerId);
+        return updated;
+      });
+    };
+
+    const handleAddPlayer = (player) => {
+      if (!player?.user_id) return;
+      setPlayersToAdd((prev) => {
+        const updated = new Map(prev);
+        updated.set(player.user_id, player);
+        return updated;
+      });
+    };
+
+    const handleRemovePendingPlayer = (userId) => {
+      setPlayersToAdd((prev) => {
+        const updated = new Map(prev);
+        updated.delete(userId);
+        return updated;
+      });
+    };
+
+    const handleAddSmsInvite = () => {
+      const trimmedName = smsInviteName.trim();
+      const trimmedPhone = smsInvitePhone.replace(/[^\d+]/g, "");
+      if (!trimmedPhone || trimmedPhone.length < 10) {
+        displayToast("Enter a valid phone number", "error");
+        return;
+      }
+      setSmsInvites((prev) => [
+        ...prev,
+        {
+          name: trimmedName || "New Player",
+          phone: trimmedPhone,
+        },
+      ]);
+      setSmsInviteName("");
+      setSmsInvitePhone("");
+      displayToast("SMS invite ready to send");
+    };
+
+    const handleRemoveSmsInvite = (index) => {
+      setSmsInvites((prev) => prev.filter((_, idx) => idx !== index));
+    };
+
     const handleSave = async () => {
+      if (!editMatch.dateTime || !editMatch.location) {
+        displayToast("Please update the date, time, and location", "error");
+        return;
+      }
+
+      const payload = {
+        start_date_time: new Date(editMatch.dateTime).toISOString(),
+        location_text: editMatch.location,
+        latitude: editMatch.latitude,
+        longitude: editMatch.longitude,
+        notes: editMatch.notes,
+        player_limit: editMatch.playerLimit,
+        match_format: editMatch.format,
+        skill_level_min: editMatch.skillLevel,
+      };
+
+      const participantIdsToRemove = (editMatch.participants || [])
+        .filter((participant) => playersToRemove.has(participant.player_id))
+        .map((participant) => participant.player_id)
+        .filter((id) => typeof id === "number");
+      if (participantIdsToRemove.length) {
+        payload.remove_player_ids = participantIdsToRemove;
+      }
+
+      const inviteIdsToRemove = (editMatch.invitees || [])
+        .map((invitee) =>
+          playersToRemove.has(getInviteeKey(invitee))
+            ? invitee.invitee_id ?? invitee.id ?? null
+            : null
+        )
+        .filter((id) => id !== null && id !== undefined);
+      if (inviteIdsToRemove.length) {
+        payload.remove_invite_ids = inviteIdsToRemove;
+      }
+
+      if (smsInvites.length) {
+        payload.sms_invites = smsInvites;
+      }
+
+      const idsToAdd = pendingAdds.map((player) => player.user_id);
+
       try {
-        await updateMatch(editMatch.id, {
-          start_date_time: new Date(editMatch.dateTime).toISOString(),
-          location_text: editMatch.location,
-          latitude: editMatch.latitude,
-          longitude: editMatch.longitude,
-          notes: editMatch.notes,
-        });
-        displayToast("Match updated successfully!");
+        setSaving(true);
+        await updateMatch(editMatch.id, payload);
+        if (idsToAdd.length) {
+          await sendInvites(editMatch.id, idsToAdd);
+        }
+        if (smsInvites.length) {
+          displayToast("Match updated! SMS invites will be sent to new players.", "success");
+        } else {
+          displayToast("Match updated successfully!");
+        }
         setShowEditModal(false);
         setEditMatch(null);
         fetchMatches();
@@ -2694,123 +2984,551 @@ const TennisMatchApp = () => {
           err.response?.data?.message || "Failed to update match",
           "error"
         );
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const handleDeleteMatch = async () => {
+      if (!confirmDelete) {
+        setConfirmDelete(true);
+        return;
+      }
+      try {
+        setDeleting(true);
+        await cancelMatch(editMatch.id);
+        displayToast("Match deleted");
+        setShowEditModal(false);
+        setEditMatch(null);
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message || "Failed to delete match",
+          "error"
+        );
+      } finally {
+        setDeleting(false);
+        setConfirmDelete(false);
       }
     };
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+        <div className="bg-white rounded-3xl max-w-3xl w-full p-8 relative animate-slideUp shadow-2xl border border-gray-100">
           <button
-            onClick={() => {
-              setShowEditModal(false);
-              setEditMatch(null);
-            }}
-            className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            onClick={handleClose}
+            className="absolute top-5 right-5 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            aria-label="Close edit match"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Edit Match</h2>
-          <p className="text-sm text-gray-500 mb-6 font-semibold">
-            Changes will notify all confirmed players
+
+          <div className="flex items-center gap-3 mb-6">
+            <h2 className="text-3xl font-black text-gray-900">Edit Match</h2>
+            <span
+              className={`px-3 py-1.5 text-xs font-black rounded-full uppercase tracking-wider ${
+                isPrivate
+                  ? "bg-purple-100 text-purple-700 border border-purple-200"
+                  : "bg-green-100 text-green-700 border border-green-200"
+              }`}
+            >
+              {isPrivate ? "Private" : "Open"}
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mb-8 font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+            Changes will notify all confirmed players automatically
           </p>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Date & Time
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={editMatch.dateTime}
-                onChange={(e) =>
-                  setEditMatch({ ...editMatch, dateTime: e.target.value })
-                }
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Location
-              </label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
-                <Autocomplete
-                  apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
-                  type="search"
-                  value={editMatch.location}
+          <div className="grid lg:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <div>
+                <label className="block text-xs font-black text-gray-600 mb-2 uppercase tracking-widest">
+                  Date & Time
+                </label>
+                <input
+                  type="datetime-local"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  value={editMatch.dateTime}
                   onChange={(e) =>
-                    setEditMatch({
-                      ...editMatch,
-                      location: e.target.value,
-                      latitude: null,
-                      longitude: null,
-                    })
+                    setEditMatch({ ...editMatch, dateTime: e.target.value })
                   }
-                  onPlaceSelected={(place) => {
-                    const address = place.formatted_address || place.name || "";
-                    const lat = place.geometry?.location?.lat();
-                    const lng = place.geometry?.location?.lng();
-                    setEditMatch({
-                      ...editMatch,
-                      location: address,
-                      latitude: lat,
-                      longitude: lng,
-                    });
-                  }}
-                  options={{
-                    types: ["geocode", "establishment"],
-                    fields: [
-                      "formatted_address",
-                      "geometry",
-                      "name",
-                      "address_components",
-                    ],
-                  }}
-                  className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
                 />
               </div>
-              <input
-                type="text"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={editMatch.location}
-                onChange={(e) =>
-                  setEditMatch({ ...editMatch, location: e.target.value })
-                }
-              />
 
+              <div>
+                <label className="block text-xs font-black text-gray-600 mb-2 uppercase tracking-widest">
+                  Location
+                </label>
+                <div className="relative mb-3">
+                  <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
+                  <Autocomplete
+                    apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                    type="search"
+                    value={editMatch.location}
+                    onChange={(e) =>
+                      setEditMatch({
+                        ...editMatch,
+                        location: e.target.value,
+                        latitude: null,
+                        longitude: null,
+                      })
+                    }
+                    onPlaceSelected={(place) => {
+                      const address = place.formatted_address || place.name || "";
+                      const lat = place.geometry?.location?.lat();
+                      const lng = place.geometry?.location?.lng();
+                      setEditMatch({
+                        ...editMatch,
+                        location: address,
+                        latitude: lat,
+                        longitude: lng,
+                      });
+                    }}
+                    options={{
+                      types: ["geocode", "establishment"],
+                      fields: [
+                        "formatted_address",
+                        "geometry",
+                        "name",
+                        "address_components",
+                      ],
+                    }}
+                    className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  />
+                </div>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  value={editMatch.location}
+                  onChange={(e) =>
+                    setEditMatch({ ...editMatch, location: e.target.value })
+                  }
+                  placeholder="Enter a location"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-gray-600 mb-2 uppercase tracking-widest">
+                    Match Format
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-800 focus:ring-2 focus:ring-green-500"
+                    value={editMatch.format || ""}
+                    onChange={(e) =>
+                      setEditMatch({ ...editMatch, format: e.target.value })
+                    }
+                  >
+                    <option value="">Select format</option>
+                    <option value="Singles">Singles</option>
+                    <option value="Doubles">Doubles</option>
+                    <option value="Mixed Doubles">Mixed Doubles</option>
+                    <option value="Practice">Practice / Drill</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-gray-600 mb-2 uppercase tracking-widest">
+                    Skill Level
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-800 focus:ring-2 focus:ring-green-500"
+                    value={editMatch.skillLevel || ""}
+                    onChange={(e) =>
+                      setEditMatch({ ...editMatch, skillLevel: e.target.value })
+                    }
+                  >
+                    <option value="">Any Level</option>
+                    <option value="2.5 - Beginner">2.5 - Beginner</option>
+                    <option value="3.0 - Adv. Beginner">3.0 - Adv. Beginner</option>
+                    <option value="3.5 - Intermediate">3.5 - Intermediate</option>
+                    <option value="4.0 - Adv. Intermediate">4.0 - Adv. Intermediate</option>
+                    <option value="4.5+ - Advanced">4.5+ - Advanced</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-gray-600 mb-3 uppercase tracking-widest">
+                  Player Limit
+                </label>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() =>
+                      setEditMatch((prev) => ({
+                        ...prev,
+                        playerLimit: Math.max(2, (prev.playerLimit || 2) - 1),
+                      }))
+                    }
+                    className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center text-xl font-black text-gray-600 hover:border-gray-400"
+                    aria-label="Decrease player limit"
+                  >
+                    −
+                  </button>
+                  <div className="text-3xl font-black text-gray-900">
+                    {editMatch.playerLimit || 2}
+                  </div>
+                  <button
+                    onClick={() =>
+                      setEditMatch((prev) => ({
+                        ...prev,
+                        playerLimit: Math.min(12, (prev.playerLimit || 2) + 1),
+                      }))
+                    }
+                    className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center text-xl font-black text-gray-600 hover:border-gray-400"
+                    aria-label="Increase player limit"
+                  >
+                    +
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 font-semibold mt-2">
+                  Includes you and all invited players
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-gray-600 mb-2 uppercase tracking-widest">
+                  Match Notes
+                </label>
+                <textarea
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  rows={4}
+                  value={editMatch.notes || ""}
+                  onChange={(e) =>
+                    setEditMatch({ ...editMatch, notes: e.target.value })
+                  }
+                  placeholder="Share any important details with players"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Notes
-              </label>
-              <textarea
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                rows={3}
-                value={editMatch.notes}
-                onChange={(e) =>
-                  setEditMatch({ ...editMatch, notes: e.target.value })
-                }
-              />
+            <div className="space-y-6">
+              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-black text-gray-700 uppercase tracking-widest">
+                    Current Players
+                  </h3>
+                  <span className="text-xs font-bold text-gray-500">
+                    {activeParticipants.length} confirmed • {activeInvitees.length} invited
+                  </span>
+                </div>
+
+                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                  {activeParticipants.map((player) => {
+                    const name =
+                      player.profile?.full_name || `Player ${player.player_id}`;
+                    const initials = name
+                      .split(" ")
+                      .map((part) => part[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase();
+                    const isHost = player.player_id === editMatch.hostId;
+                    return (
+                      <div
+                        key={`participant-${player.player_id}`}
+                        className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center text-xs font-black">
+                          {initials || "P"}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-black text-gray-800">
+                            {name}
+                          </p>
+                          <p className="text-xs font-semibold text-gray-500">
+                            {isHost ? "Host" : "Confirmed"}
+                          </p>
+                        </div>
+                        {!isHost && (
+                          <button
+                            onClick={() => handleRemovePlayer(player.player_id)}
+                            className="text-xs font-black text-red-600 hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {activeInvitees.map((invitee, index) => {
+                    const key = getInviteeKey(invitee) || `invitee-${index}`;
+                    const name =
+                      invitee.profile?.full_name || invitee.phone || invitee.email ||
+                      `Invitee ${invitee.id || ""}`;
+                    const initials = name
+                      .split(" ")
+                      .map((part) => part[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase();
+
+                    return (
+                      <div
+                        key={`invitee-${key}`}
+                        className="flex items-center gap-3 bg-white border border-dashed border-purple-200 rounded-xl px-4 py-3"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-white flex items-center justify-center text-xs font-black">
+                          {initials || "I"}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-black text-gray-800">
+                            {name}
+                          </p>
+                          <p className="text-xs font-semibold text-gray-500 capitalize">
+                            {invitee.status || "Invited"}
+                          </p>
+                        </div>
+                        {getInviteeKey(invitee) && (
+                          <button
+                            onClick={() => handleRemovePlayer(getInviteeKey(invitee))}
+                            className="text-xs font-black text-red-600 hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {activeParticipants.length === 0 && activeInvitees.length === 0 && (
+                    <p className="text-sm font-semibold text-gray-500">
+                      No players yet. Add players below to get started.
+                    </p>
+                  )}
+                </div>
+
+                {removedPlayersDetails.length > 0 && (
+                  <div className="mt-4 border-t border-gray-200 pt-3">
+                    <p className="text-xs font-black text-gray-600 uppercase tracking-widest mb-2">
+                      Pending removal
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {removedPlayersDetails.map((player) => (
+                        <span
+                          key={`removed-${player.id}`}
+                          className="px-3 py-1.5 rounded-full bg-red-100 text-red-700 text-xs font-black flex items-center gap-2"
+                        >
+                          {player.name}
+                          <button
+                            onClick={() => handleUndoRemoval(player.id)}
+                            className="text-red-700 hover:text-red-800"
+                            aria-label={`Undo removal for ${player.name}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {isPrivate && (
+                <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-sm font-black text-gray-700 uppercase tracking-widest mb-4">
+                    Add More Players
+                  </h3>
+
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
+                      <input
+                        type="search"
+                        placeholder="Search players in Matchplay"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-semibold text-gray-800"
+                      />
+                    </div>
+                    {searchTerm.length > 0 && (
+                      <p className="text-xs font-semibold text-gray-500">
+                        {searchTerm.length < 2
+                          ? "Keep typing to search players"
+                          : searchLoading
+                          ? "Searching players..."
+                          : `${searchResults.length} result${
+                              searchResults.length === 1 ? "" : "s"
+                            } found`}
+                      </p>
+                    )}
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {searchResults.map((player) => {
+                        const disabled =
+                          existingIds.has(player.user_id) ||
+                          playersToAdd.has(player.user_id);
+                        const initials = player.full_name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase();
+                        return (
+                          <button
+                            key={player.user_id}
+                            onClick={() => handleAddPlayer(player)}
+                            disabled={disabled}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
+                              disabled
+                                ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                : "border-gray-200 hover:border-green-400 hover:bg-green-50"
+                            }`}
+                          >
+                            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center text-xs font-black">
+                              {initials}
+                            </span>
+                            <span className="flex-1 text-sm font-bold text-gray-700">
+                              {player.full_name}
+                            </span>
+                            {disabled ? (
+                              <Check className="w-4 h-4 text-green-500" />
+                            ) : (
+                              <Plus className="w-4 h-4 text-gray-500" />
+                            )}
+                          </button>
+                        );
+                      })}
+                      {searchTerm.length >= 2 && !searchLoading && searchResults.length === 0 && (
+                        <p className="text-sm font-semibold text-gray-500">
+                          No players found. Try another name.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {pendingAdds.length > 0 && (
+                    <div className="mt-4 border-t border-gray-200 pt-3">
+                      <p className="text-xs font-black text-gray-600 uppercase tracking-widest mb-2">
+                        Will be invited
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {pendingAdds.map((player) => (
+                          <span
+                            key={`pending-${player.user_id}`}
+                            className="px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-xs font-black flex items-center gap-2"
+                          >
+                            {player.full_name}
+                            <button
+                              onClick={() => handleRemovePendingPlayer(player.user_id)}
+                              className="text-green-700 hover:text-green-800"
+                              aria-label={`Remove ${player.full_name}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-6 border-t border-gray-200 pt-4">
+                    <h4 className="text-xs font-black text-gray-600 uppercase tracking-widest mb-3">
+                      Invite by phone number
+                    </h4>
+                    <div className="grid grid-cols-5 gap-3">
+                      <input
+                        type="text"
+                        value={smsInviteName}
+                        onChange={(e) => setSmsInviteName(e.target.value)}
+                        placeholder="Player name"
+                        className="col-span-2 px-3 py-2 border-2 border-gray-200 rounded-xl font-semibold text-gray-700"
+                      />
+                      <input
+                        type="tel"
+                        value={smsInvitePhone}
+                        onChange={(e) => setSmsInvitePhone(e.target.value)}
+                        placeholder="Phone number"
+                        className="col-span-2 px-3 py-2 border-2 border-gray-200 rounded-xl font-semibold text-gray-700"
+                      />
+                      <button
+                        onClick={handleAddSmsInvite}
+                        className="px-3 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-black flex items-center justify-center gap-1 hover:shadow-lg"
+                        type="button"
+                      >
+                        <Send className="w-4 h-4" /> Add
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 font-semibold mt-2 flex items-center gap-2">
+                      <MessageCircle className="w-3.5 h-3.5" /> We'll text them a link so they can join even if they haven't signed up yet
+                    </p>
+
+                    {smsInvites.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {smsInvites.map((invite, index) => (
+                          <div
+                            key={`sms-${invite.phone}-${index}`}
+                            className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-black text-blue-800">
+                                {invite.name}
+                              </p>
+                              <p className="text-xs font-semibold text-blue-600">
+                                {invite.phone}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveSmsInvite(index)}
+                              className="text-xs font-black text-blue-700 hover:text-blue-900"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+                <h3 className="text-sm font-black text-red-700 uppercase tracking-widest mb-3">
+                  Danger Zone
+                </h3>
+                <p className="text-xs font-semibold text-red-600 mb-4">
+                  Deleting this match will notify all players and remove it from Matchplay.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleDeleteMatch}
+                    disabled={deleting}
+                    className={`px-4 py-2 rounded-xl font-black border-2 transition-all ${
+                      confirmDelete
+                        ? "bg-red-600 border-red-600 text-white"
+                        : "bg-white border-red-300 text-red-600 hover:bg-red-100"
+                    } ${deleting ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    {confirmDelete ? (deleting ? "Deleting..." : "Yes, delete match") : "Delete Match"}
+                  </button>
+                  {confirmDelete && !deleting && (
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="px-4 py-2 rounded-xl font-black border-2 border-red-200 text-red-600 bg-white hover:bg-red-100"
+                    >
+                      Keep Match
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-3 mt-8">
+          <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <button
-              onClick={() => {
-                setShowEditModal(false);
-                setEditMatch(null);
-              }}
+              onClick={handleClose}
               className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
             >
-              CANCEL
+              Cancel
             </button>
             <button
               onClick={handleSave}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg"
+              disabled={saving}
+              className={`flex-1 px-4 py-3 rounded-xl font-black text-white bg-gradient-to-r from-green-500 to-emerald-600 hover:shadow-xl shadow-lg transition-all ${
+                saving ? "opacity-70 cursor-not-allowed" : ""
+              }`}
             >
-              SAVE CHANGES
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>
