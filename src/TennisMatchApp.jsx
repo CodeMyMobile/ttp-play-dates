@@ -58,6 +58,8 @@ import {
   Target,
   ClipboardList,
   FileText,
+  UserPlus,
+  AlertTriangle,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
@@ -1436,13 +1438,25 @@ const TennisMatchApp = () => {
               onClick={() => {
                 const matchToEdit = matches.find((m) => m.id === matchId);
                 if (matchToEdit) {
+                  const isoDate = matchToEdit.dateTime
+                    ? new Date(matchToEdit.dateTime).toISOString().slice(0, 16)
+                    : "";
+                  const playerLimit =
+                    matchToEdit.playerLimit ??
+                    matchToEdit.playerCount ??
+                    4;
                   setEditMatch({
                     id: matchToEdit.id,
-                    dateTime: new Date(matchToEdit.dateTime)
-                      .toISOString()
-                      .slice(0, 16),
-                    location: matchToEdit.location,
+                    dateTime: isoDate,
+                    location: matchToEdit.location || "",
+                    latitude: matchToEdit.latitude ?? null,
+                    longitude: matchToEdit.longitude ?? null,
                     notes: matchToEdit.notes || "",
+                    format: matchToEdit.format || "Doubles",
+                    skillLevel: matchToEdit.skillLevel || "",
+                    playerLimit,
+                    privacy: matchToEdit.privacy || "open",
+                    status: matchToEdit.status || "upcoming",
                   });
                   setShowEditModal(true);
                 }
@@ -3993,63 +4007,319 @@ const TennisMatchApp = () => {
   };
 
   const EditModal = ({ isOpen, matchToEdit }) => {
-    // Always call hooks first; guard inside effects instead of early-returning
-    // Load participants for the match being edited so hosts can remove players
+    const mountedRef = React.useRef(false);
+    React.useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
+
     const [participants, setParticipants] = React.useState([]);
     const [hostId, setHostId] = React.useState(null);
-    const [loadingParts, setLoadingParts] = React.useState(true);
+    const [loadingDetails, setLoadingDetails] = React.useState(true);
     const [removeErr, setRemoveErr] = React.useState("");
+    const [saving, setSaving] = React.useState(false);
+    const [deleteReason, setDeleteReason] = React.useState("");
+    const [deleteLoading, setDeleteLoading] = React.useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+    const [existingIds, setExistingIds] = React.useState(() => new Set());
+    const [inviteSearch, setInviteSearch] = React.useState("");
+    const [inviteResults, setInviteResults] = React.useState([]);
+    const [inviteLoading, setInviteLoading] = React.useState(false);
+    const [inviteError, setInviteError] = React.useState("");
+    const [selectedInvitees, setSelectedInvitees] = React.useState(new Map());
+    const [manualInvitees, setManualInvitees] = React.useState(new Map());
+    const [manualName, setManualName] = React.useState("");
+    const [manualPhone, setManualPhone] = React.useState("");
+    const [manualError, setManualError] = React.useState("");
+    const [inviteSubmitting, setInviteSubmitting] = React.useState(false);
+
+    const isPrivateMatch = React.useMemo(() => {
+      const privacy = matchToEdit?.privacy || matchToEdit?.match_type;
+      return privacy === "private" || privacy === "closed";
+    }, [matchToEdit?.privacy, matchToEdit?.match_type]);
+
+    const isOpenMatch = !isPrivateMatch;
+
+    const skillLevelOptions = React.useMemo(
+      () => [
+        { value: "", label: "Any Level" },
+        { value: "2.5 - Beginner", label: "NTRP 2.5 – Beginner" },
+        { value: "3.0 - Adv. Beginner", label: "NTRP 3.0 – Adv. Beginner" },
+        { value: "3.5 - Intermediate", label: "NTRP 3.5 – Intermediate" },
+        { value: "4.0 - Adv. Intermediate", label: "NTRP 4.0 – Adv. Intermediate" },
+        { value: "4.5+ - Advanced", label: "NTRP 4.5+ – Advanced" },
+      ],
+      []
+    );
+
+    const matchFormats = React.useMemo(
+      () => [
+        "Doubles",
+        "Singles",
+        "Mixed Doubles",
+        "Dingles",
+        "Round Robin",
+        "Other",
+      ],
+      []
+    );
+
+    const hydrateMatchDetails = React.useCallback(
+      async ({ syncFields = false } = {}) => {
+        if (!matchToEdit?.id) return;
+        setLoadingDetails(true);
+        try {
+          const data = await getMatch(matchToEdit.id);
+          if (!mountedRef.current) return;
+          const participantList = (data.participants || []).filter(
+            (p) => p && p.status !== "left"
+          );
+          setParticipants(participantList);
+          setHostId(data.match?.host_id ?? null);
+
+          const inviteesList =
+            data.invitees || data.match?.invitees || [];
+          const ids = new Set();
+          participantList.forEach((p) => {
+            const pid = Number(p.player_id);
+            if (Number.isFinite(pid) && pid > 0) {
+              ids.add(pid);
+            }
+          });
+          inviteesList.forEach((invitee) => {
+            const iid = Number(
+              invitee.invitee_id ??
+                invitee.player_id ??
+                invitee.user_id ??
+                invitee.id
+            );
+            if (Number.isFinite(iid) && iid > 0) {
+              ids.add(iid);
+            }
+          });
+          setExistingIds(new Set(ids));
+
+          if (syncFields && data.match) {
+            const details = data.match;
+            setEditMatch((prev) => {
+              if (!prev || prev.id !== details.id) return prev;
+              const isoDate = details.start_date_time
+                ? new Date(details.start_date_time)
+                    .toISOString()
+                    .slice(0, 16)
+                : prev.dateTime;
+              return {
+                ...prev,
+                dateTime: isoDate || prev?.dateTime || "",
+                location:
+                  details.location_text ?? prev?.location ?? "",
+                latitude:
+                  details.latitude ??
+                  details.lat ??
+                  prev?.latitude ??
+                  null,
+                longitude:
+                  details.longitude ??
+                  details.lng ??
+                  prev?.longitude ??
+                  null,
+                notes: details.notes ?? prev?.notes ?? "",
+                format:
+                  details.match_format || prev?.format || "Doubles",
+                playerLimit:
+                  details.player_limit ??
+                  details.playerCount ??
+                  prev?.playerLimit ??
+                  4,
+                skillLevel:
+                  details.skill_level_min ??
+                  details.skillLevel ??
+                  prev?.skillLevel ??
+                  "",
+                privacy: details.match_type || prev?.privacy || "open",
+                status: details.status || prev?.status || "upcoming",
+              };
+            });
+          }
+        } catch (error) {
+          console.error(error);
+          if (mountedRef.current) {
+            setParticipants([]);
+          }
+        } finally {
+          if (mountedRef.current) {
+            setLoadingDetails(false);
+          }
+        }
+      },
+      [matchToEdit?.id]
+    );
 
     React.useEffect(() => {
       if (!isOpen || !matchToEdit?.id) return;
-      let alive = true;
-      (async () => {
-        try {
-          setLoadingParts(true);
-          const data = await getMatch(matchToEdit.id);
-          if (!alive) return;
-          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
-          setHostId(data.match?.host_id ?? null);
-        } catch (error) {
-          console.error(error);
-          // ignore; leave list empty
-        } finally {
-          if (alive) setLoadingParts(false);
-        }
-      })();
-      return () => {
-        alive = false;
-      };
-    }, [isOpen, matchToEdit?.id]);
+      setSelectedInvitees(new Map());
+      setManualInvitees(new Map());
+      setInviteSearch("");
+      setInviteResults([]);
+      setInviteError("");
+      setManualName("");
+      setManualPhone("");
+      setManualError("");
+      setShowDeleteConfirm(false);
+      setDeleteReason("");
+      hydrateMatchDetails({ syncFields: true });
+    }, [isOpen, matchToEdit?.id, hydrateMatchDetails]);
 
-    const isHost = currentUser?.id && hostId && currentUser.id === hostId;
+    React.useEffect(() => {
+      if (!isOpen || !isPrivateMatch) return;
+      const term = inviteSearch.trim();
+      if (term.length === 0) {
+        setInviteResults([]);
+        setInviteLoading(false);
+        setInviteError("");
+        return;
+      }
+      if (term.length > 0 && term.length < 2) {
+        setInviteResults([]);
+        setInviteLoading(false);
+        setInviteError("Keep typing to see player results");
+        return;
+      }
+      let ignore = false;
+      setInviteLoading(true);
+      setInviteError("");
+      const timeout = setTimeout(() => {
+        searchPlayers({ search: term, perPage: 8 })
+          .then((data) => {
+            if (ignore || !mountedRef.current) return;
+            setInviteResults(data.players || []);
+          })
+          .catch((err) => {
+            if (ignore || !mountedRef.current) return;
+            setInviteError(
+              err.response?.data?.message ||
+                "Failed to search players"
+            );
+            setInviteResults([]);
+          })
+          .finally(() => {
+            if (ignore || !mountedRef.current) return;
+            setInviteLoading(false);
+          });
+      }, 300);
+      return () => {
+        ignore = true;
+        clearTimeout(timeout);
+      };
+    }, [inviteSearch, isPrivateMatch, isOpen]);
+
+    const isHost =
+      currentUser?.id && hostId && currentUser.id === hostId;
 
     const handleRemoveParticipant = async (playerId) => {
-      if (!window.confirm("Remove this participant from the match?")) return;
+      if (!matchToEdit?.id) return;
+      if (
+        !window.confirm(
+          "Remove this participant from the match?"
+        )
+      )
+        return;
       try {
-        if (!matchToEdit?.id) return;
         await removeParticipant(matchToEdit.id, playerId);
-        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        if (!mountedRef.current) return;
+        setParticipants((prev) =>
+          prev.filter((p) => p.player_id !== playerId)
+        );
+        setExistingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(Number(playerId));
+          return next;
+        });
         setRemoveErr("");
       } catch (error) {
         console.error(error);
         setRemoveErr("Failed to remove participant");
-        setTimeout(() => setRemoveErr(""), 2500);
+        setTimeout(() => {
+          if (mountedRef.current) setRemoveErr("");
+        }, 2500);
       }
     };
 
     if (!isOpen || !matchToEdit) return null;
 
+    const committedCount = participants.length;
+    const playerLimitValue =
+      matchToEdit.playerLimit === "" || matchToEdit.playerLimit === null
+        ? ""
+        : Number(matchToEdit.playerLimit);
+    const selectedInviteeList = Array.from(selectedInvitees.values());
+    const manualInviteeList = Array.from(manualInvitees.values());
+    const totalSelectedInvitees =
+      selectedInviteeList.length + manualInviteeList.length;
+
     const handleSave = async () => {
       if (!matchToEdit?.id) return;
+      if (!matchToEdit.dateTime) {
+        displayToast("Select a date and time for the match", "error");
+        return;
+      }
+      const numericPlayerLimit = Number(matchToEdit.playerLimit);
+      if (
+        matchToEdit.playerLimit === "" ||
+        !Number.isFinite(numericPlayerLimit) ||
+        numericPlayerLimit < Math.max(committedCount, 2)
+      ) {
+        displayToast(
+          `Player capacity must be at least ${Math.max(committedCount, 2)}`,
+          "error"
+        );
+        return;
+      }
+      if (
+        isOpenMatch &&
+        (!matchToEdit.skillLevel || matchToEdit.skillLevel === "")
+      ) {
+        displayToast("Pick a skill level for open matches", "error");
+        return;
+      }
+
+      let iso = null;
       try {
-        await updateMatch(matchToEdit.id, {
-          start_date_time: new Date(matchToEdit.dateTime).toISOString(),
-          location_text: matchToEdit.location,
-          latitude: matchToEdit.latitude,
-          longitude: matchToEdit.longitude,
-          notes: matchToEdit.notes,
-        });
+        iso = matchToEdit.dateTime
+          ? new Date(matchToEdit.dateTime).toISOString()
+          : null;
+      } catch {
+        iso = null;
+      }
+
+      const payload = {
+        start_date_time: iso ?? undefined,
+        location_text: matchToEdit.location || undefined,
+        latitude: matchToEdit.latitude ?? undefined,
+        longitude: matchToEdit.longitude ?? undefined,
+        notes: matchToEdit.notes ?? "",
+        player_limit: numericPlayerLimit,
+        playerCount: numericPlayerLimit,
+        match_format: matchToEdit.format || undefined,
+        format: matchToEdit.format || undefined,
+        match_type: isPrivateMatch ? "private" : "open",
+        privacy: isPrivateMatch ? "private" : "open",
+      };
+
+      if (matchToEdit.skillLevel) {
+        payload.skill_level_min = matchToEdit.skillLevel;
+        payload.skillLevel = matchToEdit.skillLevel;
+      }
+
+      const sanitizedPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, value]) => value !== undefined)
+      );
+
+      try {
+        setSaving(true);
+        await updateMatch(matchToEdit.id, sanitizedPayload);
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
@@ -4059,51 +4329,228 @@ const TennisMatchApp = () => {
           err.response?.data?.message || "Failed to update match",
           "error"
         );
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const handleAddPlayer = (player) => {
+      const id = Number(
+        player.user_id ?? player.id ?? player.player_id
+      );
+      if (!Number.isFinite(id) || id <= 0) return;
+      if (existingIds.has(id) || selectedInvitees.has(id)) return;
+      const name =
+        player.full_name ||
+        player.name ||
+        player.display_name ||
+        `Player ${id}`;
+      setSelectedInvitees((prev) => {
+        const next = new Map(prev);
+        next.set(id, {
+          user_id: id,
+          full_name: name,
+          email: player.email,
+          skill: player.skill_level_min || player.skill_level,
+        });
+        return next;
+      });
+    };
+
+    const handleRemoveSelectedPlayer = (id) => {
+      setSelectedInvitees((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    };
+
+    const handleRemoveManualInvitee = (key) => {
+      setManualInvitees((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    };
+
+    const handleManualSubmit = (event) => {
+      event.preventDefault();
+      setManualError("");
+      const normalized = normalizePhoneValue(manualPhone);
+      if (!normalized) {
+        setManualError(
+          "Enter a valid phone number with country code or 10 digits."
+        );
+        return;
+      }
+      if (manualInvitees.has(normalized)) {
+        setManualError("That phone number is already added.");
+        return;
+      }
+      const name = manualName.trim();
+      setManualInvitees((prev) => {
+        const next = new Map(prev);
+        next.set(normalized, {
+          key: normalized,
+          phone: normalized,
+          name,
+        });
+        return next;
+      });
+      setManualName("");
+      setManualPhone("");
+    };
+
+    const handleSendInvites = async () => {
+      if (!matchToEdit?.id) return;
+      const newIds = Array.from(selectedInvitees.keys()).filter(
+        (id) => !existingIds.has(id)
+      );
+      const phoneNumbers = manualInviteeList.map((contact) =>
+        contact.name
+          ? { phone: contact.phone, fullName: contact.name }
+          : contact.phone
+      );
+      if (newIds.length === 0 && phoneNumbers.length === 0) {
+        displayToast("Select at least one new player to invite", "error");
+        return;
+      }
+      try {
+        setInviteSubmitting(true);
+        const response = await sendInvites(matchToEdit.id, {
+          playerIds: newIds,
+          phoneNumbers,
+        });
+        const total = newIds.length + phoneNumbers.length;
+        const message =
+          response?.message ||
+          `Invites sent to ${total} ${
+            total === 1 ? "player" : "players"
+          }! 🎾`;
+        displayToast(message);
+        setSelectedInvitees(new Map());
+        setManualInvitees(new Map());
+        setManualName("");
+        setManualPhone("");
+        setManualError("");
+        setInviteSearch("");
+        await hydrateMatchDetails();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message ||
+            err.message ||
+            "Failed to send invites",
+          "error"
+        );
+      } finally {
+        setInviteSubmitting(false);
+      }
+    };
+
+    const handleDeleteMatch = async () => {
+      if (!matchToEdit?.id) return;
+      if (
+        !window.confirm(
+          "Are you sure you want to cancel this match? This cannot be undone."
+        )
+      )
+        return;
+      try {
+        setDeleteLoading(true);
+        await cancelMatch(matchToEdit.id, {
+          reason: deleteReason.trim() ? deleteReason.trim() : undefined,
+        });
+        displayToast("Match canceled");
+        setShowEditModal(false);
+        setEditMatch(null);
+        setShowDeleteConfirm(false);
+        setDeleteReason("");
+        fetchMatches();
+      } catch (err) {
+        displayToast(
+          err.response?.data?.message ||
+            err.message ||
+            "Failed to cancel match",
+          "error"
+        );
+      } finally {
+        setDeleteLoading(false);
       }
     };
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+        <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl relative flex flex-col max-h-[90vh] animate-slideUp">
           <button
             onClick={() => {
               setShowEditModal(false);
               setEditMatch(null);
             }}
-            className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+            className="absolute top-4 right-4 w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Edit Match</h2>
-          <p className="text-sm text-gray-500 mb-6 font-semibold">
-            Changes will notify all confirmed players
-          </p>
+          <div className="px-6 pt-6">
+            <h2 className="text-2xl font-black text-gray-900">Edit Match</h2>
+            <p className="text-sm text-gray-500 font-semibold mt-1">
+              Changes will notify all confirmed players automatically
+            </p>
+          </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Date & Time
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={matchToEdit.dateTime}
-                onChange={(e) =>
-                  setEditMatch({ ...matchToEdit, dateTime: e.target.value })
-                }
-              />
+          <div className="flex-1 overflow-y-auto px-6 pb-6 mt-4 space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                  Date & Time
+                </label>
+                <input
+                  type="datetime-local"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  value={matchToEdit.dateTime || ""}
+                  onChange={(e) =>
+                    setEditMatch({ ...matchToEdit, dateTime: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                  Player Capacity
+                </label>
+                <input
+                  type="number"
+                  min={2}
+                  max={16}
+                  step={1}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
+                  value={playerLimitValue}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === "") {
+                      setEditMatch({ ...matchToEdit, playerLimit: "" });
+                      return;
+                    }
+                    const numeric = Number(raw);
+                    if (!Number.isFinite(numeric)) return;
+                    const clamped = Math.min(16, Math.max(2, Math.round(numeric)));
+                    setEditMatch({ ...matchToEdit, playerLimit: clamped });
+                  }}
+                />
+                <p className="text-xs text-gray-500 font-semibold mt-2">
+                  {committedCount} player{committedCount === 1 ? "" : "s"} currently joined
+                </p>
+              </div>
             </div>
 
             <div>
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
                 Location
               </label>
-              <div className="relative">
+              <div className="relative mb-3">
                 <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
                 <Autocomplete
                   apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
                   type="search"
-                  value={matchToEdit.location}
+                  value={matchToEdit.location || ""}
                   onChange={(e) =>
                     setEditMatch({
                       ...matchToEdit,
@@ -4128,11 +4575,11 @@ const TennisMatchApp = () => {
                       const nextLat =
                         typeof lat === "number"
                           ? lat
-                          : (current.latitude ?? null);
+                          : current.latitude ?? null;
                       const nextLng =
                         typeof lng === "number"
                           ? lng
-                          : (current.longitude ?? null);
+                          : current.longitude ?? null;
                       return {
                         ...current,
                         location: nextLocation,
@@ -4155,89 +4602,406 @@ const TennisMatchApp = () => {
               </div>
               <input
                 type="text"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                value={matchToEdit.location}
+                placeholder="Search or type a location"
+                className="w-full px-4 py-3 border-2 border-dashed border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-semibold text-gray-800"
+                value={matchToEdit.location || ""}
                 onChange={(e) =>
                   setEditMatch({ ...matchToEdit, location: e.target.value })
                 }
               />
+            </div>
 
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                  Match Format
+                </label>
+                <div className="relative">
+                  <Trophy className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
+                  <select
+                    value={matchToEdit.format || "Doubles"}
+                    onChange={(e) =>
+                      setEditMatch({ ...matchToEdit, format: e.target.value })
+                    }
+                    className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-gray-800 appearance-none"
+                  >
+                    {matchFormats.map((format) => (
+                      <option key={format} value={format}>
+                        {format}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                  Skill Level (NTRP)
+                </label>
+                <div className="relative">
+                  <Target className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
+                  <select
+                    value={matchToEdit.skillLevel ?? ""}
+                    onChange={(e) =>
+                      setEditMatch({ ...matchToEdit, skillLevel: e.target.value })
+                    }
+                    className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-gray-800 appearance-none"
+                  >
+                    {skillLevelOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-gray-500 font-semibold mt-2">
+                  Helps players decide if this match is a good fit
+                </p>
+              </div>
             </div>
 
             <div>
               <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
-                Notes
+                Match Notes
               </label>
               <textarea
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
                 rows={3}
-                value={matchToEdit.notes}
+                placeholder="Any special instructions, what to bring, parking info..."
+                value={matchToEdit.notes || ""}
                 onChange={(e) =>
                   setEditMatch({ ...matchToEdit, notes: e.target.value })
                 }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800 placeholder:font-semibold resize-none"
               />
             </div>
 
             {isHost && (
-              <div className="pt-2">
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider flex items-center gap-2">
-                  <Users className="w-4 h-4 text-gray-500" /> Participants
-                </label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-4 h-4 text-gray-500" /> Current Players
+                  </span>
+                  <span className="text-xs font-bold text-gray-500">
+                    {committedCount}/{
+                      matchToEdit.playerLimit === "" ? "?" : matchToEdit.playerLimit
+                    } spots filled
+                  </span>
+                </div>
                 {removeErr && (
-                  <p className="text-red-600 text-sm font-semibold mb-2">{removeErr}</p>
+                  <p className="text-red-600 text-sm font-semibold">{removeErr}</p>
                 )}
-                {loadingParts ? (
-                  <p className="text-sm text-gray-500">Loading participants…</p>
+                {loadingDetails ? (
+                  <p className="text-sm text-gray-500">Loading players…</p>
                 ) : participants.length ? (
-                  <ul className="divide-y divide-gray-100 border rounded-xl">
-                    {participants.map((p) => (
-                      <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                        <span className="text-gray-800">
-                          {p.profile?.full_name || `Player ${p.player_id}`}
-                          {p.player_id === hostId && (
-                            <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                  <ul className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
+                    {participants.map((p) => {
+                      const name =
+                        p.profile?.full_name ||
+                        p.player_name ||
+                        `Player ${p.player_id}`;
+                      const isHostPlayer = p.player_id === hostId;
+                      return (
+                        <li
+                          key={`${p.player_id}-${p.id || p.status}`}
+                          className="flex items-center justify-between px-4 py-3 text-sm"
+                        >
+                          <div>
+                            <p className="font-semibold text-gray-800">{name}</p>
+                            {p.profile?.email && (
+                              <p className="text-xs text-gray-500 font-medium">
+                                {p.profile.email}
+                              </p>
+                            )}
+                          </div>
+                          {isHostPlayer ? (
+                            <span className="px-2 py-1 text-xs font-bold text-blue-700 bg-blue-100 rounded-full">
+                              Host
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleRemoveParticipant(p.player_id)}
+                              className="px-3 py-1.5 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 rounded-full flex items-center gap-1"
+                            >
+                              <X className="w-3 h-3" /> Remove
+                            </button>
                           )}
-                        </span>
-                        {p.player_id !== hostId && (
-                          <button
-                            onClick={() => handleRemoveParticipant(p.player_id)}
-                            className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
-                          >
-                            <X className="w-4 h-4" />
-                            Remove
-                          </button>
-                        )}
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
-                  <p className="text-sm text-gray-500">No participants yet.</p>
+                  <p className="text-sm text-gray-500">No players joined yet.</p>
+                )}
+              </div>
+            )}
+
+            {isPrivateMatch && isHost && (
+              <div className="space-y-4 border border-purple-100 bg-purple-50/50 rounded-2xl p-5">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-gray-900">Add more players</h3>
+                    <p className="text-sm text-gray-600 font-semibold">
+                      Invite players already on TTP or send a quick SMS invite.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-black text-gray-600 uppercase tracking-wider mb-2 block">
+                    Search players
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
+                    <input
+                      type="search"
+                      value={inviteSearch}
+                      onChange={(e) => setInviteSearch(e.target.value)}
+                      placeholder="Search by name or email"
+                      className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:border-purple-300 font-semibold text-gray-800"
+                    />
+                  </div>
+                  {inviteError && (
+                    <p className="text-xs text-red-600 font-semibold mt-2">{inviteError}</p>
+                  )}
+                  <div className="mt-3 bg-white border border-gray-100 rounded-xl divide-y divide-gray-100">
+                    {inviteLoading ? (
+                      <p className="px-4 py-3 text-sm text-gray-500">Searching players…</p>
+                    ) : inviteResults.length > 0 ? (
+                      inviteResults.map((player) => {
+                        const id = Number(
+                          player.user_id ?? player.id ?? player.player_id
+                        );
+                        const alreadyAdded = Number.isFinite(id) && existingIds.has(id);
+                        const alreadySelected = Number.isFinite(id) && selectedInvitees.has(id);
+                        return (
+                          <button
+                            key={`${player.id || player.user_id}-search`}
+                            type="button"
+                            onClick={() => handleAddPlayer(player)}
+                            disabled={alreadyAdded}
+                            className="w-full px-4 py-3 text-left text-sm flex items-center justify-between gap-3 hover:bg-purple-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <div>
+                              <p className="font-semibold text-gray-800">
+                                {player.full_name || player.name || player.display_name || "Unnamed Player"}
+                              </p>
+                              {player.email && (
+                                <p className="text-xs text-gray-500 font-medium">{player.email}</p>
+                              )}
+                            </div>
+                            <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                              alreadyAdded
+                                ? "bg-green-100 text-green-700"
+                                : alreadySelected
+                                ? "bg-purple-100 text-purple-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}>
+                              {alreadyAdded
+                                ? "Added"
+                                : alreadySelected
+                                ? "Selected"
+                                : "Add"}
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : inviteSearch.trim().length >= 2 ? (
+                      <p className="px-4 py-3 text-sm text-gray-500">
+                        No players found. Try another name or email.
+                      </p>
+                    ) : (
+                      <p className="px-4 py-3 text-sm text-gray-500">
+                        Start typing to search our player directory.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {(selectedInviteeList.length > 0 || manualInviteeList.length > 0) && (
+                  <div className="bg-white border border-gray-100 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider">
+                    Selected ({totalSelectedInvitees})
+                  </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedInvitees(new Map());
+                          setManualInvitees(new Map());
+                        }}
+                        className="text-xs font-bold text-gray-500 hover:text-gray-700"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedInviteeList.map((player) => (
+                        <span
+                          key={`selected-${player.user_id}`}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-full"
+                        >
+                          {player.full_name}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSelectedPlayer(player.user_id)}
+                            className="text-purple-600 hover:text-purple-800"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {manualInviteeList.map((contact) => (
+                        <span
+                          key={`manual-${contact.key}`}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full"
+                        >
+                          {contact.name || formatPhoneDisplay(contact.phone)}
+                          <span className="bg-blue-200 text-blue-700 px-1 rounded-full text-[10px] font-black">
+                            SMS
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveManualInvitee(contact.key)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleManualSubmit} className="bg-white border border-blue-100 rounded-2xl p-4 space-y-3">
+                  <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider">
+                    Invite by phone number
+                  </h4>
+                  <div className="grid gap-3 md:grid-cols-[1fr_minmax(0,2fr)]">
+                    <input
+                      type="text"
+                      value={manualName}
+                      onChange={(e) => setManualName(e.target.value)}
+                      placeholder="Name (optional)"
+                      className="px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300 font-semibold text-gray-800"
+                    />
+                    <input
+                      type="tel"
+                      value={manualPhone}
+                      onChange={(e) => {
+                        setManualPhone(e.target.value);
+                        setManualError("");
+                      }}
+                      placeholder="+15551234567"
+                      className="px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300 font-semibold text-gray-800"
+                    />
+                  </div>
+                  {manualError && (
+                    <p className="text-xs text-red-600 font-semibold">{manualError}</p>
+                  )}
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-gray-500 font-semibold">
+                      We'll send them an SMS invite with match details and a quick join link.
+                    </p>
+                    <button
+                      type="submit"
+                      disabled={!manualPhone.trim()}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-60 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                    >
+                      <Phone className="w-4 h-4" /> Add contact
+                    </button>
+                  </div>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={handleSendInvites}
+                  disabled={inviteSubmitting || totalSelectedInvitees === 0}
+                  className="w-full px-5 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black shadow-lg hover:shadow-xl flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Send className="w-4 h-4" />
+                  Add players
+                  {totalSelectedInvitees > 0 && ` (${totalSelectedInvitees})`}
+                </button>
+              </div>
+            )}
+
+            {isHost && (
+              <div className="border border-red-200 bg-red-50 rounded-2xl p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-500 mt-1" />
+                  <div>
+                    <h3 className="text-sm font-black text-red-700 uppercase tracking-wider">
+                      Danger Zone
+                    </h3>
+                    <p className="text-sm text-red-600 font-semibold">
+                      Canceling will notify all confirmed players. Add a reason so they know why.
+                    </p>
+                  </div>
+                </div>
+                <textarea
+                  rows={3}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Let players know why you're canceling (optional)"
+                  className="w-full px-4 py-3 border-2 border-red-200 rounded-xl focus:ring-2 focus:ring-red-300 focus:border-red-300 font-semibold text-red-700 bg-white"
+                />
+                {showDeleteConfirm ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-4 py-2 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
+                    >
+                      Keep match
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteMatch}
+                      disabled={deleteLoading}
+                      className="px-4 py-2 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {deleteLoading ? "Canceling…" : "Confirm cancel"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="px-4 py-2 bg-white border-2 border-red-300 text-red-600 rounded-xl font-black hover:bg-red-100"
+                    >
+                      Delete match
+                    </button>
+                  </div>
                 )}
               </div>
             )}
           </div>
 
-          <div className="flex gap-3 mt-8">
+          <div className="px-6 pb-6 pt-4 border-t border-gray-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             <button
               onClick={() => {
                 setShowEditModal(false);
                 setEditMatch(null);
               }}
-              className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
+              className="w-full sm:w-auto px-5 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
             >
-              CANCEL
+              Cancel
             </button>
             <button
               onClick={handleSave}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg"
+              disabled={saving}
+              className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              SAVE CHANGES
+              {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
         </div>
       </div>
     );
-  }; // FIX: Removed comma here
+  };
 
   const Toast = () => {
     if (!showToast) return null;
