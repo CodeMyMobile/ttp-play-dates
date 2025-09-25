@@ -68,6 +68,98 @@ import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./se
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
+const sanitizeMatchForEditing = (source, prev = {}) => {
+  if (!source && !prev) {
+    return null;
+  }
+
+  const previous = prev || {};
+  const rawId =
+    source?.id ?? source?.match_id ?? previous.id ?? previous.match_id ?? null;
+  const normalizedId =
+    rawId === null || rawId === undefined || rawId === ""
+      ? null
+      : Number.isFinite(Number(rawId))
+        ? Number(rawId)
+        : rawId;
+
+  const rawDate =
+    source?.dateTime ??
+    source?.start_date_time ??
+    source?.startDateTime ??
+    previous.dateTime ??
+    "";
+
+  let isoDate = previous.dateTime || "";
+  if (rawDate) {
+    const parsed = new Date(rawDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      isoDate = parsed.toISOString().slice(0, 16);
+    }
+  }
+
+  const deriveCoordinate = (value, fallback) => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim() !== "") {
+      const numeric = Number.parseFloat(value);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+    }
+    return fallback ?? null;
+  };
+
+  const rawPlayerLimit =
+    source?.playerLimit ??
+    source?.player_limit ??
+    source?.playerCount ??
+    previous.playerLimit ??
+    "";
+  let playerLimit = "";
+  if (rawPlayerLimit === "" || rawPlayerLimit === null) {
+    playerLimit = "";
+  } else {
+    const numericLimit = Number(rawPlayerLimit);
+    playerLimit = Number.isFinite(numericLimit) ? numericLimit : previous.playerLimit ?? 4;
+  }
+
+  const privacyValue =
+    source?.privacy ?? source?.match_type ?? previous.privacy ?? previous.match_type ?? "open";
+
+  return {
+    ...previous,
+    id: normalizedId,
+    match_id: normalizedId ?? previous.match_id ?? null,
+    dateTime: isoDate,
+    location:
+      source?.location ??
+      source?.location_text ??
+      previous.location ??
+      "",
+    latitude: deriveCoordinate(
+      source?.latitude ?? source?.lat,
+      previous.latitude,
+    ),
+    longitude: deriveCoordinate(
+      source?.longitude ?? source?.lng,
+      previous.longitude,
+    ),
+    notes: source?.notes ?? previous.notes ?? "",
+    format: source?.format ?? source?.match_format ?? previous.format ?? "Doubles",
+    playerLimit,
+    skillLevel:
+      source?.skillLevel ??
+      source?.skill_level_min ??
+      previous.skillLevel ??
+      "",
+    privacy: privacyValue,
+    match_type: privacyValue,
+    status: source?.status ?? previous.status ?? "upcoming",
+  };
+};
+
 const getInitialPath = () => {
   if (typeof window === "undefined") return "/";
   const hash = window.location.hash || "";
@@ -3896,7 +3988,6 @@ const TennisMatchApp = () => {
   }; // FIX: Removed comma here
 
   const ParticipantsModal = ({ isOpen, matchId }) => {
-    // Always call hooks first; guard inside effects instead of early-returning
     const [participants, setParticipants] = React.useState([]);
     const [hostId, setHostId] = React.useState(null);
     const [loadingParts, setLoadingParts] = React.useState(true);
@@ -4015,6 +4106,9 @@ const TennisMatchApp = () => {
       };
     }, []);
 
+    const [draft, setDraft] = React.useState(() =>
+      matchToEdit ? sanitizeMatchForEditing(matchToEdit) : null,
+    );
     const [participants, setParticipants] = React.useState([]);
     const [hostId, setHostId] = React.useState(null);
     const [loadingDetails, setLoadingDetails] = React.useState(true);
@@ -4035,10 +4129,24 @@ const TennisMatchApp = () => {
     const [manualError, setManualError] = React.useState("");
     const [inviteSubmitting, setInviteSubmitting] = React.useState(false);
 
-    const isPrivateMatch = React.useMemo(() => {
-      const privacy = matchToEdit?.privacy || matchToEdit?.match_type;
-      return privacy === "private" || privacy === "closed";
-    }, [matchToEdit?.privacy, matchToEdit?.match_type]);
+    React.useEffect(() => {
+      if (!isOpen) {
+        setDraft(null);
+        return;
+      }
+      if (matchToEdit) {
+        setDraft(sanitizeMatchForEditing(matchToEdit));
+      } else {
+        setDraft(null);
+      }
+    }, [isOpen, matchToEdit]);
+
+    const editingMatch = draft ?? matchToEdit ?? null;
+    const matchId = editingMatch?.id ?? editingMatch?.match_id ?? null;
+    const privacyValue =
+      editingMatch?.privacy ?? editingMatch?.match_type ?? "open";
+    const isPrivateMatch =
+      privacyValue === "private" || privacyValue === "closed";
 
     const isOpenMatch = !isPrivateMatch;
 
@@ -4068,10 +4176,10 @@ const TennisMatchApp = () => {
 
     const hydrateMatchDetails = React.useCallback(
       async ({ syncFields = false } = {}) => {
-        if (!matchToEdit?.id) return;
+        if (!matchId) return;
         setLoadingDetails(true);
         try {
-          const data = await getMatch(matchToEdit.id);
+          const data = await getMatch(matchId);
           if (!mountedRef.current) return;
           const participantList = (data.participants || []).filter(
             (p) => p && p.status !== "left"
@@ -4102,46 +4210,9 @@ const TennisMatchApp = () => {
           setExistingIds(new Set(ids));
 
           if (syncFields && data.match) {
-            const details = data.match;
-            setEditMatch((prev) => {
-              if (!prev || prev.id !== details.id) return prev;
-              const isoDate = details.start_date_time
-                ? new Date(details.start_date_time)
-                    .toISOString()
-                    .slice(0, 16)
-                : prev.dateTime;
-              return {
-                ...prev,
-                dateTime: isoDate || prev?.dateTime || "",
-                location:
-                  details.location_text ?? prev?.location ?? "",
-                latitude:
-                  details.latitude ??
-                  details.lat ??
-                  prev?.latitude ??
-                  null,
-                longitude:
-                  details.longitude ??
-                  details.lng ??
-                  prev?.longitude ??
-                  null,
-                notes: details.notes ?? prev?.notes ?? "",
-                format:
-                  details.match_format || prev?.format || "Doubles",
-                playerLimit:
-                  details.player_limit ??
-                  details.playerCount ??
-                  prev?.playerLimit ??
-                  4,
-                skillLevel:
-                  details.skill_level_min ??
-                  details.skillLevel ??
-                  prev?.skillLevel ??
-                  "",
-                privacy: details.match_type || prev?.privacy || "open",
-                status: details.status || prev?.status || "upcoming",
-              };
-            });
+            setDraft((prev) =>
+              sanitizeMatchForEditing(data.match, prev ?? {}),
+            );
           }
         } catch (error) {
           console.error(error);
@@ -4154,11 +4225,11 @@ const TennisMatchApp = () => {
           }
         }
       },
-      [matchToEdit?.id]
+      [matchId]
     );
 
     React.useEffect(() => {
-      if (!isOpen || !matchToEdit?.id) return;
+      if (!isOpen || !matchId) return;
       setSelectedInvitees(new Map());
       setManualInvitees(new Map());
       setInviteSearch("");
@@ -4170,7 +4241,7 @@ const TennisMatchApp = () => {
       setShowDeleteConfirm(false);
       setDeleteReason("");
       hydrateMatchDetails({ syncFields: true });
-    }, [isOpen, matchToEdit?.id, hydrateMatchDetails]);
+    }, [isOpen, matchId, hydrateMatchDetails]);
 
     React.useEffect(() => {
       if (!isOpen || !isPrivateMatch) return;
@@ -4219,7 +4290,7 @@ const TennisMatchApp = () => {
       currentUser?.id && hostId && currentUser.id === hostId;
 
     const handleRemoveParticipant = async (playerId) => {
-      if (!matchToEdit?.id) return;
+      if (!matchId) return;
       if (
         !window.confirm(
           "Remove this participant from the match?"
@@ -4227,7 +4298,7 @@ const TennisMatchApp = () => {
       )
         return;
       try {
-        await removeParticipant(matchToEdit.id, playerId);
+        await removeParticipant(matchId, playerId);
         if (!mountedRef.current) return;
         setParticipants((prev) =>
           prev.filter((p) => p.player_id !== playerId)
@@ -4247,27 +4318,28 @@ const TennisMatchApp = () => {
       }
     };
 
-    if (!isOpen || !matchToEdit) return null;
+    if (!isOpen || !editingMatch) return null;
 
     const committedCount = participants.length;
     const playerLimitValue =
-      matchToEdit.playerLimit === "" || matchToEdit.playerLimit === null
+      editingMatch.playerLimit === "" || editingMatch.playerLimit === null
         ? ""
-        : Number(matchToEdit.playerLimit);
+        : Number(editingMatch.playerLimit);
     const selectedInviteeList = Array.from(selectedInvitees.values());
     const manualInviteeList = Array.from(manualInvitees.values());
     const totalSelectedInvitees =
       selectedInviteeList.length + manualInviteeList.length;
+    const idPrefix = matchId ? `edit-match-${matchId}` : "edit-match";
 
     const handleSave = async () => {
-      if (!matchToEdit?.id) return;
-      if (!matchToEdit.dateTime) {
+      if (!matchId) return;
+      if (!editingMatch.dateTime) {
         displayToast("Select a date and time for the match", "error");
         return;
       }
-      const numericPlayerLimit = Number(matchToEdit.playerLimit);
+      const numericPlayerLimit = Number(editingMatch.playerLimit);
       if (
-        matchToEdit.playerLimit === "" ||
+        editingMatch.playerLimit === "" ||
         !Number.isFinite(numericPlayerLimit) ||
         numericPlayerLimit < Math.max(committedCount, 2)
       ) {
@@ -4279,7 +4351,7 @@ const TennisMatchApp = () => {
       }
       if (
         isOpenMatch &&
-        (!matchToEdit.skillLevel || matchToEdit.skillLevel === "")
+        (!editingMatch.skillLevel || editingMatch.skillLevel === "")
       ) {
         displayToast("Pick a skill level for open matches", "error");
         return;
@@ -4287,8 +4359,8 @@ const TennisMatchApp = () => {
 
       let iso = null;
       try {
-        iso = matchToEdit.dateTime
-          ? new Date(matchToEdit.dateTime).toISOString()
+        iso = editingMatch.dateTime
+          ? new Date(editingMatch.dateTime).toISOString()
           : null;
       } catch {
         iso = null;
@@ -4296,21 +4368,21 @@ const TennisMatchApp = () => {
 
       const payload = {
         start_date_time: iso ?? undefined,
-        location_text: matchToEdit.location || undefined,
-        latitude: matchToEdit.latitude ?? undefined,
-        longitude: matchToEdit.longitude ?? undefined,
-        notes: matchToEdit.notes ?? "",
+        location_text: editingMatch.location || undefined,
+        latitude: editingMatch.latitude ?? undefined,
+        longitude: editingMatch.longitude ?? undefined,
+        notes: editingMatch.notes ?? "",
         player_limit: numericPlayerLimit,
         playerCount: numericPlayerLimit,
-        match_format: matchToEdit.format || undefined,
-        format: matchToEdit.format || undefined,
+        match_format: editingMatch.format || undefined,
+        format: editingMatch.format || undefined,
         match_type: isPrivateMatch ? "private" : "open",
         privacy: isPrivateMatch ? "private" : "open",
       };
 
-      if (matchToEdit.skillLevel) {
-        payload.skill_level_min = matchToEdit.skillLevel;
-        payload.skillLevel = matchToEdit.skillLevel;
+      if (editingMatch.skillLevel) {
+        payload.skill_level_min = editingMatch.skillLevel;
+        payload.skillLevel = editingMatch.skillLevel;
       }
 
       const sanitizedPayload = Object.fromEntries(
@@ -4319,10 +4391,11 @@ const TennisMatchApp = () => {
 
       try {
         setSaving(true);
-        await updateMatch(matchToEdit.id, sanitizedPayload);
+        await updateMatch(matchId, sanitizedPayload);
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
+        setDraft(null);
         fetchMatches();
       } catch (err) {
         displayToast(
@@ -4402,7 +4475,7 @@ const TennisMatchApp = () => {
     };
 
     const handleSendInvites = async () => {
-      if (!matchToEdit?.id) return;
+      if (!matchId) return;
       const newIds = Array.from(selectedInvitees.keys()).filter(
         (id) => !existingIds.has(id)
       );
@@ -4417,7 +4490,7 @@ const TennisMatchApp = () => {
       }
       try {
         setInviteSubmitting(true);
-        const response = await sendInvites(matchToEdit.id, {
+        const response = await sendInvites(matchId, {
           playerIds: newIds,
           phoneNumbers,
         });
@@ -4448,7 +4521,7 @@ const TennisMatchApp = () => {
     };
 
     const handleDeleteMatch = async () => {
-      if (!matchToEdit?.id) return;
+      if (!matchId) return;
       if (
         !window.confirm(
           "Are you sure you want to cancel this match? This cannot be undone."
@@ -4457,12 +4530,13 @@ const TennisMatchApp = () => {
         return;
       try {
         setDeleteLoading(true);
-        await cancelMatch(matchToEdit.id, {
+        await cancelMatch(matchId, {
           reason: deleteReason.trim() ? deleteReason.trim() : undefined,
         });
         displayToast("Match canceled");
         setShowEditModal(false);
         setEditMatch(null);
+        setDraft(null);
         setShowDeleteConfirm(false);
         setDeleteReason("");
         fetchMatches();
@@ -4485,6 +4559,7 @@ const TennisMatchApp = () => {
             onClick={() => {
               setShowEditModal(false);
               setEditMatch(null);
+              setDraft(null);
             }}
             className="absolute top-4 right-4 w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
@@ -4500,24 +4575,37 @@ const TennisMatchApp = () => {
           <div className="flex-1 overflow-y-auto px-6 pb-6 mt-4 space-y-6">
             <div className="grid gap-6 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                <label
+                  htmlFor={`${idPrefix}-date`}
+                  className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider"
+                >
                   Date & Time
                 </label>
                 <input
                   type="datetime-local"
+                  id={`${idPrefix}-date`}
+                  name="match-date"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-bold text-gray-800"
-                  value={matchToEdit.dateTime || ""}
+                  value={editingMatch.dateTime || ""}
                   onChange={(e) =>
-                    setEditMatch({ ...matchToEdit, dateTime: e.target.value })
+                    setDraft((prev) => ({
+                      ...(prev ?? {}),
+                      dateTime: e.target.value,
+                    }))
                   }
                 />
               </div>
               <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                <label
+                  htmlFor={`${idPrefix}-capacity`}
+                  className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider"
+                >
                   Player Capacity
                 </label>
                 <input
                   type="number"
+                  id={`${idPrefix}-capacity`}
+                  name="player-capacity"
                   min={2}
                   max={16}
                   step={1}
@@ -4526,13 +4614,19 @@ const TennisMatchApp = () => {
                   onChange={(e) => {
                     const raw = e.target.value;
                     if (raw === "") {
-                      setEditMatch({ ...matchToEdit, playerLimit: "" });
+                      setDraft((prev) => ({
+                        ...(prev ?? {}),
+                        playerLimit: "",
+                      }));
                       return;
                     }
                     const numeric = Number(raw);
                     if (!Number.isFinite(numeric)) return;
                     const clamped = Math.min(16, Math.max(2, Math.round(numeric)));
-                    setEditMatch({ ...matchToEdit, playerLimit: clamped });
+                    setDraft((prev) => ({
+                      ...(prev ?? {}),
+                      playerLimit: clamped,
+                    }));
                   }}
                 />
                 <p className="text-xs text-gray-500 font-semibold mt-2">
@@ -4542,7 +4636,10 @@ const TennisMatchApp = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+              <label
+                htmlFor={`${idPrefix}-location-manual`}
+                className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider"
+              >
                 Location
               </label>
               <div className="relative mb-3">
@@ -4550,14 +4647,17 @@ const TennisMatchApp = () => {
                 <Autocomplete
                   apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
                   type="search"
-                  value={matchToEdit.location || ""}
+                  id={`${idPrefix}-location-autocomplete`}
+                  name="location-autocomplete"
+                  aria-label="Search for a location"
+                  value={editingMatch.location || ""}
                   onChange={(e) =>
-                    setEditMatch({
-                      ...matchToEdit,
+                    setDraft((prev) => ({
+                      ...(prev ?? {}),
                       location: e.target.value,
                       latitude: null,
                       longitude: null,
-                    })
+                    }))
                   }
                   onPlaceSelected={(place) => {
                     const placeName =
@@ -4568,7 +4668,7 @@ const TennisMatchApp = () => {
                         : "";
                     const lat = place.geometry?.location?.lat?.();
                     const lng = place.geometry?.location?.lng?.();
-                    setEditMatch((prev) => {
+                    setDraft((prev) => {
                       const current = prev ?? {};
                       const nextLocation =
                         placeName || formattedAddress || current.location || "";
@@ -4602,26 +4702,39 @@ const TennisMatchApp = () => {
               </div>
               <input
                 type="text"
+                id={`${idPrefix}-location-manual`}
+                name="location-manual"
                 placeholder="Search or type a location"
                 className="w-full px-4 py-3 border-2 border-dashed border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 font-semibold text-gray-800"
-                value={matchToEdit.location || ""}
+                value={editingMatch.location || ""}
                 onChange={(e) =>
-                  setEditMatch({ ...matchToEdit, location: e.target.value })
+                  setDraft((prev) => ({
+                    ...(prev ?? {}),
+                    location: e.target.value,
+                  }))
                 }
               />
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                <label
+                  htmlFor={`${idPrefix}-format`}
+                  className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider"
+                >
                   Match Format
                 </label>
                 <div className="relative">
                   <Trophy className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
                   <select
-                    value={matchToEdit.format || "Doubles"}
+                    id={`${idPrefix}-format`}
+                    name="match-format"
+                    value={editingMatch.format || "Doubles"}
                     onChange={(e) =>
-                      setEditMatch({ ...matchToEdit, format: e.target.value })
+                      setDraft((prev) => ({
+                        ...(prev ?? {}),
+                        format: e.target.value,
+                      }))
                     }
                     className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-gray-800 appearance-none"
                   >
@@ -4634,15 +4747,23 @@ const TennisMatchApp = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+                <label
+                  htmlFor={`${idPrefix}-skill`}
+                  className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider"
+                >
                   Skill Level (NTRP)
                 </label>
                 <div className="relative">
                   <Target className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
                   <select
-                    value={matchToEdit.skillLevel ?? ""}
+                    id={`${idPrefix}-skill`}
+                    name="skill-level"
+                    value={editingMatch.skillLevel ?? ""}
                     onChange={(e) =>
-                      setEditMatch({ ...matchToEdit, skillLevel: e.target.value })
+                      setDraft((prev) => ({
+                        ...(prev ?? {}),
+                        skillLevel: e.target.value,
+                      }))
                     }
                     className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-bold text-gray-800 appearance-none"
                   >
@@ -4660,15 +4781,23 @@ const TennisMatchApp = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">
+              <label
+                htmlFor={`${idPrefix}-notes`}
+                className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider"
+              >
                 Match Notes
               </label>
               <textarea
                 rows={3}
+                id={`${idPrefix}-notes`}
+                name="match-notes"
                 placeholder="Any special instructions, what to bring, parking info..."
-                value={matchToEdit.notes || ""}
+                value={editingMatch.notes || ""}
                 onChange={(e) =>
-                  setEditMatch({ ...matchToEdit, notes: e.target.value })
+                  setDraft((prev) => ({
+                    ...(prev ?? {}),
+                    notes: e.target.value,
+                  }))
                 }
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800 placeholder:font-semibold resize-none"
               />
@@ -4682,7 +4811,7 @@ const TennisMatchApp = () => {
                   </span>
                   <span className="text-xs font-bold text-gray-500">
                     {committedCount}/{
-                      matchToEdit.playerLimit === "" ? "?" : matchToEdit.playerLimit
+                      editingMatch.playerLimit === "" ? "?" : editingMatch.playerLimit
                     } spots filled
                   </span>
                 </div>
@@ -4749,13 +4878,18 @@ const TennisMatchApp = () => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-gray-600 uppercase tracking-wider mb-2 block">
+                  <label
+                    htmlFor={`${idPrefix}-player-search`}
+                    className="text-xs font-black text-gray-600 uppercase tracking-wider mb-2 block"
+                  >
                     Search players
                   </label>
                   <div className="relative">
                     <Search className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
                     <input
                       type="search"
+                      id={`${idPrefix}-player-search`}
+                      name="player-search"
                       value={inviteSearch}
                       onChange={(e) => setInviteSearch(e.target.value)}
                       placeholder="Search by name or email"
@@ -4879,15 +5013,25 @@ const TennisMatchApp = () => {
                     Invite by phone number
                   </h4>
                   <div className="grid gap-3 md:grid-cols-[1fr_minmax(0,2fr)]">
+                    <label htmlFor={`${idPrefix}-manual-name`} className="sr-only">
+                      Invitee name
+                    </label>
                     <input
                       type="text"
+                      id={`${idPrefix}-manual-name`}
+                      name="manual-invitee-name"
                       value={manualName}
                       onChange={(e) => setManualName(e.target.value)}
                       placeholder="Name (optional)"
                       className="px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300 font-semibold text-gray-800"
                     />
+                    <label htmlFor={`${idPrefix}-manual-phone`} className="sr-only">
+                      Invitee phone number
+                    </label>
                     <input
                       type="tel"
+                      id={`${idPrefix}-manual-phone`}
+                      name="manual-invitee-phone"
                       value={manualPhone}
                       onChange={(e) => {
                         setManualPhone(e.target.value);
@@ -4942,9 +5086,11 @@ const TennisMatchApp = () => {
                 </div>
                 <textarea
                   rows={3}
+                  name="cancel-reason"
                   value={deleteReason}
                   onChange={(e) => setDeleteReason(e.target.value)}
                   placeholder="Let players know why you're canceling (optional)"
+                  aria-label="Cancellation reason"
                   className="w-full px-4 py-3 border-2 border-red-200 rounded-xl focus:ring-2 focus:ring-red-300 focus:border-red-300 font-semibold text-red-700 bg-white"
                 />
                 {showDeleteConfirm ? (
@@ -4985,6 +5131,7 @@ const TennisMatchApp = () => {
               onClick={() => {
                 setShowEditModal(false);
                 setEditMatch(null);
+                setDraft(null);
               }}
               className="w-full sm:w-auto px-5 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
             >
