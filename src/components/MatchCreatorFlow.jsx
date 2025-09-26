@@ -91,7 +91,6 @@ const matchFormatOptions = [
 
 const MIN_START_TIME = "06:00";
 const MAX_START_TIME = "22:00";
-const TIME_STEP_MINUTES = 30;
 
 const toMinutes = (timeValue) => {
   const [h, m] = timeValue.split(":").map(Number);
@@ -99,21 +98,7 @@ const toMinutes = (timeValue) => {
   return h * 60 + m;
 };
 
-const buildTimeSlots = () => {
-  const slots = [];
-  const minMinutes = toMinutes(MIN_START_TIME);
-  const maxMinutes = toMinutes(MAX_START_TIME);
-
-  for (let minutes = minMinutes; minutes <= maxMinutes; minutes += TIME_STEP_MINUTES) {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    slots.push(`${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`);
-  }
-
-  return slots;
-};
-
-const normalizeTimeSelection = (value) => {
+const clampTimeToRange = (value) => {
   if (!value) return "";
   const [hourStr, minuteStr] = value.split(":");
   const hours = Number(hourStr);
@@ -125,16 +110,10 @@ const normalizeTimeSelection = (value) => {
   const rawMinutes = hours * 60 + minutes;
   const clampedMinutes = Math.min(Math.max(rawMinutes, minMinutes), maxMinutes);
 
-  const snappedOffset = Math.round((clampedMinutes - minMinutes) / TIME_STEP_MINUTES);
-  const snappedMinutes = Math.min(
-    Math.max(snappedOffset * TIME_STEP_MINUTES + minMinutes, minMinutes),
-    maxMinutes,
-  );
+  const clampedHours = Math.floor(clampedMinutes / 60);
+  const clampedMins = clampedMinutes % 60;
 
-  const snappedHours = Math.floor(snappedMinutes / 60);
-  const snappedMins = snappedMinutes % 60;
-
-  return `${String(snappedHours).padStart(2, "0")}:${String(snappedMins).padStart(2, "0")}`;
+  return `${String(clampedHours).padStart(2, "0")}:${String(clampedMins).padStart(2, "0")}`;
 };
 
 const formatTimeDisplay = (time24) => {
@@ -268,7 +247,6 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState(null);
   const [quickDates] = useState(() => quickDateOptions());
-  const timeOptions = useMemo(() => buildTimeSlots(), []);
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
@@ -347,7 +325,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     (value) => {
       setMatchData((prev) => ({
         ...prev,
-        startTime: value ? normalizeTimeSelection(value) : "",
+        startTime: value ? clampTimeToRange(value) : "",
       }));
     },
     [setMatchData],
@@ -758,22 +736,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   type="time"
                   min={MIN_START_TIME}
                   max={MAX_START_TIME}
-                  step={TIME_STEP_MINUTES * 60}
-                  list="start-time-options"
                   value={matchData.startTime}
                   onChange={(e) => handleTimeChange(e.target.value)}
                   onBlur={(e) => handleTimeChange(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                 />
-                <datalist id="start-time-options">
-                  {timeOptions.map((time) => (
-                    <option key={time} value={time}>
-                      {formatTimeDisplay(time)}
-                    </option>
-                  ))}
-                </datalist>
                 <p className="text-xs text-gray-500 mt-2">
-                  Choose a start time between 6:00 AM and 10:00 PM in 30-minute increments.
+                  Choose a start time between 6:00 AM and 10:00 PM.
                 </p>
               </div>
               <div>
