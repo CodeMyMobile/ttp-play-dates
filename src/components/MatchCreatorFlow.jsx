@@ -89,25 +89,23 @@ const matchFormatOptions = [
   { value: "Other", label: "Other" },
 ];
 
-const timeSlots = [
-  "06:00",
-  "07:00",
-  "08:00",
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-  "18:00",
-  "19:00",
-  "20:00",
-  "21:00",
-  "22:00",
-];
+const timeSlots = (() => {
+  const slots = [];
+  const startHour = 6;
+  const endHour = 22;
+  const intervalMinutes = 30;
+
+  for (let hour = startHour; hour <= endHour; hour += 1) {
+    for (let minutes = 0; minutes < 60; minutes += intervalMinutes) {
+      if (hour === endHour && minutes > 0) break;
+      slots.push(
+        `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
+      );
+    }
+  }
+
+  return slots;
+})();
 
 const formatTimeDisplay = (time24) => {
   if (!time24) return "";
