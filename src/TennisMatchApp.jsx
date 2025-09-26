@@ -66,6 +66,15 @@ import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./se
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
+const matchFormatOptions = [
+  "Singles",
+  "Doubles",
+  "Mixed Doubles",
+  "Dingles",
+  "Round Robin",
+  "Other",
+];
+
 const getInitialPath = () => {
   if (typeof window === "undefined") return "/";
   const hash = window.location.hash || "";
@@ -2159,12 +2168,11 @@ const TennisMatchApp = () => {
                     }
                     className="w-full pl-11 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors appearance-none bg-white font-bold text-gray-800"
                   >
-                    <option>Doubles</option>
-                    <option>Singles</option>
-                    <option>Mixed Doubles</option>
-                    <option>Dingles</option>
-                    <option>Round Robin</option>
-                    <option>Other</option>
+                    {matchFormatOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
