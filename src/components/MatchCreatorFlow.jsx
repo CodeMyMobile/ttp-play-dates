@@ -80,6 +80,15 @@ const skillLevels = [
   { value: "4.5", label: "4.5+", desc: "Expert" },
 ];
 
+const matchFormatOptions = [
+  { value: "Singles", label: "Singles" },
+  { value: "Doubles", label: "Doubles" },
+  { value: "Mixed Doubles", label: "Mixed Doubles" },
+  { value: "Dingles", label: "Dingles" },
+  { value: "Round Robin", label: "Round Robin" },
+  { value: "Other", label: "Other" },
+];
+
 const timeSlots = [
   "06:00",
   "07:00",
@@ -900,10 +909,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   onChange={(e) => setMatchData((prev) => ({ ...prev, format: e.target.value }))}
                   className="flex-1 bg-transparent text-lg font-medium text-gray-900 focus:outline-none"
                 >
-                  <option value="Singles">Singles</option>
-                  <option value="Doubles">Doubles</option>
-                  <option value="Mixed Doubles">Mixed Doubles</option>
-                  <option value="Round Robin">Round Robin</option>
+                  {matchFormatOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1207,10 +1217,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   onChange={(e) => setMatchData((prev) => ({ ...prev, format: e.target.value }))}
                   className="flex-1 bg-transparent text-lg font-medium text-gray-900 focus:outline-none"
                 >
-                  <option value="Singles">Singles</option>
-                  <option value="Doubles">Doubles</option>
-                  <option value="Mixed Doubles">Mixed Doubles</option>
-                  <option value="Round Robin">Round Robin</option>
+                  {matchFormatOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
