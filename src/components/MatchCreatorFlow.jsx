@@ -89,23 +89,53 @@ const matchFormatOptions = [
   { value: "Other", label: "Other" },
 ];
 
-const timeSlots = (() => {
-  const slots = [];
-  const startHour = 6;
-  const endHour = 22;
-  const intervalMinutes = 30;
+const MIN_START_TIME = "06:00";
+const MAX_START_TIME = "22:00";
+const TIME_STEP_MINUTES = 30;
 
-  for (let hour = startHour; hour <= endHour; hour += 1) {
-    for (let minutes = 0; minutes < 60; minutes += intervalMinutes) {
-      if (hour === endHour && minutes > 0) break;
-      slots.push(
-        `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
-      );
-    }
+const toMinutes = (timeValue) => {
+  const [h, m] = timeValue.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return NaN;
+  return h * 60 + m;
+};
+
+const buildTimeSlots = () => {
+  const slots = [];
+  const minMinutes = toMinutes(MIN_START_TIME);
+  const maxMinutes = toMinutes(MAX_START_TIME);
+
+  for (let minutes = minMinutes; minutes <= maxMinutes; minutes += TIME_STEP_MINUTES) {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    slots.push(`${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`);
   }
 
   return slots;
-})();
+};
+
+const normalizeTimeSelection = (value) => {
+  if (!value) return "";
+  const [hourStr, minuteStr] = value.split(":");
+  const hours = Number(hourStr);
+  const minutes = Number(minuteStr);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return "";
+
+  const minMinutes = toMinutes(MIN_START_TIME);
+  const maxMinutes = toMinutes(MAX_START_TIME);
+  const rawMinutes = hours * 60 + minutes;
+  const clampedMinutes = Math.min(Math.max(rawMinutes, minMinutes), maxMinutes);
+
+  const snappedOffset = Math.round((clampedMinutes - minMinutes) / TIME_STEP_MINUTES);
+  const snappedMinutes = Math.min(
+    Math.max(snappedOffset * TIME_STEP_MINUTES + minMinutes, minMinutes),
+    maxMinutes,
+  );
+
+  const snappedHours = Math.floor(snappedMinutes / 60);
+  const snappedMins = snappedMinutes % 60;
+
+  return `${String(snappedHours).padStart(2, "0")}:${String(snappedMins).padStart(2, "0")}`;
+};
 
 const formatTimeDisplay = (time24) => {
   if (!time24) return "";
@@ -238,6 +268,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState(null);
   const [quickDates] = useState(() => quickDateOptions());
+  const timeOptions = useMemo(() => buildTimeSlots(), []);
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
@@ -311,6 +342,16 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     if (Number.isNaN(date.getTime())) return null;
     return date.toISOString();
   }, [matchData.date, matchData.startTime]);
+
+  const handleTimeChange = useCallback(
+    (value) => {
+      setMatchData((prev) => ({
+        ...prev,
+        startTime: value ? normalizeTimeSelection(value) : "",
+      }));
+    },
+    [setMatchData],
+  );
 
   const handleAddPlayer = (player) => {
     const normalized = normalizePlayer(player);
@@ -713,17 +754,27 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">TIME</label>
-                <select
+                <input
+                  type="time"
+                  min={MIN_START_TIME}
+                  max={MAX_START_TIME}
+                  step={TIME_STEP_MINUTES * 60}
+                  list="start-time-options"
                   value={matchData.startTime}
-                  onChange={(e) => setMatchData((prev) => ({ ...prev, startTime: e.target.value }))}
+                  onChange={(e) => handleTimeChange(e.target.value)}
+                  onBlur={(e) => handleTimeChange(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                >
-                  {timeSlots.map((time) => (
+                />
+                <datalist id="start-time-options">
+                  {timeOptions.map((time) => (
                     <option key={time} value={time}>
                       {formatTimeDisplay(time)}
                     </option>
                   ))}
-                </select>
+                </datalist>
+                <p className="text-xs text-gray-500 mt-2">
+                  Choose a start time between 6:00 AM and 10:00 PM in 30-minute increments.
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">DURATION</label>
