@@ -238,6 +238,7 @@ const TennisMatchApp = () => {
 
   const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
   const lastInviteLoadRef = useRef(null);
+  const autoDetectAttemptedRef = useRef(false);
 
   useEffect(() => {
     setMatchPage(1);
@@ -351,6 +352,19 @@ const TennisMatchApp = () => {
       },
     );
   }, []);
+
+  useEffect(() => {
+    if (autoDetectAttemptedRef.current) return;
+    if (!currentUser) return;
+
+    if (locationFilter?.lat && locationFilter?.lng) {
+      autoDetectAttemptedRef.current = true;
+      return;
+    }
+
+    autoDetectAttemptedRef.current = true;
+    detectCurrentLocation();
+  }, [currentUser, detectCurrentLocation, locationFilter]);
 
   // Match loading helpers
   const fetchMatches = useCallback(async () => {
