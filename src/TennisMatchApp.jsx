@@ -715,11 +715,19 @@ const TennisMatchApp = () => {
   }, [hasLocationFilter, locationFilter, matches]);
 
   const displayedMatches = useMemo(() => {
+    const now = Date.now();
+    const upcomingMatches = matchesWithDistance.filter((match) => {
+      if (!match?.dateTime) return true;
+      const matchStart = new Date(match.dateTime).getTime();
+      if (!Number.isFinite(matchStart)) return true;
+      return matchStart >= now;
+    });
+
     if (!hasLocationFilter) {
-      return matchesWithDistance;
+      return upcomingMatches;
     }
 
-    const filtered = matchesWithDistance.filter((match) => {
+    const filtered = upcomingMatches.filter((match) => {
       if (!Number.isFinite(match.distanceMiles)) return false;
       return match.distanceMiles <= distanceFilter;
     });
