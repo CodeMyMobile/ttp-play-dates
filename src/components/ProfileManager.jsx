@@ -158,9 +158,9 @@ const ProfileManager = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl">
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4 sm:p-6">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)]">
+        <div className="flex items-start justify-between px-4 py-4 sm:px-6 sm:py-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white flex items-center justify-center shadow-lg">
               <UserRound className="w-5 h-5" />
@@ -181,7 +181,10 @@ const ProfileManager = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        <form onSubmit={handleUpdate} className="px-6 py-5 space-y-5">
+        <form
+          onSubmit={handleUpdate}
+          className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 space-y-5"
+        >
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
@@ -229,7 +232,7 @@ const ProfileManager = ({ isOpen, onClose }) => {
                 <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
                   Profile Photo
                 </label>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                   <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-100 to-emerald-200 p-[3px]">
                     <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
                       {imagePreview ? (
@@ -243,7 +246,7 @@ const ProfileManager = ({ isOpen, onClose }) => {
                       )}
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 w-full">
                     <div className="flex flex-wrap items-center gap-3">
                       <button
                         type="button"
