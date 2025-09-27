@@ -363,7 +363,7 @@ const TennisMatchApp = () => {
 
     try {
       const filter = activeFilter === "draft" ? "my" : activeFilter;
-      const status = activeFilter === "draft" ? "draft" : undefined;
+      const status = activeFilter === "draft" ? "draft" : "upcoming";
       const data = await listMatches(filter, {
         status,
         search: matchSearch,
@@ -435,23 +435,17 @@ const TennisMatchApp = () => {
         return matchStart >= now;
       });
 
-      const removedPastMatches = transformed.length - upcomingMatches.length;
-      const adjustedCounts = { ...serverCounts };
-      const countKey = activeFilter === "draft" ? "draft" : filter;
+      const normalizedCounts = {
+        my: 0,
+        open: 0,
+        today: 0,
+        tomorrow: 0,
+        weekend: 0,
+        draft: 0,
+        ...serverCounts,
+      };
 
-      if (countKey) {
-        const originalCount = adjustedCounts[countKey];
-        if (typeof originalCount === "number" && removedPastMatches > 0) {
-          adjustedCounts[countKey] = Math.max(
-            0,
-            originalCount - removedPastMatches,
-          );
-        } else if (typeof originalCount !== "number") {
-          adjustedCounts[countKey] = upcomingMatches.length;
-        }
-      }
-
-      setMatchCounts(adjustedCounts);
+      setMatchCounts(normalizedCounts);
       setMatches(upcomingMatches);
     } catch (err) {
       displayToast(
