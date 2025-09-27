@@ -363,7 +363,7 @@ const TennisMatchApp = () => {
 
     try {
       const filter = activeFilter === "draft" ? "my" : activeFilter;
-      const status = activeFilter === "draft" ? "draft" : "upcoming";
+      const status = activeFilter === "draft" ? "draft" : undefined;
       const data = await listMatches(filter, {
         status,
         search: matchSearch,
@@ -444,6 +444,11 @@ const TennisMatchApp = () => {
         draft: 0,
         ...serverCounts,
       };
+
+      const activeCountKey = activeFilter === "draft" ? "draft" : filter;
+      if (activeCountKey) {
+        normalizedCounts[activeCountKey] = upcomingMatches.length;
+      }
 
       setMatchCounts(normalizedCounts);
       setMatches(upcomingMatches);
@@ -763,6 +768,29 @@ const TennisMatchApp = () => {
       return distanceA - distanceB;
     });
   }, [distanceFilter, hasLocationFilter, matchesWithDistance]);
+
+  const upcomingMatchesCount = matches.length;
+  const visibleMatchesCount = hasLocationFilter
+    ? displayedMatches.length
+    : upcomingMatchesCount;
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const activeCountKey = activeFilter === "draft" ? "draft" : activeFilter;
+    if (!activeCountKey) return;
+
+    setMatchCounts((prevCounts = {}) => {
+      const previous = prevCounts[activeCountKey] ?? 0;
+      if (previous === visibleMatchesCount) {
+        return prevCounts;
+      }
+
+      return {
+        ...prevCounts,
+        [activeCountKey]: visibleMatchesCount,
+      };
+    });
+  }, [activeFilter, currentUser, visibleMatchesCount]);
 
   const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
   const activeLocationLabel = hasLocationFilter
