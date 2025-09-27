@@ -371,7 +371,7 @@ const TennisMatchApp = () => {
         perPage: 10,
       });
       const rawMatches = data.matches || [];
-      setMatchCounts(data.counts || {});
+      const serverCounts = data.counts || {};
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
         const participantCount = (m.participants || []).filter(
@@ -426,7 +426,33 @@ const TennisMatchApp = () => {
       if (activeFilter === "draft") {
         transformed = transformed.filter((m) => m.status === "draft");
       }
-      setMatches(transformed);
+
+      const now = Date.now();
+      const upcomingMatches = transformed.filter((match) => {
+        if (!match?.dateTime) return true;
+        const matchStart = new Date(match.dateTime).getTime();
+        if (!Number.isFinite(matchStart)) return true;
+        return matchStart >= now;
+      });
+
+      const removedPastMatches = transformed.length - upcomingMatches.length;
+      const adjustedCounts = { ...serverCounts };
+      const countKey = activeFilter === "draft" ? "draft" : filter;
+
+      if (countKey) {
+        const originalCount = adjustedCounts[countKey];
+        if (typeof originalCount === "number" && removedPastMatches > 0) {
+          adjustedCounts[countKey] = Math.max(
+            0,
+            originalCount - removedPastMatches,
+          );
+        } else if (typeof originalCount !== "number") {
+          adjustedCounts[countKey] = upcomingMatches.length;
+        }
+      }
+
+      setMatchCounts(adjustedCounts);
+      setMatches(upcomingMatches);
     } catch (err) {
       displayToast(
         err.response?.data?.message || "Failed to load matches",
