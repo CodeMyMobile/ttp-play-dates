@@ -35,13 +35,26 @@ import {
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
 
+const formatLocalDateValue = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatLocalTimeValue = (date) => {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
 const defaultDateInfo = () => {
   const base = new Date();
   base.setDate(base.getDate() + 1);
   base.setHours(18, 0, 0, 0);
   return {
-    date: base.toISOString().slice(0, 10),
-    time: base.toISOString().slice(11, 16),
+    date: formatLocalDateValue(base),
+    time: formatLocalTimeValue(base),
   };
 };
 
@@ -210,7 +223,7 @@ const quickDateOptions = () => {
     return {
       value: `offset-${offset}`,
       label: d.toLocaleDateString("en-US", { weekday: "long" }),
-      date: d.toISOString().slice(0, 10),
+      date: formatLocalDateValue(d),
     };
   };
   return [makeOption(0), makeOption(1), makeOption(2), makeOption(3)];
