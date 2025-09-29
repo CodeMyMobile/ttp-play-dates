@@ -80,25 +80,41 @@ const skillLevels = [
   { value: "4.5", label: "4.5+", desc: "Expert" },
 ];
 
-const timeSlots = [
-  "06:00",
-  "07:00",
-  "08:00",
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-  "18:00",
-  "19:00",
-  "20:00",
-  "21:00",
-  "22:00",
+const matchFormatOptions = [
+  { value: "Singles", label: "Singles" },
+  { value: "Doubles", label: "Doubles" },
+  { value: "Mixed Doubles", label: "Mixed Doubles" },
+  { value: "Dingles", label: "Dingles" },
+  { value: "Round Robin", label: "Round Robin" },
+  { value: "Other", label: "Other" },
 ];
+
+const MIN_START_TIME = "06:00";
+const MAX_START_TIME = "22:00";
+
+const toMinutes = (timeValue) => {
+  const [h, m] = timeValue.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return NaN;
+  return h * 60 + m;
+};
+
+const clampTimeToRange = (value) => {
+  if (!value) return "";
+  const [hourStr, minuteStr] = value.split(":");
+  const hours = Number(hourStr);
+  const minutes = Number(minuteStr);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return "";
+
+  const minMinutes = toMinutes(MIN_START_TIME);
+  const maxMinutes = toMinutes(MAX_START_TIME);
+  const rawMinutes = hours * 60 + minutes;
+  const clampedMinutes = Math.min(Math.max(rawMinutes, minMinutes), maxMinutes);
+
+  const clampedHours = Math.floor(clampedMinutes / 60);
+  const clampedMins = clampedMinutes % 60;
+
+  return `${String(clampedHours).padStart(2, "0")}:${String(clampedMins).padStart(2, "0")}`;
+};
 
 const formatTimeDisplay = (time24) => {
   if (!time24) return "";
@@ -304,6 +320,16 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     if (Number.isNaN(date.getTime())) return null;
     return date.toISOString();
   }, [matchData.date, matchData.startTime]);
+
+  const handleTimeChange = useCallback(
+    (value) => {
+      setMatchData((prev) => ({
+        ...prev,
+        startTime: value ? clampTimeToRange(value) : "",
+      }));
+    },
+    [setMatchData],
+  );
 
   const handleAddPlayer = (player) => {
     const normalized = normalizePlayer(player);
@@ -706,17 +732,18 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">TIME</label>
-                <select
+                <input
+                  type="time"
+                  min={MIN_START_TIME}
+                  max={MAX_START_TIME}
                   value={matchData.startTime}
-                  onChange={(e) => setMatchData((prev) => ({ ...prev, startTime: e.target.value }))}
+                  onChange={(e) => handleTimeChange(e.target.value)}
+                  onBlur={(e) => handleTimeChange(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                >
-                  {timeSlots.map((time) => (
-                    <option key={time} value={time}>
-                      {formatTimeDisplay(time)}
-                    </option>
-                  ))}
-                </select>
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Choose a start time between 6:00 AM and 10:00 PM.
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">DURATION</label>
@@ -900,10 +927,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   onChange={(e) => setMatchData((prev) => ({ ...prev, format: e.target.value }))}
                   className="flex-1 bg-transparent text-lg font-medium text-gray-900 focus:outline-none"
                 >
-                  <option value="Singles">Singles</option>
-                  <option value="Doubles">Doubles</option>
-                  <option value="Mixed Doubles">Mixed Doubles</option>
-                  <option value="Round Robin">Round Robin</option>
+                  {matchFormatOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1207,10 +1235,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   onChange={(e) => setMatchData((prev) => ({ ...prev, format: e.target.value }))}
                   className="flex-1 bg-transparent text-lg font-medium text-gray-900 focus:outline-none"
                 >
-                  <option value="Singles">Singles</option>
-                  <option value="Doubles">Doubles</option>
-                  <option value="Mixed Doubles">Mixed Doubles</option>
-                  <option value="Round Robin">Round Robin</option>
+                  {matchFormatOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
