@@ -18,12 +18,35 @@ export const createMatch = (match) =>
 
 export const listMatches = (
   filter,
-  { status, search = "", page = 1, perPage = 10 } = {}
+  {
+    status,
+    search = "",
+    page = 1,
+    perPage = 10,
+    latitude,
+    longitude,
+    distance,
+    radius,
+  } = {},
 ) => {
   const params = { page, perPage };
   if (filter) params.filter = filter;
   if (status) params.status = status;
   if (search) params.search = search;
+  const addNumericParam = (key, value) => {
+    if (value === undefined || value === null) return;
+    const numeric =
+      typeof value === "string" ? Number.parseFloat(value) : value;
+    if (Number.isFinite(numeric)) {
+      params[key] = numeric;
+    }
+  };
+  addNumericParam("latitude", latitude);
+  addNumericParam("longitude", longitude);
+  addNumericParam("distance", distance);
+  if (!Object.prototype.hasOwnProperty.call(params, "distance")) {
+    addNumericParam("radius", radius);
+  }
   return unwrap(api(`/matches${qs(params)}`));
 };
 

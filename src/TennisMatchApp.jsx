@@ -378,11 +378,32 @@ const TennisMatchApp = () => {
     try {
       const filter = activeFilter === "draft" ? "my" : activeFilter;
       const status = activeFilter === "draft" ? "draft" : undefined;
+      const parsedLat = (() => {
+        const raw = locationFilter?.lat;
+        const numeric =
+          typeof raw === "string" ? Number.parseFloat(raw) : raw;
+        return Number.isFinite(numeric) ? numeric : null;
+      })();
+      const parsedLng = (() => {
+        const raw = locationFilter?.lng;
+        const numeric =
+          typeof raw === "string" ? Number.parseFloat(raw) : raw;
+        return Number.isFinite(numeric) ? numeric : null;
+      })();
+      const locationParams =
+        parsedLat !== null && parsedLng !== null
+          ? {
+              latitude: parsedLat,
+              longitude: parsedLng,
+              distance: distanceFilter,
+            }
+          : {};
       const data = await listMatches(filter, {
         status,
         search: matchSearch,
         page: matchPage,
         perPage: 10,
+        ...locationParams,
       });
       const rawMatches = data.matches || [];
       setMatchCounts(data.counts || {});
@@ -427,6 +448,15 @@ const TennisMatchApp = () => {
             return Number.isFinite(numeric) ? numeric : null;
           })(),
           mapUrl: buildMapsUrl(m.latitude, m.longitude, m.location_text),
+          distanceMiles: (() => {
+            const raw =
+              m.distanceMiles ??
+              m.distance_miles ??
+              m.distance;
+            const numeric =
+              typeof raw === "string" ? Number.parseFloat(raw) : raw;
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
           format: m.match_format,
           skillLevel: m.skill_level_min,
           notes: m.notes,
@@ -447,7 +477,15 @@ const TennisMatchApp = () => {
         "error",
       );
     }
-  }, [activeFilter, currentUser, displayToast, matchPage, matchSearch]);
+  }, [
+    activeFilter,
+    currentUser,
+    distanceFilter,
+    displayToast,
+    locationFilter,
+    matchPage,
+    matchSearch,
+  ]);
 
   useEffect(() => {
     fetchMatches();
@@ -710,20 +748,33 @@ const TennisMatchApp = () => {
   };
   // Removed inline Header in favor of components/AppHeader
 
-  const hasLocationFilter = Boolean(
-    locationFilter?.lat && locationFilter?.lng,
-  );
+  const hasLocationFilter =
+    Number.isFinite(
+      typeof locationFilter?.lat === "string"
+        ? Number.parseFloat(locationFilter.lat)
+        : locationFilter?.lat,
+    ) &&
+    Number.isFinite(
+      typeof locationFilter?.lng === "string"
+        ? Number.parseFloat(locationFilter.lng)
+        : locationFilter?.lng,
+    );
 
   const matchesWithDistance = useMemo(() => {
     return matches.map((match) => {
-      const distance = hasLocationFilter
+      const hasServerDistance = Number.isFinite(match.distanceMiles);
+      const fallbackDistance = hasLocationFilter
         ? calculateDistanceMiles(
-            locationFilter.lat,
-            locationFilter.lng,
+            locationFilter?.lat,
+            locationFilter?.lng,
             match.latitude,
             match.longitude,
           )
-        : match.distanceMiles ?? null;
+        : null;
+      const normalizedFallback = Number.isFinite(fallbackDistance)
+        ? fallbackDistance
+        : null;
+      const distance = hasServerDistance ? match.distanceMiles : normalizedFallback;
       return { ...match, distanceMiles: distance };
     });
   }, [hasLocationFilter, locationFilter, matches]);
