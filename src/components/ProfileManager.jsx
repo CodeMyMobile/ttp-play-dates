@@ -1,15 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Loader2, UserRound } from "lucide-react";
-import { getPersonalDetails, updatePersonalDetails } from "../services/auth";
+import { getPersonalDetails } from "../services/auth";
 import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
+import ProfilePhotoUploader from "./ProfilePhotoUploader";
+import { updatePlayerPersonalDetails } from "../services/player";
 
 const emptyDetails = {
+  id: null,
   full_name: "",
   phone: "",
   profile_picture: "",
   date_of_birth: "",
   usta_rating: "",
   uta_rating: "",
+  about_me: "",
 };
 
 const ProfileManager = ({ isOpen, onClose }) => {
@@ -19,8 +23,7 @@ const ProfileManager = ({ isOpen, onClose }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState("");
-  const [imageError, setImageError] = useState("");
-  const fileInputRef = useRef(null);
+  const accessToken = localStorage.getItem("authToken");
 
   useEffect(() => {
     if (isOpen) {
@@ -30,15 +33,17 @@ const ProfileManager = ({ isOpen, onClose }) => {
       setPhoneInput("");
       setError("");
       setImagePreview("");
-      setImageError("");
     }
   }, [isOpen]);
 
-  const fetchDetails = async () => {
+  const fetchDetails = async ({ showLoader = true } = {}) => {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
       const data = await getPersonalDetails();
       const normalizedDetails = {
+        id: data?.id ?? null,
         full_name: data?.full_name || "",
         phone: data?.phone ? String(data.phone).replace(/\D/g, "") : "",
         profile_picture: data?.profile_picture || "",
@@ -53,16 +58,18 @@ const ProfileManager = ({ isOpen, onClose }) => {
           typeof data?.uta_rating === "number" && !Number.isNaN(data.uta_rating)
             ? String(data.uta_rating)
             : data?.uta_rating || "",
+        about_me: data?.about_me || "",
       };
       setDetails(normalizedDetails);
       setPhoneInput(formatPhoneDisplay(data?.phone) || "");
       setImagePreview(normalizedDetails.profile_picture || "");
-      setImageError("");
     } catch (err) {
       console.error(err);
       setError("Failed to load profile details. Please try again.");
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   };
 
@@ -77,9 +84,14 @@ const ProfileManager = ({ isOpen, onClose }) => {
     e.preventDefault();
     setError("");
     setSaving(true);
-    if (imageError) {
+    if (!details.id) {
       setSaving(false);
-      setError(imageError);
+      setError("We couldn't determine your player profile. Please reload and try again.");
+      return;
+    }
+    if (!accessToken) {
+      setSaving(false);
+      setError("Please sign in again to update your profile.");
       return;
     }
     try {
@@ -92,16 +104,17 @@ const ProfileManager = ({ isOpen, onClose }) => {
       };
 
       const sanitizedPhone = String(details.phone || "").replace(/\D/g, "");
-      const payload = {
-        full_name: details.full_name?.trim() || "",
-        phone: sanitizedPhone ? Number(sanitizedPhone) : undefined,
-        profile_picture: details.profile_picture?.trim() || "",
-        date_of_birth: details.date_of_birth || "",
+      const aboutMe = details.about_me?.trim();
+      await updatePlayerPersonalDetails({
+        player: accessToken,
+        id: details.id,
+        date_of_birth: details.date_of_birth || null,
         usta_rating: parseRating(details.usta_rating),
         uta_rating: parseRating(details.uta_rating),
-      };
-
-      await updatePersonalDetails(payload);
+        fullName: details.full_name?.trim() || null,
+        mobile: sanitizedPhone ? sanitizedPhone : null,
+        about_me: aboutMe || null,
+      });
       onClose();
     } catch (err) {
       console.error(err);
@@ -113,46 +126,6 @@ const ProfileManager = ({ isOpen, onClose }) => {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleImageUpload = (file) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setImageError("Please choose an image file.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError("Images must be smaller than 5MB.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result || "";
-      setImageError("");
-      setImagePreview(result);
-      setDetails((prev) => ({
-        ...prev,
-        profile_picture: result,
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleImageRemove = () => {
-    setImagePreview("");
-    setImageError("");
-    setDetails((prev) => ({
-      ...prev,
-      profile_picture: "",
-    }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const triggerFileDialog = () => {
-    fileInputRef.current?.click();
   };
 
   if (!isOpen) return null;
@@ -247,59 +220,19 @@ const ProfileManager = ({ isOpen, onClose }) => {
                     </div>
                   </div>
                   <div className="space-y-2 w-full">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={triggerFileDialog}
-                        className="px-4 py-2 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-green-500 shadow hover:shadow-md transition-shadow"
-                      >
-                        Upload from device
-                      </button>
-                      {details.profile_picture && (
-                        <button
-                          type="button"
-                          onClick={handleImageRemove}
-                          className="px-4 py-2 rounded-xl border border-red-200 text-red-600 font-semibold hover:bg-red-50 transition-colors"
-                        >
-                          Remove photo
-                        </button>
-                      )}
-                    </div>
+                    <ProfilePhotoUploader
+                      accessToken={accessToken}
+                      onUploaded={() => fetchDetails({ showLoader: false })}
+                      className="px-4 py-2 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-green-500 shadow hover:shadow-md transition-shadow inline-flex items-center justify-center cursor-pointer"
+                      disabledLabel="Uploading…"
+                      label="Upload from device"
+                      errorClassName="text-sm font-semibold text-red-600"
+                    />
                     <p className="text-xs font-semibold text-gray-500">
                       JPG or PNG, up to 5MB. We'll resize it to fit nicely in the app.
                     </p>
                   </div>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(event) => handleImageUpload(event.target.files?.[0])}
-                />
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-gray-500 uppercase tracking-wider">
-                    Or paste an image URL
-                  </label>
-                  <input
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors font-semibold text-gray-800"
-                    type="url"
-                    placeholder="https://example.com/avatar.jpg"
-                    value={details.profile_picture}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDetails((prev) => ({
-                        ...prev,
-                        profile_picture: value,
-                      }));
-                      setImagePreview(value);
-                      setImageError("");
-                    }}
-                  />
-                </div>
-                {imageError && (
-                  <p className="text-sm font-semibold text-red-600">{imageError}</p>
-                )}
               </div>
 
               <div className="space-y-2">
