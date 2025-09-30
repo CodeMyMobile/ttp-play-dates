@@ -59,3 +59,13 @@ This project can be hosted on GitHub Pages. Run the deploy script to build the s
 ```
 npm run deploy
 ```
+
+### Updating the PR preview
+
+Pull requests automatically publish a preview to GitHub Pages via the `Deploy PR Preview` workflow. To refresh the preview after making code changes:
+
+1. Commit the changes to the pull request branch and push them to GitHub.
+2. GitHub Actions will rerun the workflow on the new commit (`synchronize` event) and redeploy `dist/` to `gh-pages/pr-preview/pr-<number>/`.
+3. Wait for the workflow to finish (check the **Actions** tab); once it succeeds, refresh the preview URL.
+
+If you need to force a rebuild without new commits, you can rerun the latest workflow run from the **Actions** tab or close and reopen the pull request to trigger the deployment.

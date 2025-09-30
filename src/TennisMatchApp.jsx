@@ -407,7 +407,7 @@ const TennisMatchApp = () => {
         ...locationParams,
       });
       const rawMatches = data.matches || [];
-      setMatchCounts(data.counts || {});
+      const serverCounts = data.counts || {};
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
         const participantCount = (m.participants || []).filter(
@@ -471,7 +471,32 @@ const TennisMatchApp = () => {
       if (activeFilter === "draft") {
         transformed = transformed.filter((m) => m.status === "draft");
       }
-      setMatches(transformed);
+
+      const now = Date.now();
+      const upcomingMatches = transformed.filter((match) => {
+        if (!match?.dateTime) return true;
+        const matchStart = new Date(match.dateTime).getTime();
+        if (!Number.isFinite(matchStart)) return true;
+        return matchStart >= now;
+      });
+
+      const normalizedCounts = {
+        my: 0,
+        open: 0,
+        today: 0,
+        tomorrow: 0,
+        weekend: 0,
+        draft: 0,
+        ...serverCounts,
+      };
+
+      const activeCountKey = activeFilter === "draft" ? "draft" : filter;
+      if (activeCountKey) {
+        normalizedCounts[activeCountKey] = upcomingMatches.length;
+      }
+
+      setMatchCounts(normalizedCounts);
+      setMatches(upcomingMatches);
     } catch (err) {
       displayToast(
         err.response?.data?.message || "Failed to load matches",
@@ -781,11 +806,19 @@ const TennisMatchApp = () => {
   }, [hasLocationFilter, locationFilter, matches]);
 
   const displayedMatches = useMemo(() => {
+    const now = Date.now();
+    const upcomingMatches = matchesWithDistance.filter((match) => {
+      if (!match?.dateTime) return true;
+      const matchStart = new Date(match.dateTime).getTime();
+      if (!Number.isFinite(matchStart)) return true;
+      return matchStart >= now;
+    });
+
     if (!hasLocationFilter) {
-      return matchesWithDistance;
+      return upcomingMatches;
     }
 
-    const filtered = matchesWithDistance.filter((match) => {
+    const filtered = upcomingMatches.filter((match) => {
       if (!Number.isFinite(match.distanceMiles)) return false;
       return match.distanceMiles <= distanceFilter;
     });
@@ -801,6 +834,29 @@ const TennisMatchApp = () => {
       return distanceA - distanceB;
     });
   }, [distanceFilter, hasLocationFilter, matchesWithDistance]);
+
+  const upcomingMatchesCount = matches.length;
+  const visibleMatchesCount = hasLocationFilter
+    ? displayedMatches.length
+    : upcomingMatchesCount;
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const activeCountKey = activeFilter === "draft" ? "draft" : activeFilter;
+    if (!activeCountKey) return;
+
+    setMatchCounts((prevCounts = {}) => {
+      const previous = prevCounts[activeCountKey] ?? 0;
+      if (previous === visibleMatchesCount) {
+        return prevCounts;
+      }
+
+      return {
+        ...prevCounts,
+        [activeCountKey]: visibleMatchesCount,
+      };
+    });
+  }, [activeFilter, currentUser, visibleMatchesCount]);
 
   const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
   const activeLocationLabel = hasLocationFilter
