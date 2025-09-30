@@ -410,13 +410,24 @@ const TennisMatchApp = () => {
       setMatchCounts(data.counts || {});
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
-        const participantCount = (m.participants || []).filter(
-          (p) => p.status !== "left",
-        ).length;
-        const acceptedInvites = (m.invitees || []).filter(
-          (i) => i.status === "accepted",
-        ).length;
-        const occupied = participantCount + acceptedInvites;
+        const participantIds = new Set(
+          (m.participants || [])
+            .filter((p) => p.status !== "left")
+            .map((p) => Number(p.player_id))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        );
+
+        (m.invitees || [])
+          .filter((i) => i.status === "accepted")
+          .forEach((invitee) => {
+            const inviteeId = Number(invitee.invitee_id);
+            if (!Number.isFinite(inviteeId) || inviteeId <= 0) return;
+            if (!participantIds.has(inviteeId)) {
+              participantIds.add(inviteeId);
+            }
+          });
+
+        const occupied = participantIds.size;
 
         const matchId = m.match_id || m.id;
         const isHost = m.host_id === currentUser?.id;
@@ -562,15 +573,23 @@ const TennisMatchApp = () => {
         const validParticipants = participantsSource.filter(
           (p) => p && p.status !== "left",
         );
-        const acceptedInvites = inviteesSource.filter(
-          (i) => i && i.status === "accepted",
-        ).length;
         const participantIds = validParticipants
           .map((p) => Number(p.player_id))
           .filter((id) => Number.isFinite(id) && id > 0);
         const inviteeIds = inviteesSource
           .map((i) => Number(i.invitee_id))
           .filter((id) => Number.isFinite(id) && id > 0);
+        const occupiedIds = new Set(participantIds);
+
+        inviteesSource
+          .filter((i) => i && i.status === "accepted")
+          .forEach((invitee) => {
+            const inviteeId = Number(invitee.invitee_id);
+            if (!Number.isFinite(inviteeId) || inviteeId <= 0) return;
+            if (!occupiedIds.has(inviteeId)) {
+              occupiedIds.add(inviteeId);
+            }
+          });
 
         const initial = new Map();
         const hostParticipant = validParticipants.find(
@@ -583,7 +602,7 @@ const TennisMatchApp = () => {
           : match.host_profile?.full_name ||
             match.host_name ||
             (computedHostId ? `Player ${computedHostId}` : "");
-        const occupied = validParticipants.length + acceptedInvites;
+        const occupied = occupiedIds.size;
 
         validParticipants.forEach((p) => {
           const pid = Number(p.player_id);
