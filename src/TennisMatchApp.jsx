@@ -876,7 +876,15 @@ const TennisMatchApp = () => {
                         );
                       }
                     }}
-                    types={["geocode"]}
+                    options={{
+                    types: ["geocode", "establishment"],
+                    fields: [
+                      "formatted_address",
+                      "geometry",
+                      "name",
+                      "address_components",
+                    ],
+                  }}
                   />
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <button
