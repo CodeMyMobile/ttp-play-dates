@@ -21,7 +21,8 @@ import {
   acceptInvite,
   rejectInvite,
 } from "./services/invites";
-import { login, signup, updatePersonalDetails, forgotPassword } from "./services/auth";
+import { login, signup, forgotPassword } from "./services/auth";
+import { updatePlayerPersonalDetails } from "./services/player";
 import {
   Calendar,
   MapPin,
@@ -940,7 +941,15 @@ const TennisMatchApp = () => {
                         );
                       }
                     }}
-                    types={["geocode"]}
+                    options={{
+                    types: ["geocode", "establishment"],
+                    fields: [
+                      "formatted_address",
+                      "geometry",
+                      "name",
+                      "address_components",
+                    ],
+                  }}
                   />
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <button
@@ -3326,14 +3335,20 @@ const TennisMatchApp = () => {
         if (res?.refresh_token) localStorage.setItem("refreshToken", res.refresh_token);
         // Update profile details using access token
         const digits = (formData.phone || "").replace(/\D/g, "");
-        await updatePersonalDetails({
-          full_name: formData.name,
-          date_of_birth: formData.dateOfBirth || "",
-          profile_picture: "",
-          phone: digits ? Number(digits) : undefined,
-          usta_rating: 0,
-          uta_rating: 0,
-        });
+        const signupToken =
+          res?.access_token || localStorage.getItem("authToken") || "";
+        if (signupToken && res?.user_id) {
+          await updatePlayerPersonalDetails({
+            player: signupToken,
+            id: res.user_id,
+            date_of_birth: formData.dateOfBirth || null,
+            usta_rating: 0,
+            uta_rating: 0,
+            fullName: formData.name,
+            mobile: digits || null,
+            about_me: null,
+          });
+        }
         const newUser = {
           id: res?.user_id,
           type: res?.user_type,

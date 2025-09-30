@@ -47,14 +47,6 @@ export const signup = async ({ email, password, name, phone, user_type = 2 }) =>
 export const getPersonalDetails = async () =>
   unwrap(api(`/player/personal_details`));
 
-export const updatePersonalDetails = async (details) =>
-  unwrap(
-    api(`/player/personal_details`, {
-      method: "POST",
-      body: JSON.stringify(details),
-    })
-  );
-
 export const logout = () => {
   localStorage.removeItem("authToken");
 };
