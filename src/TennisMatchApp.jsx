@@ -66,6 +66,16 @@ import InviteScreen from "./components/InviteScreen";
 import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
+const MATCH_ARCHIVED_ERROR = "match_archived";
+const ARCHIVE_FILTER_VALUE = "archieve";
+
+const isMatchArchivedError = (error) => {
+  if (!error) return false;
+  const code = error.status || error?.response?.status;
+  if (code !== 410) return false;
+  const errorCode = error?.data?.error || error?.response?.data?.error;
+  return errorCode === MATCH_ARCHIVED_ERROR;
+};
 
 const matchFormatOptions = [
   "Singles",
@@ -204,6 +214,7 @@ const TennisMatchApp = () => {
     tomorrow: 0,
     weekend: 0,
     draft: 0,
+    archived: 0,
   });
   const [matchPagination, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
@@ -303,9 +314,13 @@ const TennisMatchApp = () => {
       setInvitesError("");
     } catch (err) {
       console.error("Failed to load invites", err);
-      setInvitesError(
-        err?.response?.data?.message || err?.message || "Failed to load invites",
-      );
+      if (isMatchArchivedError(err) || err?.response?.data?.error === MATCH_ARCHIVED_ERROR) {
+        setInvitesError("Some invites belong to archived matches and can't be loaded.");
+      } else {
+        setInvitesError(
+          err?.response?.data?.message || err?.message || "Failed to load invites",
+        );
+      }
     } finally {
       setInvitesLoading(false);
     }
@@ -377,7 +392,11 @@ const TennisMatchApp = () => {
     }
 
     try {
-      const filter = activeFilter === "draft" ? "my" : activeFilter;
+      const apiFilter = (() => {
+        if (activeFilter === "draft") return "my";
+        if (activeFilter === "archived") return ARCHIVE_FILTER_VALUE;
+        return activeFilter;
+      })();
       const status = activeFilter === "draft" ? "draft" : undefined;
       const parsedLat = (() => {
         const raw = locationFilter?.lat;
@@ -399,7 +418,7 @@ const TennisMatchApp = () => {
               distance: distanceFilter,
             }
           : {};
-      const data = await listMatches(filter, {
+      const data = await listMatches(apiFilter, {
         status,
         search: matchSearch,
         page: matchPage,
@@ -407,7 +426,10 @@ const TennisMatchApp = () => {
         ...locationParams,
       });
       const rawMatches = data.matches || [];
-      setMatchCounts(data.counts || {});
+      const counts = data.counts || {};
+      const archivedCount =
+        counts.archived ?? counts.archieve ?? counts.archive ?? 0;
+      setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
         const participantCount = (m.participants || []).filter(
@@ -463,13 +485,30 @@ const TennisMatchApp = () => {
           notes: m.notes,
           invitees: m.invitees || [],
           participants: m.participants || [],
-          playerLimit: m.player_limit,
+          playerLimit: (() => {
+            const raw = m.player_limit;
+            const numeric =
+              typeof raw === "string" ? Number.parseInt(raw, 10) : raw;
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
           occupied,
-          spotsAvailable: Math.max(m.player_limit - occupied, 0),
+          spotsAvailable: (() => {
+            const limit =
+              typeof m.player_limit === "number"
+                ? m.player_limit
+                : Number.parseInt(m.player_limit, 10);
+            return Number.isFinite(limit)
+              ? Math.max(limit - occupied, 0)
+              : null;
+          })(),
         };
       });
       if (activeFilter === "draft") {
         transformed = transformed.filter((m) => m.status === "draft");
+      } else if (activeFilter === "archived") {
+        transformed = transformed.filter((m) => m.status === "archived");
+      } else {
+        transformed = transformed.filter((m) => m.status !== "archived");
       }
       setMatches(transformed);
     } catch (err) {
@@ -510,10 +549,17 @@ const TennisMatchApp = () => {
         fetchPendingInvites();
         fetchMatches();
       } catch (err) {
-        displayToast(
-          err?.response?.data?.message || err?.message || "Failed to update invite",
-          "error",
-        );
+        const errorCode = err?.response?.data?.error || err?.data?.error;
+        if (isMatchArchivedError(err) || errorCode === MATCH_ARCHIVED_ERROR) {
+          displayToast("This match has been archived. Invites can no longer be updated.", "error");
+          fetchPendingInvites();
+          fetchMatches();
+        } else {
+          displayToast(
+            err?.response?.data?.message || err?.message || "Failed to update invite",
+            "error",
+          );
+        }
       }
     },
     [displayToast, fetchMatches, fetchPendingInvites],
@@ -552,6 +598,13 @@ const TennisMatchApp = () => {
       try {
         const data = await getMatch(numericMatchId);
         const match = data.match || {};
+        if (match.status === "archived") {
+          displayToast(
+            "This match has been archived. Invites can no longer be managed.",
+            "error",
+          );
+          return;
+        }
         const participantsSource = Array.isArray(data.participants)
           ? data.participants
           : match.participants || [];
@@ -650,10 +703,17 @@ const TennisMatchApp = () => {
           navigate(`/matches/${numericMatchId}/invite`);
         }
       } catch (err) {
-        displayToast(
-          err.response?.data?.message || "Failed to load match details",
-          "error",
-        );
+        if (isMatchArchivedError(err)) {
+          displayToast(
+            "This match has been archived. Invites can no longer be managed.",
+            "error",
+          );
+        } else {
+          displayToast(
+            err.response?.data?.message || "Failed to load match details",
+            "error",
+          );
+        }
         lastInviteLoadRef.current = null;
         setInviteMatchId((prev) => (prev === numericMatchId ? null : prev));
         goToBrowse({ replace: true });
@@ -698,20 +758,32 @@ const TennisMatchApp = () => {
     const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
     if (tokenMatch) {
       const token = tokenMatch[1];
-      getInviteByToken(token)
+      fetchInviteByTokenWithArchivedFallback(token)
         .then(async (invite) => {
           const matchId = invite.match?.id || invite.match_id;
           if (matchId) {
-            const data = await getMatch(matchId);
-            setViewMatch(data);
-            setCurrentScreen("details");
+            try {
+              const data = await fetchMatchDetailsWithArchivedFallback(matchId);
+              if (data) {
+                setViewMatch(data);
+                setCurrentScreen("details");
+              }
+            } catch (error) {
+              if (!isMatchArchivedError(error)) {
+                throw error;
+              }
+            }
           }
         })
         .catch(() => {
           displayToast("Failed to open match", "error");
         });
     }
-  }, [displayToast]);
+  }, [
+    displayToast,
+    fetchInviteByTokenWithArchivedFallback,
+    fetchMatchDetailsWithArchivedFallback,
+  ]);
 
   const formatDateTime = (dateTime) => {
     const date = new Date(dateTime);
@@ -724,20 +796,66 @@ const TennisMatchApp = () => {
     });
   };
 
+  const fetchMatchDetails = useCallback(
+    async (matchId, { includeArchived = false } = {}) => {
+      if (!matchId) return null;
+      const options = includeArchived ? { filter: ARCHIVE_FILTER_VALUE } : undefined;
+      return getMatch(matchId, options);
+    },
+    [],
+  );
+
+  const fetchMatchDetailsWithArchivedFallback = useCallback(
+    async (matchId) => {
+      try {
+        return await fetchMatchDetails(matchId, { includeArchived: false });
+      } catch (err) {
+        if (isMatchArchivedError(err)) {
+          displayToast("This match has been archived.", "info");
+          return await fetchMatchDetails(matchId, { includeArchived: true });
+        }
+        throw err;
+      }
+    },
+    [displayToast, fetchMatchDetails],
+  );
+
+  const fetchInviteByTokenWithArchivedFallback = useCallback(async (token) => {
+    try {
+      return await getInviteByToken(token);
+    } catch (err) {
+      if (isMatchArchivedError(err)) {
+        return await getInviteByToken(token, { filter: ARCHIVE_FILTER_VALUE });
+      }
+      throw err;
+    }
+  }, []);
+
   // phone helpers imported from ./services/phone
 
   // Manual contact handlers live inside InviteScreen
 
   const handleViewDetails = async (matchId) => {
     try {
-      const data = await getMatch(matchId);
+      const data = await fetchMatchDetailsWithArchivedFallback(matchId);
+      if (!data) {
+        displayToast("Match not found", "error");
+        return;
+      }
+      if ((data.match || {}).status === "archived" && activeFilter !== "archived") {
+        setActiveFilter("archived");
+      }
       setViewMatch(data);
       setCurrentScreen("details");
     } catch (err) {
-      displayToast(
-        err.response?.data?.message || "Failed to load match details",
-        "error"
-      );
+      if (isMatchArchivedError(err)) {
+        displayToast("This match has been archived.", "error");
+      } else {
+        displayToast(
+          err.response?.data?.message || "Failed to load match details",
+          "error",
+        );
+      }
     }
   };
 
@@ -806,6 +924,22 @@ const TennisMatchApp = () => {
   const activeLocationLabel = hasLocationFilter
     ? locationFilter?.label || "Saved location"
     : "";
+
+  const getMatchCount = useCallback(
+    (filterId) => {
+      if (!matchCounts) return 0;
+      if (filterId === "archived") {
+        return (
+          matchCounts.archived ??
+          matchCounts.archieve ??
+          matchCounts.archive ??
+          0
+        );
+      }
+      return matchCounts[filterId] ?? 0;
+    },
+    [matchCounts],
+  );
 
   const BrowseScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
@@ -1109,46 +1243,53 @@ const TennisMatchApp = () => {
               {
                 id: "my",
                 label: "My Matches",
-                count: matchCounts.my || 0,
+                count: getMatchCount("my"),
                 color: "violet",
                 icon: "⭐",
               },
               {
                 id: "open",
                 label: "Open Matches",
-                count: matchCounts.open || 0,
+                count: getMatchCount("open"),
                 color: "green",
                 icon: "🔥",
               },
               {
                 id: "today",
                 label: "Today",
-                count: matchCounts.today || 0,
+                count: getMatchCount("today"),
                 color: "blue",
                 icon: "📅",
               },
               {
                 id: "tomorrow",
                 label: "Tomorrow",
-                count: matchCounts.tomorrow || 0,
+                count: getMatchCount("tomorrow"),
                 color: "amber",
                 icon: "⏰",
               },
-                {
-                  id: "weekend",
-                  label: "Weekend",
-                  count: matchCounts.weekend || 0,
-                  color: "purple",
-                  icon: "🎉",
-                },
-                {
-                  id: "draft",
-                  label: "Drafts",
-                  count: matchCounts.draft || 0,
-                  color: "gray",
-                  icon: "📝",
-                },
-              ].map((filter) => (
+              {
+                id: "weekend",
+                label: "Weekend",
+                count: getMatchCount("weekend"),
+                color: "purple",
+                icon: "🎉",
+              },
+              {
+                id: "draft",
+                label: "Drafts",
+                count: getMatchCount("draft"),
+                color: "gray",
+                icon: "📝",
+              },
+              {
+                id: "archived",
+                label: "Archived",
+                count: getMatchCount("archived"),
+                color: "slate",
+                icon: "🗂️",
+              },
+            ].map((filter) => (
               <button
                 key={filter.id}
                 onClick={() => setActiveFilter(filter.id)}
@@ -1159,20 +1300,22 @@ const TennisMatchApp = () => {
                 }`}
                 style={
                   activeFilter === filter.id
-                    ? {
-                        background:
-                          filter.color === "violet"
-                            ? "linear-gradient(135deg, rgb(139 92 246), rgb(124 58 237))"
-                            : filter.color === "green"
-                            ? "linear-gradient(135deg, rgb(34 197 94), rgb(16 185 129))"
-                            : filter.color === "blue"
-                            ? "linear-gradient(135deg, rgb(59 130 246), rgb(37 99 235))"
-                            : filter.color === "amber"
-                            ? "linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6))"
-                            : "linear-gradient(135deg, rgb(168 85 247), rgb(147 51 234))",
-                      }
-                    : {}
-                }
+                  ? {
+                      background:
+                        filter.color === "violet"
+                          ? "linear-gradient(135deg, rgb(139 92 246), rgb(124 58 237))"
+                          : filter.color === "green"
+                          ? "linear-gradient(135deg, rgb(34 197 94), rgb(16 185 129))"
+                          : filter.color === "blue"
+                          ? "linear-gradient(135deg, rgb(59 130 246), rgb(37 99 235))"
+                          : filter.color === "amber"
+                          ? "linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6))"
+                          : filter.color === "slate"
+                          ? "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))"
+                          : "linear-gradient(135deg, rgb(168 85 247), rgb(147 51 234))",
+                    }
+                  : {}
+              }
               >
                 <span className="text-base">{filter.icon}</span>
                 {filter.label}
@@ -1249,7 +1392,7 @@ const TennisMatchApp = () => {
               {Math.max(
                 1,
                 Math.ceil(
-                  (matchCounts[activeFilter] || 0) /
+                  getMatchCount(activeFilter) /
                     matchPagination.perPage
                 )
               )}
@@ -1259,7 +1402,7 @@ const TennisMatchApp = () => {
               disabled={
                 matchPagination.page >=
                 Math.ceil(
-                  (matchCounts[activeFilter] || 0) /
+                  getMatchCount(activeFilter) /
                     matchPagination.perPage
                 )
               }
@@ -1290,6 +1433,11 @@ const TennisMatchApp = () => {
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
     const isJoined = match.type === "joined";
+    const isArchived = match.status === "archived";
+    const isUpcoming = match.status === "upcoming";
+    const playerCapacityLabel = Number.isFinite(match.playerLimit)
+      ? `${match.occupied}/${match.playerLimit} players`
+      : `${match.occupied} players`;
 
     const getNTRPDisplay = (skillLevel) => {
       if (!skillLevel || skillLevel === "Any Level") return null;
@@ -1317,7 +1465,11 @@ const TennisMatchApp = () => {
       : "Location details coming soon";
 
     return (
-      <div className="bg-white rounded-2xl shadow-sm hover:shadow-2xl transition-all p-6 border border-gray-100 group hover:scale-[1.02]">
+      <div
+        className={`bg-white rounded-2xl shadow-sm transition-all p-6 border border-gray-100 group ${
+          isArchived ? "opacity-90" : "hover:shadow-2xl hover:scale-[1.02]"
+        }`}
+      >
         <div className="flex justify-between items-start mb-4">
           <div className="flex flex-wrap items-center gap-2">
             {match.privacy === "open" && (
@@ -1341,6 +1493,11 @@ const TennisMatchApp = () => {
                 CANCELLED
               </span>
             )}
+            {isArchived && (
+              <span className="px-3 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300 rounded-full text-xs font-black">
+                ARCHIVED
+              </span>
+            )}
             {isHosted && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border border-violet-200 rounded-full text-xs font-black">
                 HOSTING
@@ -1352,7 +1509,7 @@ const TennisMatchApp = () => {
               </span>
             )}
           </div>
-          {(isHosted || isJoined) && (
+          {(isHosted || isJoined) && !isArchived && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -1430,14 +1587,18 @@ const TennisMatchApp = () => {
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
-            <Users className="w-4 h-4" /> {match.occupied}/{match.playerLimit} players
+            <Users className="w-4 h-4" /> {playerCapacityLabel}
           </div>
           <span className="text-xs text-gray-600 font-bold">
-            {match.spotsAvailable === 0
-              ? "FULL"
-              : `${match.spotsAvailable} SPOT${
-                  match.spotsAvailable === 1 ? "" : "S"
-                } LEFT`}
+            {isArchived
+              ? "ARCHIVED"
+              : Number.isFinite(match.spotsAvailable)
+              ? match.spotsAvailable === 0
+                ? "FULL"
+                : `${match.spotsAvailable} SPOT${
+                    match.spotsAvailable === 1 ? "" : "S"
+                  } LEFT`
+              : ""}
           </span>
         </div>
 
@@ -1448,7 +1609,7 @@ const TennisMatchApp = () => {
           >
             View details
           </button>
-          {match.type === "available" && (
+          {match.type === "available" && isUpcoming && !isArchived && (
             <button
               onClick={async () => {
                 if (!currentUser) {
@@ -1460,6 +1621,14 @@ const TennisMatchApp = () => {
                     fetchMatches();
                     fetchPendingInvites();
                   } catch (err) {
+                    if (isMatchArchivedError(err)) {
+                      displayToast(
+                        "This match has been archived. You can't join.",
+                        "error",
+                      );
+                      fetchMatches();
+                      return;
+                    }
                     displayToast(
                       err.response?.data?.message || "Failed to join match",
                       "error",
@@ -1473,7 +1642,7 @@ const TennisMatchApp = () => {
               Join match
             </button>
           )}
-          {isHosted && (
+          {isHosted && !isArchived && (
             <button
               onClick={() => {
                 setEditMatch({
@@ -1490,6 +1659,11 @@ const TennisMatchApp = () => {
             >
               Manage match
             </button>
+          )}
+          {isArchived && (
+            <span className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600">
+              Archived matches are read-only
+            </span>
           )}
         </div>
       </div>
@@ -2521,13 +2695,24 @@ const TennisMatchApp = () => {
           setParticipantsError("");
           const data = await getMatch(matchId);
           if (!alive) return;
+          if (data.match?.status === "archived") {
+            setParticipants([]);
+            setParticipantsError("This match has been archived.");
+            onToast("This match has been archived. Invites are read-only.", "error");
+            return;
+          }
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
         } catch (error) {
           console.error(error);
           if (!alive) return;
           setParticipants([]);
-          setParticipantsError("Failed to load participants");
+          if (isMatchArchivedError(error)) {
+            setParticipantsError("This match has been archived.");
+            onToast("This match has been archived. Invites are read-only.", "error");
+          } else {
+            setParticipantsError("Failed to load participants");
+          }
         } finally {
           if (alive) setParticipantsLoading(false);
         }
@@ -3091,20 +3276,29 @@ const TennisMatchApp = () => {
     const isJoined = participants.some(
       (p) => p.player_id === currentUser?.id && p.status !== "left",
     );
+    const isArchived = match.status === "archived";
     const committedParticipants = participants.filter((p) => p.status !== "left");
     const acceptedInviteCount = invitees.filter((i) => i.status === "accepted").length;
     const totalCommitted = committedParticipants.length + acceptedInviteCount;
-    const remainingSpots =
+    const numericPlayerLimit =
       typeof match.player_limit === "number"
-        ? Math.max(match.player_limit - totalCommitted, 0)
-        : null;
+        ? match.player_limit
+        : Number.parseInt(match.player_limit, 10);
+    const remainingSpots = Number.isFinite(numericPlayerLimit)
+      ? Math.max(numericPlayerLimit - totalCommitted, 0)
+      : null;
     const canJoin =
       !isHost &&
       !isJoined &&
+      !isArchived &&
       match.status === "upcoming" &&
       (remainingSpots === null || remainingSpots > 0);
 
     const handleRemoveParticipant = async (playerId) => {
+      if (isArchived) {
+        displayToast("Archived matches cannot be edited", "error");
+        return;
+      }
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
         await removeParticipant(match.id, playerId);
@@ -3112,10 +3306,10 @@ const TennisMatchApp = () => {
           ...viewMatch,
           participants: participants.filter((p) => p.player_id !== playerId),
         });
-        setShowToast("Participant removed");
+        displayToast("Participant removed");
         fetchMatches();
       } catch {
-        setShowToast("Failed to remove participant");
+        displayToast("Failed to remove participant", "error");
       }
     };
 
@@ -3131,13 +3325,18 @@ const TennisMatchApp = () => {
         displayToast("You're in! Match details updated. 🎾");
         fetchMatches();
         fetchPendingInvites();
-        const updated = await getMatch(match.id);
+        const updated = await fetchMatchDetails(match.id, { includeArchived: false });
         setViewMatch(updated);
       } catch (err) {
-        displayToast(
-          err?.response?.data?.message || err?.message || "Failed to join match",
-          "error",
-        );
+        if (isMatchArchivedError(err)) {
+          displayToast("This match has been archived. You can't join.", "error");
+          fetchMatches();
+        } else {
+          displayToast(
+            err?.response?.data?.message || err?.message || "Failed to join match",
+            "error",
+          );
+        }
       } finally {
         setJoining(false);
       }
@@ -3161,6 +3360,16 @@ const TennisMatchApp = () => {
               <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
                 CANCELLED
               </span>
+            </div>
+          )}
+          {isArchived && (
+            <div className="mb-4">
+              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300 rounded-full text-xs font-black">
+                ARCHIVED
+              </span>
+              <p className="mt-2 text-sm text-slate-600 font-semibold">
+                This match has been archived. Actions are disabled.
+              </p>
             </div>
           )}
           {match && (
@@ -3225,11 +3434,11 @@ const TennisMatchApp = () => {
                   >
                     <span>
                       {p.profile?.full_name || `Player ${p.player_id}`}
-                      {p.player_id === match.host_id && (
-                        <span className="ml-1 text-blue-700 text-xs">Host</span>
-                      )}
-                    </span>
-                    {isHost && p.player_id !== match.host_id && (
+                    {p.player_id === match.host_id && (
+                      <span className="ml-1 text-blue-700 text-xs">Host</span>
+                    )}
+                  </span>
+                    {isHost && !isArchived && p.player_id !== match.host_id && (
                       <button
                         onClick={() => handleRemoveParticipant(p.player_id)}
                         className="text-red-600 hover:text-red-800"
@@ -3984,10 +4193,18 @@ const TennisMatchApp = () => {
           setLoadingParts(true);
           const data = await getMatch(matchId);
           if (!alive) return;
+          if (data.match?.status === "archived") {
+            setParticipants([]);
+            setRemoveErr("This match has been archived.");
+            return;
+          }
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
         } catch (error) {
           console.error(error);
+          if (isMatchArchivedError(error)) {
+            setRemoveErr("This match has been archived.");
+          }
         } finally {
           if (alive) setLoadingParts(false);
         }
@@ -4096,10 +4313,18 @@ const TennisMatchApp = () => {
           setLoadingParts(true);
           const data = await getMatch(matchToEdit.id);
           if (!alive) return;
+          if (data.match?.status === "archived") {
+            setParticipants([]);
+            setRemoveErr("This match has been archived.");
+            return;
+          }
           setParticipants((data.participants || []).filter((p) => p.status !== "left"));
           setHostId(data.match?.host_id ?? null);
         } catch (error) {
           console.error(error);
+          if (isMatchArchivedError(error)) {
+            setRemoveErr("This match has been archived.");
+          }
           // ignore; leave list empty
         } finally {
           if (alive) setLoadingParts(false);

@@ -1,7 +1,18 @@
 import api, { unwrap } from "./api";
 
-export const getInvitePreview = async (token) => {
-  const data = await unwrap(api(`/invites/${token}`));
+const buildQuery = (params = {}) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    search.set(key, value);
+  });
+  const str = search.toString();
+  return str ? `?${str}` : "";
+};
+
+export const getInvitePreview = async (token, { filter } = {}) => {
+  const query = buildQuery({ filter });
+  const data = await unwrap(api(`/invites/${token}${query}`));
   return data.invite || data;
 };
 
@@ -29,13 +40,9 @@ export const claimInvite = (token, payload) =>
     })
   );
 
-export const listInvites = ({ status, page, perPage } = {}) => {
-  const params = new URLSearchParams();
-  if (status) params.set("status", status);
-  if (page) params.set("page", page);
-  if (perPage) params.set("perPage", perPage);
-  const qs = params.toString();
-  return unwrap(api(`/invites${qs ? `?${qs}` : ""}`));
+export const listInvites = ({ status, page, perPage, filter } = {}) => {
+  const query = buildQuery({ status, page, perPage, filter });
+  return unwrap(api(`/invites${query}`));
 };
 
 export const acceptInvite = (token) =>
@@ -54,4 +61,7 @@ export const rejectInvite = (token) =>
     })
   );
 
-export const getInviteByToken = (token) => unwrap(api(`/invites/${token}`));
+export const getInviteByToken = (token, { filter } = {}) => {
+  const query = buildQuery({ filter });
+  return unwrap(api(`/invites/${token}${query}`));
+};

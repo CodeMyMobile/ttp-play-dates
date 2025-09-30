@@ -1,12 +1,19 @@
 import api, { unwrap } from "./api";
 
 const qs = (params) => {
-  const search = new URLSearchParams(params);
+  const search = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    search.set(key, value);
+  });
   const str = search.toString();
   return str ? `?${str}` : "";
 };
 
-export const getMatch = async (id) => unwrap(api(`/matches/${id}`));
+export const getMatch = async (id, { filter } = {}) => {
+  const query = qs({ filter });
+  return unwrap(api(`/matches/${id}${query}`));
+};
 
 export const createMatch = (match) =>
   unwrap(

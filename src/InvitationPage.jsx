@@ -20,6 +20,9 @@ import {
 } from "./services/invites";
 import Header from "./components/Header.jsx";
 
+const ARCHIVE_FILTER_VALUE = "archieve";
+const MATCH_ARCHIVED_ERROR = "match_archived";
+
 export default function InvitationPage() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -43,6 +46,7 @@ export default function InvitationPage() {
   const [password, setPassword] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [archivedNotice, setArchivedNotice] = useState(false);
   const autoVerifyAttemptRef = useRef(null);
 
   const codeFromQuery = useMemo(() => {
@@ -76,9 +80,14 @@ export default function InvitationPage() {
     setLoading(true);
     setError("");
     setLoadError(null);
+    const fetchPreview = async (includeArchived = false) => {
+      const filter = includeArchived ? ARCHIVE_FILTER_VALUE : undefined;
+      return getInvitePreview(token, { filter });
+    };
+
     (async () => {
       try {
-        const data = await getInvitePreview(token);
+        const data = await fetchPreview(false);
         if (!alive) return;
         setPreview(data);
         setPhase("preview");
@@ -103,30 +112,73 @@ export default function InvitationPage() {
         }
         setPassword("");
         setAgreeTerms(false);
+        setArchivedNotice(data?.match?.status === "archived");
       } catch (err) {
         if (!alive) return;
-        setPreview(null);
-        setPhase("preview");
-        setSelectedChannel(null);
-        setLastChannel(null);
-        setShowPicker(false);
-        setIdentifier("");
-        const isNotFound = err?.status === 404 || err?.message === "not_found";
-        setLoadError(
-          isNotFound
-            ? {
-                emoji: "🔍",
-                title: "Invite not found",
-                message:
-                  "This invite link is invalid or has expired. Ask the host to send a new one.",
-              }
-            : {
-                emoji: "😵",
-                title: "Something went wrong",
-                message:
-                  "We couldn't load this invite. Refresh the page or try again later.",
-              }
-        );
+        const errorCode = err?.response?.data?.error || err?.data?.error;
+        const isArchived =
+          (err?.status === 410 || err?.response?.status === 410) &&
+          errorCode === MATCH_ARCHIVED_ERROR;
+        if (isArchived) {
+          try {
+            const archived = await fetchPreview(true);
+            if (!alive) return;
+            setPreview(archived);
+            setArchivedNotice(true);
+            setPhase("preview");
+            setSelectedChannel(null);
+            setLastChannel(null);
+            setShowPicker(false);
+            setIdentifier("");
+            const invitee = archived?.invitee || null;
+            if (invitee) {
+              setFullName(invitee.full_name || "");
+              setEmail(invitee.email || "");
+              setPhone(invitee.phone || "");
+            } else {
+              setFullName("");
+              setEmail("");
+              setPhone("");
+            }
+            setPassword("");
+            setAgreeTerms(false);
+            setLoadError({
+              emoji: "🗂️",
+              title: "Match archived",
+              message: "This match has been archived. You can review the details but no actions are available.",
+            });
+          } catch (archErr) {
+            setPreview(null);
+            setLoadError({
+              emoji: "🗂️",
+              title: "Match archived",
+              message: "This match has been archived and is no longer accessible.",
+            });
+          }
+        } else {
+          setPreview(null);
+          setPhase("preview");
+          setSelectedChannel(null);
+          setLastChannel(null);
+          setShowPicker(false);
+          setIdentifier("");
+          const isNotFound = err?.status === 404 || err?.message === "not_found";
+          setLoadError(
+            isNotFound
+              ? {
+                  emoji: "🔍",
+                  title: "Invite not found",
+                  message:
+                    "This invite link is invalid or has expired. Ask the host to send a new one.",
+                }
+              : {
+                  emoji: "😵",
+                  title: "Something went wrong",
+                  message:
+                    "We couldn't load this invite. Refresh the page or try again later.",
+                }
+          );
+        }
       } finally {
         if (alive) setLoading(false);
       }
