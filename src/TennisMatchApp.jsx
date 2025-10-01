@@ -64,18 +64,13 @@ import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
 import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
+import {
+  ARCHIVE_FILTER_VALUE,
+  MATCH_ARCHIVED_ERROR,
+  isMatchArchivedError,
+} from "./utils/archive";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
-const MATCH_ARCHIVED_ERROR = "match_archived";
-const ARCHIVE_FILTER_VALUE = "archieve";
-
-const isMatchArchivedError = (error) => {
-  if (!error) return false;
-  const code = error.status || error?.response?.status;
-  if (code !== 410) return false;
-  const errorCode = error?.data?.error || error?.response?.data?.error;
-  return errorCode === MATCH_ARCHIVED_ERROR;
-};
 
 const matchFormatOptions = [
   "Singles",
@@ -596,7 +591,18 @@ const TennisMatchApp = () => {
       }
 
       try {
-        const data = await getMatch(numericMatchId);
+        const loadMatch = async () => {
+          try {
+            return await getMatch(numericMatchId);
+          } catch (error) {
+            if (!isMatchArchivedError(error)) throw error;
+            return await getMatch(numericMatchId, {
+              filter: ARCHIVE_FILTER_VALUE,
+            });
+          }
+        };
+
+        const data = await loadMatch();
         const match = data.match || {};
         if (match.status === "archived") {
           displayToast(
@@ -754,37 +760,6 @@ const TennisMatchApp = () => {
     }
   }, [currentScreen, location.pathname, openInviteScreen]);
 
-  useEffect(() => {
-    const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
-    if (tokenMatch) {
-      const token = tokenMatch[1];
-      fetchInviteByTokenWithArchivedFallback(token)
-        .then(async (invite) => {
-          const matchId = invite.match?.id || invite.match_id;
-          if (matchId) {
-            try {
-              const data = await fetchMatchDetailsWithArchivedFallback(matchId);
-              if (data) {
-                setViewMatch(data);
-                setCurrentScreen("details");
-              }
-            } catch (error) {
-              if (!isMatchArchivedError(error)) {
-                throw error;
-              }
-            }
-          }
-        })
-        .catch(() => {
-          displayToast("Failed to open match", "error");
-        });
-    }
-  }, [
-    displayToast,
-    fetchInviteByTokenWithArchivedFallback,
-    fetchMatchDetailsWithArchivedFallback,
-  ]);
-
   const formatDateTime = (dateTime) => {
     const date = new Date(dateTime);
     return date.toLocaleDateString("en-US", {
@@ -834,6 +809,37 @@ const TennisMatchApp = () => {
   // phone helpers imported from ./services/phone
 
   // Manual contact handlers live inside InviteScreen
+
+  useEffect(() => {
+    const tokenMatch = window.location.pathname.match(/^\/m\/([^/]+)$/);
+    if (tokenMatch) {
+      const token = tokenMatch[1];
+      fetchInviteByTokenWithArchivedFallback(token)
+        .then(async (invite) => {
+          const matchId = invite.match?.id || invite.match_id;
+          if (matchId) {
+            try {
+              const data = await fetchMatchDetailsWithArchivedFallback(matchId);
+              if (data) {
+                setViewMatch(data);
+                setCurrentScreen("details");
+              }
+            } catch (error) {
+              if (!isMatchArchivedError(error)) {
+                throw error;
+              }
+            }
+          }
+        })
+        .catch(() => {
+          displayToast("Failed to open match", "error");
+        });
+    }
+  }, [
+    displayToast,
+    fetchInviteByTokenWithArchivedFallback,
+    fetchMatchDetailsWithArchivedFallback,
+  ]);
 
   const handleViewDetails = async (matchId) => {
     try {
@@ -1737,10 +1743,18 @@ const TennisMatchApp = () => {
                     onClose();
                     fetchMatches();
                   } catch (err) {
-                    displayToast(
-                      err.response?.data?.message || "Failed to publish match",
-                      "error"
-                    );
+                    if (isMatchArchivedError(err)) {
+                      displayToast(
+                        "This match has been archived and can no longer be published.",
+                        "error",
+                      );
+                      fetchMatches();
+                    } else {
+                      displayToast(
+                        err.response?.data?.message || "Failed to publish match",
+                        "error",
+                      );
+                    }
                   }
                 }}
                 className="w-full px-4 py-3 text-left text-sm font-bold text-green-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
@@ -1765,10 +1779,18 @@ const TennisMatchApp = () => {
                   onClose();
                   fetchMatches();
                 } catch (err) {
-                  displayToast(
-                    err.response?.data?.message || "Failed to cancel match",
-                    "error"
-                  );
+                  if (isMatchArchivedError(err)) {
+                    displayToast(
+                      "This match has been archived. There is nothing to cancel.",
+                      "error",
+                    );
+                    fetchMatches();
+                  } else {
+                    displayToast(
+                      err.response?.data?.message || "Failed to cancel match",
+                      "error",
+                    );
+                  }
                 }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
@@ -1805,10 +1827,18 @@ const TennisMatchApp = () => {
                   onClose();
                   fetchMatches();
                 } catch (err) {
-                  displayToast(
-                    err.response?.data?.message || "Failed to leave match",
-                    "error"
-                  );
+                  if (isMatchArchivedError(err)) {
+                    displayToast(
+                      "This match has been archived. You are no longer on the roster.",
+                      "error",
+                    );
+                    fetchMatches();
+                  } else {
+                    displayToast(
+                      err.response?.data?.message || "Failed to leave match",
+                      "error",
+                    );
+                  }
                 }
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-orange-600 hover:bg-orange-50 flex items-center gap-2 transition-colors"
@@ -3187,14 +3217,14 @@ const TennisMatchApp = () => {
                 </button>
                 <button
                   onClick={async () => {
-                  if (totalSelectedInvitees === 0) {
-                    onToast("Please add at least one invitee", "error");
-                    return;
-                  }
-                  if (!matchId) {
-                    onToast("No match selected for invites", "error");
-                    return;
-                  }
+                    if (totalSelectedInvitees === 0) {
+                      onToast("Please add at least one invitee", "error");
+                      return;
+                    }
+                    if (!matchId) {
+                      onToast("No match selected for invites", "error");
+                      return;
+                    }
                     try {
                       const newIds = Array.from(selectedPlayers.keys())
                         .map((id) => Number(id))
@@ -3238,21 +3268,27 @@ const TennisMatchApp = () => {
                       setInviteMatchId(null);
                       fetchMatches();
                     } catch (err) {
-                    if (
-                      err.data?.error === "invalid_phone_numbers" &&
-                      Array.isArray(err.data?.details)
-                    ) {
-                      onToast(
-                        `Fix these numbers: ${err.data.details.join(", ")}`,
-                        "error"
-                      );
-                    } else {
-                      onToast(
-                        err.response?.data?.message || err.message || "Failed to send invites",
-                        "error"
-                      );
+                      if (isMatchArchivedError(err)) {
+                        onToast(
+                          "This match has been archived. Invites can no longer be sent.",
+                          "error",
+                        );
+                        fetchMatches();
+                      } else if (
+                        err.data?.error === "invalid_phone_numbers" &&
+                        Array.isArray(err.data?.details)
+                      ) {
+                        onToast(
+                          `Fix these numbers: ${err.data.details.join(", ")}`,
+                          "error",
+                        );
+                      } else {
+                        onToast(
+                          err.response?.data?.message || err.message || "Failed to send invites",
+                          "error",
+                        );
+                      }
                     }
-                  }
                 }}
                 className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
               >
@@ -3308,8 +3344,16 @@ const TennisMatchApp = () => {
         });
         displayToast("Participant removed");
         fetchMatches();
-      } catch {
-        displayToast("Failed to remove participant", "error");
+      } catch (error) {
+        if (isMatchArchivedError(error)) {
+          displayToast(
+            "This match has been archived. Participants can no longer be managed.",
+            "error",
+          );
+          fetchMatches();
+        } else {
+          displayToast("Failed to remove participant", "error");
+        }
       }
     };
 
@@ -4225,7 +4269,11 @@ const TennisMatchApp = () => {
         setRemoveErr("");
       } catch (error) {
         console.error(error);
-        setRemoveErr("Failed to remove participant");
+        if (isMatchArchivedError(error)) {
+          setRemoveErr("This match has been archived. Participants can no longer be managed.");
+        } else {
+          setRemoveErr("Failed to remove participant");
+        }
         setTimeout(() => setRemoveErr(""), 2500);
       }
     };
@@ -4346,7 +4394,11 @@ const TennisMatchApp = () => {
         setRemoveErr("");
       } catch (error) {
         console.error(error);
-        setRemoveErr("Failed to remove participant");
+        if (isMatchArchivedError(error)) {
+          setRemoveErr("This match has been archived. Participants can no longer be managed.");
+        } else {
+          setRemoveErr("Failed to remove participant");
+        }
         setTimeout(() => setRemoveErr(""), 2500);
       }
     };

@@ -18,6 +18,7 @@ import {
   updateMatch,
   sendInvites,
 } from "../services/matches";
+import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
 
 const InviteScreen = ({
   matchId,
@@ -44,6 +45,7 @@ const InviteScreen = ({
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState("");
   const [hostId, setHostId] = useState(null);
+  const [isArchived, setIsArchived] = useState(false);
 
   // Local state for manual phone invites (isolated from search input)
   const totalSelectedInvitees = useMemo(
@@ -78,14 +80,38 @@ const InviteScreen = ({
       try {
         setParticipantsLoading(true);
         setParticipantsError("");
-        const data = await getMatch(matchId);
+        const loadMatch = async () => {
+          try {
+            return await getMatch(matchId);
+          } catch (error) {
+            if (!isMatchArchivedError(error)) throw error;
+            return await getMatch(matchId, { filter: ARCHIVE_FILTER_VALUE });
+          }
+        };
+
+        const data = await loadMatch();
         if (!alive) return;
+        const archived = data.match?.status === "archived";
+        setIsArchived(archived);
+        if (archived) {
+          setParticipants([]);
+          setParticipantsError("This match has been archived. Invites are read-only.");
+          onToast("This match has been archived. Invites are read-only.", "error");
+          return;
+        }
         setParticipants((data.participants || []).filter((p) => p.status !== "left"));
         setHostId(data.match?.host_id ?? null);
-      } catch {
+      } catch (error) {
+        console.error(error);
         if (!alive) return;
         setParticipants([]);
-        setParticipantsError("Failed to load participants");
+        if (isMatchArchivedError(error)) {
+          setIsArchived(true);
+          setParticipantsError("This match has been archived. Invites are read-only.");
+          onToast("This match has been archived. Invites are read-only.", "error");
+        } else {
+          setParticipantsError("Failed to load participants");
+        }
       } finally {
         if (alive) setParticipantsLoading(false);
       }
@@ -132,12 +158,22 @@ const InviteScreen = ({
 
   const canRemove = (pid) => {
     const host = hostId ?? currentUser?.id;
-    return currentUser?.id && host && currentUser.id === host && pid !== host;
+    return (
+      !isArchived &&
+      currentUser?.id &&
+      host &&
+      currentUser.id === host &&
+      pid !== host
+    );
   };
 
   const handleRemoveParticipant = async (playerId) => {
     if (!matchId) return;
     if (!window.confirm("Remove this participant from the match?")) return;
+    if (isArchived) {
+      onToast("This match has been archived. Participants cannot be removed.", "error");
+      return;
+    }
     try {
       await removeParticipant(matchId, playerId);
       setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
@@ -152,10 +188,16 @@ const InviteScreen = ({
       }));
       onToast("Participant removed");
     } catch (err) {
-      onToast(
-        err?.response?.data?.message || "Failed to remove participant",
-        "error"
-      );
+      if (isMatchArchivedError(err)) {
+        setIsArchived(true);
+        setParticipantsError("This match has been archived. Invites are read-only.");
+        onToast("This match has been archived. Participants cannot be removed.", "error");
+      } else {
+        onToast(
+          err?.response?.data?.message || "Failed to remove participant",
+          "error"
+        );
+      }
     }
   };
 
@@ -230,6 +272,12 @@ const InviteScreen = ({
             Need {matchData.playerCount - matchData.occupied} more{" "}
             {matchData.playerCount - matchData.occupied === 1 ? "player" : "players"}
           </p>
+          {isArchived && (
+            <div className="mb-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+              <span className="font-black">ARCHIVED</span>
+              This match has been archived. Invites are read-only.
+            </div>
+          )}
           <div className="flex items-center gap-4 text-sm font-bold text-gray-500">
             <span className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
@@ -505,6 +553,10 @@ const InviteScreen = ({
                   onToast("No match selected for invites", "error");
                   return;
                 }
+                if (isArchived) {
+                  onToast("This match has been archived. Invites cannot be sent.", "error");
+                  return;
+                }
                 try {
                   const newIds = Array.from(selectedPlayers.keys())
                     .map((id) => Number(id))
@@ -528,13 +580,22 @@ const InviteScreen = ({
                   onToast(message);
                   onDone?.("sent");
                 } catch (err) {
-                  onToast(
-                    err.response?.data?.message || "Failed to send invites",
-                    "error"
-                  );
+                  if (isMatchArchivedError(err)) {
+                    setIsArchived(true);
+                    onToast(
+                      "This match has been archived. Invites cannot be sent.",
+                      "error"
+                    );
+                  } else {
+                    onToast(
+                      err.response?.data?.message || "Failed to send invites",
+                      "error"
+                    );
+                  }
                 }
               }}
-              className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
+              disabled={isArchived}
+              className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               <Send className="w-5 h-5" />
               SEND INVITES
@@ -548,4 +609,3 @@ const InviteScreen = ({
 };
 
 export default InviteScreen;
-

@@ -4,12 +4,14 @@ import { useParams } from "react-router-dom";
 import { getMatch, removeParticipant } from "../services/matches";
 import { Calendar, MapPin, Users, ClipboardList, FileText, X } from "lucide-react";
 import Header from "../components/Header.jsx";
+import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
 
 export default function MatchPage() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [removeError, setRemoveError] = useState("");
+  const [archived, setArchived] = useState(false);
 
   const [currentUser] = useState(() => {
     try {
@@ -24,11 +26,26 @@ export default function MatchPage() {
     let alive = true;
     (async () => {
       try {
-        const resp = await getMatch(id);
+        const loadMatch = async () => {
+          try {
+            return await getMatch(id);
+          } catch (error) {
+            if (!isMatchArchivedError(error)) throw error;
+            return await getMatch(id, { filter: ARCHIVE_FILTER_VALUE });
+          }
+        };
+
+        const resp = await loadMatch();
         if (!alive) return;
+        setArchived(resp?.match?.status === "archived");
         setData(resp);
-      } catch {
-        setErr("Not found or access denied.");
+      } catch (error) {
+        if (isMatchArchivedError(error)) {
+          setArchived(true);
+          setErr("This match has been archived and is no longer accessible.");
+        } else {
+          setErr("Not found or access denied.");
+        }
       }
     })();
     return () => {
@@ -39,14 +56,24 @@ export default function MatchPage() {
   const handleRemoveParticipant = async (playerId) => {
     if (!data) return;
     if (!window.confirm("Remove this participant from the match?")) return;
+    if (archived) {
+      setRemoveError("This match has been archived. Participants cannot be removed.");
+      setTimeout(() => setRemoveError(""), 3000);
+      return;
+    }
     try {
       await removeParticipant(data.match.id, playerId);
       setData({
         ...data,
         participants: data.participants.filter((p) => p.player_id !== playerId),
       });
-    } catch {
-      setRemoveError("Failed to remove participant");
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        setArchived(true);
+        setRemoveError("This match has been archived. Participants cannot be removed.");
+      } else {
+        setRemoveError("Failed to remove participant");
+      }
       setTimeout(() => setRemoveError(""), 3000);
     }
   };
@@ -83,6 +110,16 @@ export default function MatchPage() {
           <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
             CANCELLED
           </span>
+        </div>
+      )}
+      {archived && (
+        <div className="mb-4">
+          <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300 rounded-full text-xs font-black">
+            ARCHIVED
+          </span>
+          <p className="mt-2 text-sm text-slate-600 font-semibold">
+            This match has been archived. Actions are disabled.
+          </p>
         </div>
       )}
       <div className="space-y-1 mb-6">
@@ -124,7 +161,7 @@ export default function MatchPage() {
                     <span className="ml-1 text-blue-700 text-xs">Host</span>
                   )}
                 </span>
-                {isHost && p.player_id !== match.host_id && (
+                {isHost && !archived && p.player_id !== match.host_id && (
                   <button
                     onClick={() => handleRemoveParticipant(p.player_id)}
                     className="text-red-600 hover:text-red-800"

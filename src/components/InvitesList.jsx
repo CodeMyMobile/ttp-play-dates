@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listInvites, acceptInvite, rejectInvite } from '../services/invites';
+import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from '../utils/archive';
 import {
   Check,
   X,
@@ -31,14 +32,14 @@ const InvitesList = ({ onInviteResponse }) => {
       try {
         setLoading(true);
         setError('');
-        const filterParam = activeTab === 'archived' ? 'archieve' : undefined;
+        const filterParam = activeTab === 'archived' ? ARCHIVE_FILTER_VALUE : undefined;
         const data = await listInvites({ filter: filterParam });
         if (!alive) return;
         setInvites(data.invites || data || []);
       } catch (err) {
         console.error(err);
         if (!alive) return;
-        if (err?.status === 410 || err?.response?.status === 410) {
+        if (isMatchArchivedError(err)) {
           setError('Archived invites are unavailable.');
         } else {
           setError('Failed to load invites');
@@ -68,8 +69,7 @@ const InvitesList = ({ onInviteResponse }) => {
       onInviteResponse?.();
     } catch (err) {
       console.error(err);
-      const errorCode = err?.data?.error || err?.response?.data?.error;
-      if (err?.status === 410 || err?.response?.status === 410 || errorCode === 'match_archived') {
+      if (isMatchArchivedError(err)) {
         setError('This invite has been archived and can no longer be accepted.');
       }
     }
@@ -88,8 +88,7 @@ const InvitesList = ({ onInviteResponse }) => {
       onInviteResponse?.();
     } catch (err) {
       console.error(err);
-      const errorCode = err?.data?.error || err?.response?.data?.error;
-      if (err?.status === 410 || err?.response?.status === 410 || errorCode === 'match_archived') {
+      if (isMatchArchivedError(err)) {
         setError('This invite has been archived and can no longer be updated.');
       }
     }

@@ -11,6 +11,7 @@ import {
   Send,
   ArrowRight,
   AlertCircle,
+  Archive,
 } from "lucide-react";
 import {
   getInvitePreview,
@@ -18,10 +19,8 @@ import {
   verifyInviteCode,
   claimInvite,
 } from "./services/invites";
+import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import Header from "./components/Header.jsx";
-
-const ARCHIVE_FILTER_VALUE = "archieve";
-const MATCH_ARCHIVED_ERROR = "match_archived";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -74,6 +73,8 @@ export default function InvitationPage() {
     return inviteeEmail.toLowerCase().endsWith("@ttpplaydates.com");
   }, [inviteeEmail]);
 
+  const isArchivedMatch = (preview?.match?.status === "archived") || archivedNotice;
+
   // Load minimal invite preview
   useEffect(() => {
     let alive = true;
@@ -115,11 +116,7 @@ export default function InvitationPage() {
         setArchivedNotice(data?.match?.status === "archived");
       } catch (err) {
         if (!alive) return;
-        const errorCode = err?.response?.data?.error || err?.data?.error;
-        const isArchived =
-          (err?.status === 410 || err?.response?.status === 410) &&
-          errorCode === MATCH_ARCHIVED_ERROR;
-        if (isArchived) {
+        if (isMatchArchivedError(err)) {
           try {
             const archived = await fetchPreview(true);
             if (!alive) return;
@@ -239,6 +236,10 @@ export default function InvitationPage() {
 
   const begin = async () => {
     setError("");
+    if (isArchivedMatch) {
+      setError("This match has been archived. Invites are read-only.");
+      return;
+    }
     try {
       const payload = {};
       if (selectedChannel) payload.channel = selectedChannel;
@@ -250,21 +251,35 @@ export default function InvitationPage() {
       setCode("");
       setShowPicker(false);
     } catch (e) {
-      const msg = mapBeginError(e?.message);
-      setError(msg);
+      if (isMatchArchivedError(e)) {
+        setArchivedNotice(true);
+        setError("This match has been archived. Invites are read-only.");
+      } else {
+        const msg = mapBeginError(e?.message);
+        setError(msg);
+      }
     }
   };
 
   const verify = async () => {
     setError("");
+    if (isArchivedMatch) {
+      setError("This match has been archived. Invites are read-only.");
+      return;
+    }
     try {
       const data = await verifyInviteCode(token, code);
 
       persistSession(data);
       setPhase("done");
       navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
-    } catch {
-      setError("Invalid or expired code. Try again.");
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        setArchivedNotice(true);
+        setError("This match has been archived. Invites are read-only.");
+      } else {
+        setError("Invalid or expired code. Try again.");
+      }
     }
   };
 
@@ -289,11 +304,19 @@ export default function InvitationPage() {
         navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
       } catch (err) {
         if (!alive) return;
-        const message = mapAutoVerifyError(err);
-        setError(message);
-        setCode("");
-        setPhase("otp");
-        setShowPicker(false);
+        if (isMatchArchivedError(err)) {
+          setArchivedNotice(true);
+          setError("This match has been archived. Invites are read-only.");
+          setCode("");
+          setPhase("preview");
+          setShowPicker(false);
+        } else {
+          const message = mapAutoVerifyError(err);
+          setError(message);
+          setCode("");
+          setPhase("otp");
+          setShowPicker(false);
+        }
       }
     })();
 
@@ -318,6 +341,10 @@ export default function InvitationPage() {
     event.preventDefault();
     if (claiming) return;
     setError("");
+    if (isArchivedMatch) {
+      setError("This match has been archived. Invites are read-only.");
+      return;
+    }
 
     const trimmedEmail = email.trim();
     const trimmedName = fullName.trim();
@@ -344,6 +371,11 @@ export default function InvitationPage() {
         replace: true,
       });
     } catch (err) {
+      if (isMatchArchivedError(err)) {
+        setArchivedNotice(true);
+        setError("This match has been archived. Invites are read-only.");
+        return;
+      }
       const claimMessage = mapClaimError(err);
       if (err?.status === 404 || err?.message === "not_found") {
         setPreview(null);
@@ -618,7 +650,7 @@ export default function InvitationPage() {
       </label>
       <PrimaryButton
         type="submit"
-        disabled={claiming}
+        disabled={claiming || isArchivedMatch}
         className="w-full"
       >
         {claiming ? (
@@ -696,7 +728,8 @@ export default function InvitationPage() {
       <div className="flex flex-col gap-3 sm:flex-row">
         <button
           onClick={begin}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 font-semibold text-white shadow-lg shadow-amber-200 transition-transform hover:scale-[1.01]"
+          disabled={isArchivedMatch}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 font-semibold text-white shadow-lg shadow-amber-200 transition-transform hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
         >
           Send access code
         </button>
@@ -751,17 +784,22 @@ export default function InvitationPage() {
       <div className="flex flex-col gap-3 sm:flex-row">
         <PrimaryButton
           onClick={verify}
+          disabled={isArchivedMatch}
           className="w-full sm:w-auto"
         >
           Verify &amp; Join
         </PrimaryButton>
         <button
           onClick={resend}
-          disabled={!canResend}
+          disabled={!canResend || isArchivedMatch}
           className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white sm:w-auto"
-          aria-disabled={!canResend}
+          aria-disabled={!canResend || isArchivedMatch}
         >
-          {canResend ? "Resend code" : `Resend in ${secondsUntilResend}s`}
+          {canResend && !isArchivedMatch
+            ? "Resend code"
+            : !isArchivedMatch
+            ? `Resend in ${secondsUntilResend}s`
+            : "Resend unavailable"}
         </button>
         <button
           onClick={() => {
@@ -829,6 +867,12 @@ export default function InvitationPage() {
                     : "Hosted on Matchplay"}
                 </p>
               </div>
+              {isArchivedMatch && (
+                <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+                  <Archive className="h-4 w-4" />
+                  This match has been archived. Actions are disabled.
+                </div>
+              )}
               <div className="mt-5 grid gap-3">
                 {infoItems.length ? (
                   infoItems.map((item) => {
@@ -927,6 +971,7 @@ export default function InvitationPage() {
                         begin();
                       }
                     }}
+                    disabled={isArchivedMatch}
                   >
                     Join Match &amp; Play
                     <ArrowRight className="h-4 w-4" />
