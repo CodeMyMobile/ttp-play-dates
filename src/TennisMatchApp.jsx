@@ -32,10 +32,12 @@ import {
   Plus,
   X,
   Check,
+  CheckCircle2,
   Search,
   Share2,
   Menu,
   Bell,
+  BellRing,
   Star,
   TrendingUp,
   Award,
@@ -59,6 +61,8 @@ import {
   Target,
   ClipboardList,
   FileText,
+  CalendarCheck,
+  UserPlus,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
@@ -3303,11 +3307,20 @@ const TennisMatchApp = () => {
     );
   };
 
+
   const MatchDetailsScreen = () => {
     const [joining, setJoining] = useState(false);
+    const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
+    const [remindersEnabled, setRemindersEnabled] = useState(true);
+    const [shareLoading, setShareLoading] = useState(false);
     const matchData = viewMatch;
-    if (!matchData) return null;
-    const { match, participants = [], invitees = [] } = matchData;
+    const match = matchData?.match ?? {};
+    const participants = Array.isArray(matchData?.participants)
+      ? matchData.participants
+      : match.participants ?? [];
+    const invitees = Array.isArray(matchData?.invitees)
+      ? matchData.invitees
+      : match.invitees ?? [];
     const isHost = currentUser?.id === match.host_id;
     const isJoined = participants.some(
       (p) => p.player_id === currentUser?.id && p.status !== "left",
@@ -3329,6 +3342,395 @@ const TennisMatchApp = () => {
       !isArchived &&
       match.status === "upcoming" &&
       (remainingSpots === null || remainingSpots > 0);
+
+    const matchId = match?.id || match?.match_id;
+
+    useEffect(() => {
+      setShowJoinConfirmation(false);
+      setRemindersEnabled(true);
+    }, [matchId]);
+
+    const closeDetails = useCallback(() => {
+      setViewMatch(null);
+      goToBrowse();
+    }, [goToBrowse]);
+
+    const locationLabel =
+      match.location_text ||
+      match.location ||
+      match.location_name ||
+      "Location to be announced";
+    const mapUrl =
+      match.map_url ||
+      buildMapsUrl(match.latitude, match.longitude, match.location_text || match.location);
+    const distanceMiles = (() => {
+      const raw =
+        match.distance_miles ??
+        match.distanceMiles ??
+        match.distance ??
+        matchData.distance_miles ??
+        matchData.distanceMiles;
+      const numeric = typeof raw === "string" ? Number.parseFloat(raw) : raw;
+      return Number.isFinite(numeric) ? Math.round(numeric * 10) / 10 : null;
+    })();
+    const distanceDisplay =
+      distanceMiles !== null
+        ? `${distanceMiles % 1 === 0 ? distanceMiles.toFixed(0) : distanceMiles.toFixed(1)} mile${distanceMiles === 1 ? "" : "s"} away`
+        : "";
+    const privacyLabel = (() => {
+      const raw = match.match_type || match.privacy;
+      if (!raw) return "Open Match";
+      const normalized = String(raw).toLowerCase();
+      if (normalized === "private" || normalized === "closed") return "Invite Only Match";
+      return "Open Match";
+    })();
+
+    const fallbackDurationMinutes = (() => {
+      const raw =
+        match.duration_minutes ??
+        match.duration ??
+        match.durationMinutes ??
+        matchData.duration_minutes ??
+        matchData.durationMinutes;
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+      if (typeof raw === "string") {
+        const parsed = Number.parseInt(raw, 10);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      return 120;
+    })();
+
+    const startDate = match?.start_date_time ? new Date(match.start_date_time) : null;
+    const hasValidStart = startDate instanceof Date && !Number.isNaN(startDate?.getTime?.());
+    const computedEndDate = (() => {
+      if (!hasValidStart) return null;
+      if (match?.end_date_time) {
+        const parsed = new Date(match.end_date_time);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+      }
+      return new Date(startDate.getTime() + fallbackDurationMinutes * 60 * 1000);
+    })();
+    const hasValidEnd =
+      computedEndDate instanceof Date && !Number.isNaN(computedEndDate?.getTime?.());
+
+    const formatTime = (date) =>
+      date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const formattedDate = hasValidStart
+      ? startDate.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "Date to be announced";
+    const shortDateLabel = hasValidStart
+      ? startDate.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        })
+      : "";
+    const timeRange = hasValidStart
+      ? hasValidEnd
+        ? `${formatTime(startDate)} – ${formatTime(computedEndDate)}`
+        : formatTime(startDate)
+      : "";
+
+    const occupancySummary = Number.isFinite(numericPlayerLimit)
+      ? `${totalCommitted}/${numericPlayerLimit} players`
+      : `${totalCommitted} player${totalCommitted === 1 ? "" : "s"}`;
+
+    const hostParticipant =
+      participants.find((p) => p.status === "hosting") ||
+      participants.find((p) => p.player_id === match.host_id);
+    const hostProfile = hostParticipant?.profile || match.host_profile || {};
+    const organizerName =
+      hostProfile.full_name ||
+      match.host_name ||
+      (hostParticipant?.player_id ? `Player ${hostParticipant.player_id}` : "Match Organizer");
+
+    const buildInitials = (name = "") => {
+      const trimmed = String(name).trim();
+      if (!trimmed) return "TT";
+      const parts = trimmed.split(/\s+/).filter(Boolean);
+      if (!parts.length) return trimmed.slice(0, 2).toUpperCase();
+      return parts
+        .slice(0, 2)
+        .map((part) => part[0].toUpperCase())
+        .join("");
+    };
+    const organizerInitials = buildInitials(organizerName);
+
+    const extractRating = (profile) => {
+      if (!profile) return "";
+      const rating =
+        profile.usta_rating ??
+        profile.rating ??
+        profile.skill_level ??
+        profile.skillLevel ??
+        profile.uta_rating;
+      if (rating === undefined || rating === null || rating === "") return "";
+      if (typeof rating === "number" && Number.isFinite(rating)) {
+        return rating.toFixed(1);
+      }
+      return String(rating);
+    };
+    const hostRating = extractRating(hostProfile);
+
+    const participantSlots = committedParticipants.map((p) => {
+      const name = p.profile?.full_name || `Player ${p.player_id}`;
+      return {
+        key: `participant-${p.player_id || p.id}`,
+        name,
+        avatarText: buildInitials(name),
+        rating: extractRating(p.profile),
+        kind:
+          p.player_id === match.host_id || p.status === "hosting"
+            ? "host"
+            : "participant",
+        playerId: p.player_id,
+      };
+    });
+    const acceptedInviteSlots = invitees
+      .filter((invite) => invite.status === "accepted")
+      .map((invite) => {
+        const profile = invite.profile || {};
+        const fallbackPhone =
+          invite.phone_number ||
+          profile.phone ||
+          profile.phone_number ||
+          invite.phone;
+        const baseName =
+          profile.full_name ||
+          (fallbackPhone ? formatPhoneDisplay(String(fallbackPhone)) : "");
+        const name = baseName || "Accepted player";
+        return {
+          key: `accepted-${invite.id || invite.invitee_id}`,
+          name,
+          avatarText: buildInitials(name),
+          rating: extractRating(profile),
+          kind: "accepted",
+        };
+      });
+    const pendingInviteSlots = invitees
+      .filter(
+        (invite) =>
+          invite.status && invite.status !== "accepted" && invite.status !== "declined",
+      )
+      .map((invite) => {
+        const profile = invite.profile || {};
+        const fallbackPhone =
+          invite.phone_number ||
+          profile.phone ||
+          profile.phone_number ||
+          invite.phone;
+        const baseName =
+          profile.full_name ||
+          (fallbackPhone ? formatPhoneDisplay(String(fallbackPhone)) : "");
+        const name = baseName || "Invited player";
+        return {
+          key: `pending-${invite.id || invite.invitee_id}`,
+          name,
+          avatarText: buildInitials(name),
+          rating: extractRating(profile),
+          kind: "pending",
+          status: invite.status,
+        };
+      });
+    const baseSlots = [
+      ...participantSlots,
+      ...acceptedInviteSlots,
+      ...pendingInviteSlots,
+    ];
+    const placeholderCount = Number.isFinite(numericPlayerLimit)
+      ? Math.max(numericPlayerLimit - baseSlots.length, 0)
+      : 0;
+    const placeholderSlots = Array.from({ length: placeholderCount }).map((_, index) => ({
+      key: `open-${index}`,
+      name: "Waiting for player",
+      avatarText: "+",
+      kind: "open",
+    }));
+    const playerSlots = [...baseSlots, ...placeholderSlots];
+
+    const formatStatusLabel = (slot) => {
+      if (slot.kind === "host") return "Organizer";
+      if (slot.kind === "open") return "Open Spot";
+      if (slot.kind === "pending") {
+        if (slot.status) {
+          const friendly = String(slot.status).replace(/_/g, " ").toLowerCase();
+          return friendly.charAt(0).toUpperCase() + friendly.slice(1);
+        }
+        return "Invited";
+      }
+      if (slot.kind === "accepted") return "Accepted";
+      return "Confirmed";
+    };
+    const getStatusClass = (slot) => {
+      if (slot.kind === "host") return "bg-indigo-100 text-indigo-700";
+      if (slot.kind === "open") return "bg-slate-100 text-slate-600";
+      if (slot.kind === "pending") return "bg-amber-50 text-amber-700";
+      return "bg-emerald-50 text-emerald-600";
+    };
+    const getStatusIcon = (slot) => {
+      if (slot.kind === "host") return <Star className="h-3.5 w-3.5" />;
+      if (slot.kind === "open") return <User className="h-3.5 w-3.5" />;
+      if (slot.kind === "pending") return <Clock className="h-3.5 w-3.5" />;
+      return <Check className="h-3.5 w-3.5" />;
+    };
+    const getAvatarClasses = (slot) => {
+      if (slot.kind === "host") return "bg-indigo-600 text-white";
+      if (slot.kind === "pending") return "bg-amber-100 text-amber-600";
+      if (slot.kind === "open") return "bg-slate-100 text-slate-500";
+      if (slot.kind === "accepted") return "bg-emerald-100 text-emerald-700";
+      return "bg-emerald-50 text-emerald-700";
+    };
+    const renderAvatarContent = (slot) => {
+      if (slot.kind === "open") return <User className="h-5 w-5" />;
+      if (slot.kind === "pending") return <Clock className="h-5 w-5" />;
+      return <span>{slot.avatarText}</span>;
+    };
+
+    const statusBadges = [];
+    if (match?.status === "cancelled") {
+      statusBadges.push({
+        label: "Cancelled",
+        className: "bg-white/20 text-white border border-white/30",
+      });
+    }
+    if (isArchived) {
+      statusBadges.push({
+        label: "Archived",
+        className: "bg-white/10 text-white border border-white/20",
+      });
+    }
+
+    const startIso = hasValidStart ? startDate.toISOString() : "";
+    const endIso = hasValidEnd ? computedEndDate.toISOString() : startIso;
+    const toCalendarTimestamp = (isoString) =>
+      typeof isoString === "string" && isoString
+        ? isoString.replace(/[-:]/g, "").split(".")[0] + "Z"
+        : "";
+    const calendarEventTitle = (() => {
+      const fallback = match.title || match.match_format || "Tennis Match";
+      if (typeof fallback === "string" && fallback.trim()) {
+        return fallback.trim();
+      }
+      return "Tennis Match";
+    })();
+    const calendarLocation =
+      locationLabel && locationLabel !== "Location to be announced"
+        ? locationLabel
+        : "";
+    const calendarDetails = (() => {
+      if (typeof match.notes === "string" && match.notes.trim()) {
+        return `${match.notes.trim()}\\n\\nOrganized via TTP Play Dates.`;
+      }
+      return "Organized via TTP Play Dates.";
+    })();
+
+    const googleCalendarUrl = useMemo(() => {
+      if (!startIso) return "";
+      const startStamp = toCalendarTimestamp(startIso);
+      const endStamp = toCalendarTimestamp(endIso || startIso);
+      const params = new URLSearchParams({
+        action: "TEMPLATE",
+        text: calendarEventTitle,
+        dates: `${startStamp}/${endStamp}`,
+        details: calendarDetails,
+      });
+      if (calendarLocation) params.append("location", calendarLocation);
+      return `https://calendar.google.com/calendar/render?${params.toString()}`;
+    }, [startIso, endIso, calendarEventTitle, calendarDetails, calendarLocation]);
+
+    const outlookCalendarUrl = useMemo(() => {
+      if (!startIso) return "";
+      const params = new URLSearchParams({
+        path: "/calendar/action/compose",
+        rru: "addevent",
+        subject: calendarEventTitle,
+        startdt: startIso,
+        enddt: endIso || startIso,
+        body: calendarDetails,
+      });
+      if (calendarLocation) params.append("location", calendarLocation);
+      return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
+    }, [startIso, endIso, calendarEventTitle, calendarDetails, calendarLocation]);
+
+    const handleCalendarOpen = (url) => {
+      if (!url) return;
+      if (typeof window !== "undefined") {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    };
+
+    const downloadIcsFile = () => {
+      if (!startIso || typeof document === "undefined") return;
+      const dtStamp = toCalendarTimestamp(new Date().toISOString());
+      const dtStart = toCalendarTimestamp(startIso);
+      const dtEnd = toCalendarTimestamp(endIso || startIso);
+      const lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//TTP Play Dates//Match//EN",
+        "CALSCALE:GREGORIAN",
+        "BEGIN:VEVENT",
+        `UID:${matchId || Date.now()}@ttp-play-dates`,
+        `DTSTAMP:${dtStamp}`,
+        `DTSTART:${dtStart}`,
+        `DTEND:${dtEnd}`,
+        calendarLocation
+          ? `LOCATION:${calendarLocation.replace(/\n/g, "\n")}`
+          : null,
+        `SUMMARY:${calendarEventTitle}`,
+        `DESCRIPTION:${calendarDetails.replace(/\n/g, "\n")}`,
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].filter(Boolean);
+      const blob = new Blob([lines.join("\r\n")], {
+        type: "text/calendar;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `match-${matchId || "event"}.ics`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      displayToast("Calendar file downloaded!");
+    };
+
+    const handleShareMatch = async () => {
+      if (!matchId) return;
+      try {
+        setShareLoading(true);
+        const { shareUrl } = await getShareLink(matchId);
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({
+            title: "Join my tennis match",
+            text: "Let's play! I just joined a match on TTP Play Dates.",
+            url: shareUrl,
+          });
+        } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(shareUrl);
+          displayToast("Share link copied to clipboard!");
+        } else if (typeof window !== "undefined") {
+          window.open(shareUrl, "_blank", "noopener,noreferrer");
+        }
+      } catch (error) {
+        if (isMatchArchivedError(error)) {
+          displayToast("This match has been archived. Sharing is unavailable.", "error");
+        } else {
+          displayToast(
+            error?.response?.data?.message || "Failed to generate share link",
+            "error",
+          );
+        }
+      } finally {
+        setShareLoading(false);
+      }
+    };
 
     const handleRemoveParticipant = async (playerId) => {
       if (isArchived) {
@@ -3371,6 +3773,7 @@ const TennisMatchApp = () => {
         fetchPendingInvites();
         const updated = await fetchMatchDetails(match.id, { includeArchived: false });
         setViewMatch(updated);
+        setShowJoinConfirmation(true);
       } catch (err) {
         if (isMatchArchivedError(err)) {
           displayToast("This match has been archived. You can't join.", "error");
@@ -3386,167 +3789,496 @@ const TennisMatchApp = () => {
       }
     };
 
+    const notes = typeof match.notes === "string" ? match.notes.trim() : "";
+    const showShareCta = !isArchived && (remainingSpots === null || remainingSpots > 0);
+    const showCalendarActions = Boolean(startIso);
+
+    if (!matchData || !match?.id) {
+      return null;
+    }
+
     return (
-      <div className="max-w-2xl mx-auto p-4">
-        <div className="bg-white rounded-xl shadow p-6">
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={closeDetails}
+        />
+        <div className="relative w-full max-w-3xl" role="dialog" aria-modal="true">
           <button
-            onClick={() => {
-              setViewMatch(null);
-              goToBrowse();
-            }}
-            className="mb-4 flex items-center text-sm font-bold text-gray-600 hover:text-gray-800"
+            type="button"
+            onClick={closeDetails}
+            className="absolute -right-3 -top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg transition hover:scale-105"
+            aria-label="Close match details"
           >
-            <ChevronLeft className="w-4 h-4 mr-1" /> Back
+            <X className="h-5 w-5 text-slate-600" />
           </button>
-          <h2 className="text-2xl font-black mb-2">Match Details</h2>
-          {match?.status === "cancelled" && (
-            <div className="mb-4">
-              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
-                CANCELLED
-              </span>
-            </div>
-          )}
-          {isArchived && (
-            <div className="mb-4">
-              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300 rounded-full text-xs font-black">
-                ARCHIVED
-              </span>
-              <p className="mt-2 text-sm text-slate-600 font-semibold">
-                This match has been archived. Actions are disabled.
-              </p>
-            </div>
-          )}
-          {match && (
-            <div className="space-y-1 mb-6">
-              <p className="text-gray-700 flex items-center gap-1">
-                <Calendar className="w-4 h-4" />
-                {formatDateTime(match.start_date_time)}
-              </p>
-              {match.location_text && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <MapPin className="w-4 h-4" /> {match.location_text}
-                </p>
-              )}
-              {match.match_format && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <ClipboardList className="w-4 h-4" /> {match.match_format}
-                </p>
-              )}
-              {match.player_limit && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <Users className="w-4 h-4" /> Player limit: {match.player_limit}
-                </p>
-              )}
-              {match.notes && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <FileText className="w-4 h-4" /> {match.notes}
-                </p>
-              )}
-            </div>
-          )}
-          {canJoin && (
-            <div className="mb-6">
-              <button
-                onClick={handleJoinMatch}
-                disabled={joining}
-                className="w-full px-5 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {joining ? "Joining match..." : "Join this match"}
-              </button>
-              {remainingSpots !== null && (
-                <p className="text-xs text-gray-500 font-semibold mt-2 text-center">
-                  {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
-                </p>
-              )}
-            </div>
-          )}
-          {!canJoin && !isHost && !isJoined && remainingSpots === 0 && (
-            <p className="mb-6 text-sm font-semibold text-red-500">
-              This match is currently full. Check back later or explore other matches.
-            </p>
-          )}
-          <div className="mb-6">
-            <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
-              <Users className="w-4 h-4" /> Participants
-            </h3>
-            {participants.length ? (
-              <ul className="space-y-1">
-                {participants.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between text-gray-700"
-                  >
-                    <span>
-                      {p.profile?.full_name || `Player ${p.player_id}`}
-                    {p.player_id === match.host_id && (
-                      <span className="ml-1 text-blue-700 text-xs">Host</span>
-                    )}
-                  </span>
-                    {isHost && !isArchived && p.player_id !== match.host_id && (
-                      <button
-                        onClick={() => handleRemoveParticipant(p.player_id)}
-                        className="text-red-600 hover:text-red-800"
-                        aria-label="Remove participant"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No participants yet.</p>
-            )}
-          </div>
-          <div>
-            <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
-              <User className="w-4 h-4" /> Invitees
-            </h3>
-            {invitees.length ? (
-              <ul className="space-y-1">
-                {invitees.map((i) => (
-                  <li
-                    key={i.id || i.invitee_id}
-                    className="flex items-start justify-between gap-3 text-gray-700 bg-gray-50 rounded-lg px-3 py-2"
-                  >
-                    <div>
-                      <div className="font-semibold">
-                        {i.profile?.full_name || `Player ${i.invitee_id}`}
-                      </div>
-                      {(() => {
-                        const phone =
-                          i.profile?.phone ||
-                          i.profile?.phone_number ||
-                          i.phone_number ||
-                          i.phone;
-                        const email = i.profile?.email;
-                        const isPlaceholderEmail =
-                          typeof email === "string" && email.endsWith("@ttpplaydates.com");
-                        return (
-                          <>
-                            {phone && (
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <Phone className="w-3 h-3" />
-                                {formatPhoneDisplay(String(phone))}
-                              </div>
-                            )}
-                            {isPlaceholderEmail && (
-                              <div className="text-xs text-blue-600 font-semibold">
-                                SMS invite active
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
+          <div className="relative overflow-hidden rounded-3xl bg-white shadow-2xl">
+            {showJoinConfirmation ? (
+              <>
+                <div className="bg-gradient-to-br from-emerald-500 via-green-500 to-lime-500 px-6 pt-12 pb-24 text-white">
+                  <div className="flex flex-col items-center gap-4 text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
+                      <CheckCircle2 className="h-10 w-10" />
                     </div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      {i.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    <h2 className="text-3xl font-black tracking-tight">Match Joined!</h2>
+                    <p className="max-w-lg text-base text-white/85">
+                      You're all set. We'll send the important details so you can focus on playing your best match.
+                    </p>
+                  </div>
+                </div>
+                <div className="relative -mt-14 rounded-t-3xl bg-white px-6 pb-10 pt-16">
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 p-5 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <Calendar className="h-5 w-5 text-emerald-600" />
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+                            When
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-900">
+                            {formattedDate}
+                          </p>
+                          {timeRange && <p className="text-sm text-slate-500">{timeRange}</p>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 p-5 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <MapPin className="h-5 w-5 text-emerald-600" />
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+                            Where
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-900">
+                            {locationLabel}
+                          </p>
+                          {mapUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                window.open(mapUrl, "_blank", "noopener,noreferrer")
+                              }
+                              className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                            >
+                              View on Maps
+                              <ArrowRight className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 rounded-2xl border border-slate-200 p-5 shadow-sm">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                      What happens next
+                    </h3>
+                    <ul className="mt-4 space-y-3 text-sm text-slate-600">
+                      <li className="flex items-start gap-3">
+                        <Mail className="mt-0.5 h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Email confirmation</p>
+                          <p>We'll send a confirmation message with everything you need.</p>
+                        </div>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <BellRing className="mt-0.5 h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Helpful reminders</p>
+                          <p>Expect reminders before the match so you never miss a serve.</p>
+                        </div>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <UserPlus className="mt-0.5 h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Organizer notified</p>
+                          <p>The host knows you're in and will reach out if anything changes.</p>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {showCalendarActions && (
+                    <div className="mt-8 rounded-2xl border border-slate-200 p-5 shadow-sm">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                        Add to calendar
+                      </h3>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => handleCalendarOpen(googleCalendarUrl)}
+                          disabled={!googleCalendarUrl}
+                          className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <CalendarCheck className="h-4 w-4" />
+                          Google
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCalendarOpen(outlookCalendarUrl)}
+                          disabled={!outlookCalendarUrl}
+                          className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <CalendarCheck className="h-4 w-4" />
+                          Outlook
+                        </button>
+                        <button
+                          type="button"
+                          onClick={downloadIcsFile}
+                          disabled={!googleCalendarUrl}
+                          className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <FileText className="h-4 w-4" />
+                          .ics File
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-8 flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Match reminders</p>
+                      <p className="text-xs text-slate-500">
+                        Receive SMS reminders before the match starts.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRemindersEnabled((prev) => !prev)}
+                      className={`relative inline-flex h-8 w-14 items-center rounded-full transition ${remindersEnabled ? "bg-emerald-500" : "bg-slate-300"}`}
+                    >
+                      <span
+                        className={`inline-block h-7 w-7 transform rounded-full bg-white shadow transition ${remindersEnabled ? "translate-x-6" : "translate-x-1"}`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowJoinConfirmation(false);
+                        closeDetails();
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-600"
+                    >
+                      Back to Home
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowJoinConfirmation(false);
+                        setViewMatch(null);
+                        goToBrowse();
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-lime-500 px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:shadow-xl"
+                    >
+                      Find More Matches
+                    </button>
+                  </div>
+
+                  {showShareCta && (
+                    <div className="mt-6 flex flex-col items-center gap-3 text-center text-sm text-slate-500">
+                      <p>Invite friends to fill the last spot.</p>
+                      <button
+                        type="button"
+                        onClick={handleShareMatch}
+                        disabled={shareLoading}
+                        className="inline-flex items-center gap-2 rounded-full border border-transparent bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        {shareLoading ? "Preparing link..." : "Share match link"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
-              <p className="text-gray-500">No invites sent.</p>
+              <>
+                <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-sky-500 px-6 pt-12 pb-24 text-white">
+                  <div className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/80">
+                          {shortDateLabel && (
+                            <span className="rounded-full bg-white/15 px-3 py-1">{shortDateLabel}</span>
+                          )}
+                          {timeRange && (
+                            <span className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              {timeRange}
+                            </span>
+                          )}
+                          {distanceDisplay && (
+                            <span className="rounded-full bg-white/10 px-3 py-1">
+                              {distanceDisplay}
+                            </span>
+                          )}
+                          <span className="rounded-full bg-white/10 px-3 py-1">{privacyLabel}</span>
+                        </div>
+                        <h2 className="mt-6 text-3xl font-black tracking-tight">Match Details</h2>
+                        <p className="mt-3 flex items-center gap-2 text-sm sm:text-base text-white/85">
+                          <MapPin className="h-4 w-4" />
+                          <span>{locationLabel}</span>
+                        </p>
+                      </div>
+                      {statusBadges.length > 0 && (
+                        <div className="flex flex-col items-end gap-2">
+                          {statusBadges.map((badge) => (
+                            <span
+                              key={badge.label}
+                              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="flex items-start gap-3 rounded-2xl bg-white/10 px-4 py-3 backdrop-blur">
+                        <Calendar className="h-5 w-5 text-white" />
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/70">
+                            Date & Time
+                          </p>
+                          <p className="text-sm font-semibold text-white">{formattedDate}</p>
+                          {timeRange && <p className="text-sm text-white/80">{timeRange}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 rounded-2xl bg-white/10 px-4 py-3 backdrop-blur">
+                        <Users className="h-5 w-5 text-white" />
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/70">
+                            Players
+                          </p>
+                          <p className="text-sm font-semibold text-white">{occupancySummary}</p>
+                          {remainingSpots !== null && remainingSpots > 0 && (
+                            <p className="text-sm text-white/80">
+                              {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} left
+                            </p>
+                          )}
+                          {remainingSpots !== null && remainingSpots === 0 && (
+                            <p className="text-sm text-white/80">Match is currently full</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="relative -mt-14 rounded-t-3xl bg-white px-6 pb-10 pt-16">
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 p-5 shadow-sm">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                        Location
+                      </h3>
+                      <p className="mt-3 text-base font-semibold text-slate-900">{locationLabel}</p>
+                      {mapUrl && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.open(mapUrl, "_blank", "noopener,noreferrer")
+                          }
+                          className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          View on Maps
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 p-5 shadow-sm">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                        Organizer
+                      </h3>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className={`flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold ${getAvatarClasses({ kind: "host" })}`}>
+                          {organizerInitials}
+                        </div>
+                        <div>
+                          <p className="text-base font-semibold text-slate-900">{organizerName}</p>
+                          <p className="text-sm text-slate-500">Match host</p>
+                          {hostRating && (
+                            <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                              <Star className="h-3.5 w-3.5" />
+                              {hostRating}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {match.match_format && (
+                    <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 shadow-sm">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                        Match format
+                      </h3>
+                      <p className="mt-2 text-base font-semibold text-slate-900">
+                        {match.match_format}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {privacyLabel}
+                        {Number.isFinite(numericPlayerLimit)
+                          ? ` • ${totalCommitted}/${numericPlayerLimit} players`
+                          : ""}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-8">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                        <Users className="h-5 w-5 text-indigo-500" />
+                        Players
+                      </h3>
+                      {remainingSpots !== null && remainingSpots > 0 && (
+                        <span className="text-sm font-semibold text-emerald-600">
+                          {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} available
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {playerSlots.length ? (
+                        playerSlots.map((slot) => (
+                          <div
+                            key={slot.key}
+                            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${getAvatarClasses(slot)}`}
+                              >
+                                {renderAvatarContent(slot)}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">{slot.name}</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(slot)}`}
+                                  >
+                                    {getStatusIcon(slot)}
+                                    {formatStatusLabel(slot)}
+                                  </span>
+                                  {slot.rating && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                                      <Star className="h-3.5 w-3.5" />
+                                      {slot.rating}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            {isHost && !isArchived && slot.kind === "participant" && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveParticipant(slot.playerId)}
+                                className="rounded-full border border-transparent p-2 text-slate-400 transition hover:border-rose-200 hover:text-rose-500"
+                                aria-label={`Remove ${slot.name}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                          No players yet. Be the first to join!
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {notes && (
+                    <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50/80 px-5 py-4 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <Sparkles className="h-5 w-5 text-amber-600" />
+                        <div>
+                          <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-700">
+                            Notes from the organizer
+                          </h3>
+                          <p className="mt-2 text-sm text-amber-900">{notes}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {showShareCta && (
+                    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <Sparkles className="h-5 w-5 text-indigo-500" />
+                        <div>
+                          <p className="text-sm font-semibold text-indigo-900">
+                            Invite friends to fill the last spot
+                          </p>
+                          <p className="text-xs text-indigo-600">
+                            Share the match link with your tennis crew.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleShareMatch}
+                        disabled={shareLoading}
+                        className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Share2 className="h-4 w-4" />
+                        {shareLoading ? "Preparing..." : "Share match"}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="mt-8 space-y-3">
+                    {canJoin ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleJoinMatch}
+                          disabled={joining}
+                          className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 via-green-500 to-lime-500 px-6 py-4 text-lg font-black text-white shadow-lg transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Sparkles className="h-5 w-5 transition group-hover:rotate-12" />
+                          {joining ? "Joining match..." : "Join this match"}
+                        </button>
+                        {remainingSpots !== null && (
+                          <p className="text-center text-xs font-semibold text-slate-500">
+                            {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {isJoined && !isHost && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-700">
+                            You're already confirmed for this match. See you on the court!
+                          </div>
+                        )}
+                        {!isJoined && remainingSpots === 0 && (
+                          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-600">
+                            This match is currently full. Check back later or explore other matches.
+                          </div>
+                        )}
+                        {isHost && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-semibold text-slate-600">
+                            You're hosting this match. Manage players or share the link to fill the court.
+                          </div>
+                        )}
+                        {isArchived && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-semibold text-slate-600">
+                            This match has been archived. Actions are disabled.
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={closeDetails}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:text-indigo-600"
+                    >
+                      Back to browse
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
