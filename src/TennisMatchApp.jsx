@@ -71,6 +71,7 @@ import {
 import {
   countUniqueMatchOccupants,
   idsMatch,
+  uniqueAcceptedInvitees,
   uniqueActiveParticipants,
 } from "./utils/participants";
 
@@ -433,8 +434,67 @@ const TennisMatchApp = () => {
         counts.archived ?? counts.archieve ?? counts.archive ?? 0;
       setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
+
+      const DEPARTURE_KEYS = [
+        "left_at",
+        "leftAt",
+        "removed_at",
+        "removedAt",
+        "cancelled_at",
+        "cancelledAt",
+        "canceled_at",
+        "canceledAt",
+        "declined_at",
+        "declinedAt",
+        "withdrawn_at",
+        "withdrawnAt",
+      ];
+      const PARTICIPANT_STATUS_KEYS = [
+        "participant_status",
+        "participantStatus",
+        "status_reason",
+        "statusReason",
+      ];
+      const INACTIVE_PARTICIPANT_STATUSES = new Set([
+        "left",
+        "removed",
+        "cancelled",
+        "canceled",
+        "declined",
+        "rejected",
+        "withdrawn",
+        "expired",
+      ]);
+      const hasAnyValue = (subject, keys = []) => {
+        if (!subject) return false;
+        return keys.some((key) => {
+          const value = subject?.[key];
+          if (value === undefined || value === null) return false;
+          if (typeof value === "string") {
+            return value.trim().length > 0;
+          }
+          if (typeof value === "number") {
+            return Number.isFinite(value);
+          }
+          if (value instanceof Date) {
+            return !Number.isNaN(value.getTime());
+          }
+          return true;
+        });
+      };
+      const hasInactiveStatus = (subject) => {
+        if (!subject) return false;
+        return PARTICIPANT_STATUS_KEYS.some((key) => {
+          const value = subject?.[key];
+          if (!value) return false;
+          const normalized = value.toString().trim().toLowerCase();
+          return INACTIVE_PARTICIPANT_STATUSES.has(normalized);
+        });
+      };
+
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
+        const acceptedInvitees = uniqueAcceptedInvitees(m.invitees);
         const occupied = countUniqueMatchOccupants(
           m.participants,
           m.invitees,
@@ -442,12 +502,31 @@ const TennisMatchApp = () => {
 
         const matchId = m.match_id || m.id;
         const isHost = m.host_id === currentUser?.id;
+
+        const hasActiveParticipant = activeParticipants.some((p) =>
+          idsMatch(p.player_id, currentUser?.id),
+        );
+        const hasAcceptedInvite = acceptedInvitees.some(
+          (invite) =>
+            idsMatch(invite.invitee_id, currentUser?.id) ||
+            idsMatch(invite.player_id, currentUser?.id),
+        );
+        const participantRecord = Array.isArray(m.participants)
+          ? m.participants.find(
+              (participant) =>
+                idsMatch(participant?.player_id, currentUser?.id) ||
+                idsMatch(participant?.invitee_id, currentUser?.id),
+            )
+          : null;
+        const hasDeparted =
+          hasAnyValue(m, DEPARTURE_KEYS) ||
+          hasAnyValue(participantRecord, DEPARTURE_KEYS) ||
+          hasInactiveStatus(m) ||
+          hasInactiveStatus(participantRecord);
+        const joinedTimestampActive = Boolean(m.joined_at) && !hasDeparted;
         const isJoined =
           !isHost &&
-          (m.joined_at ||
-            activeParticipants.some((p) =>
-              idsMatch(p.player_id, currentUser?.id),
-            ));
+          (hasActiveParticipant || hasAcceptedInvite || joinedTimestampActive);
 
         return {
           id: matchId,

@@ -410,6 +410,37 @@ const MatchDetailsModal = ({
       setLeaving(true);
       await leaveMatch(match.id);
       onToast?.("You're off the roster. We'll notify the organizer.");
+      const pruneCurrentUserFromMatch = (data) => {
+        if (!data || !currentUser?.id) return data;
+        const userId = currentUser.id;
+        const removeUser = (items) => {
+          if (!Array.isArray(items)) return items;
+          return items.filter(
+            (item) =>
+              !idsMatch(item?.player_id, userId) &&
+              !idsMatch(item?.invitee_id, userId) &&
+              !idsMatch(item?.id, userId),
+          );
+        };
+        const next = { ...data };
+        if (Array.isArray(next.participants)) {
+          next.participants = removeUser(next.participants);
+        }
+        if (Array.isArray(next.invitees)) {
+          next.invitees = removeUser(next.invitees);
+        }
+        if (next.match && typeof next.match === "object") {
+          next.match = { ...next.match };
+          if (Array.isArray(next.match.participants)) {
+            next.match.participants = removeUser(next.match.participants);
+          }
+          if (Array.isArray(next.match.invitees)) {
+            next.match.invitees = removeUser(next.match.invitees);
+          }
+        }
+        return next;
+      };
+      onUpdateMatch?.((prev) => pruneCurrentUserFromMatch(prev));
       setStatus("details");
       await onMatchRefresh?.();
       if (onReloadMatch && onUpdateMatch) {
