@@ -519,12 +519,22 @@ const TennisMatchApp = () => {
                 idsMatch(participant?.invitee_id, currentUser?.id),
             )
           : null;
+        const joinedTimestamp =
+          m.joined_at ??
+          m.joinedAt ??
+          m.joined ??
+          participantRecord?.joined_at ??
+          participantRecord?.joinedAt ??
+          participantRecord?.joined;
         const hasDeparted =
           hasAnyValue(m, DEPARTURE_KEYS) ||
           hasAnyValue(participantRecord, DEPARTURE_KEYS) ||
           hasInactiveStatus(m) ||
-          hasInactiveStatus(participantRecord);
-        const joinedTimestampActive = Boolean(m.joined_at) && !hasDeparted;
+          hasInactiveStatus(participantRecord) ||
+          (Boolean(joinedTimestamp) &&
+            !hasActiveParticipant &&
+            !hasAcceptedInvite);
+        const joinedTimestampActive = Boolean(joinedTimestamp) && !hasDeparted;
         const isJoined =
           !isHost &&
           (hasActiveParticipant || hasAcceptedInvite || joinedTimestampActive);

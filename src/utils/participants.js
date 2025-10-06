@@ -262,12 +262,38 @@ const pruneItemsByIdentity = (items, memberId) => {
   });
 };
 
+const JOIN_METADATA_KEYS = [
+  "joined_at",
+  "joinedAt",
+  "joined",
+  "joined_on",
+  "joinedOn",
+  "joined_by_player_id",
+  "joinedByPlayerId",
+  "joined_player_id",
+  "joinedPlayerId",
+  "joined_status",
+  "joinedStatus",
+  "is_joined",
+  "isJoined",
+];
+
+const clearJoinMetadata = (target) => {
+  if (!target || typeof target !== "object") return target;
+  for (const key of JOIN_METADATA_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+      delete target[key];
+    }
+  }
+  return target;
+};
+
 const pruneParticipantCollections = (target, memberId, seen) => {
   if (!target || typeof target !== "object") return target;
   if (seen.has(target)) return target;
   seen.add(target);
 
-  const next = { ...target };
+  const next = clearJoinMetadata({ ...target });
 
   if (Array.isArray(next.participants)) {
     next.participants = pruneItemsByIdentity(next.participants, memberId);
@@ -279,6 +305,7 @@ const pruneParticipantCollections = (target, memberId, seen) => {
 
   if (next.match && typeof next.match === "object") {
     next.match = pruneParticipantCollections(next.match, memberId, seen);
+    clearJoinMetadata(next.match);
   }
 
   return next;
