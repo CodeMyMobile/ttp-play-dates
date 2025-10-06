@@ -137,8 +137,23 @@ const formatDateDisplay = (dateStr) => {
   });
 };
 
-const toCalendarStamp = (date) =>
+const padCalendarPart = (value) => String(value).padStart(2, "0");
+
+const toUtcCalendarStamp = (date) =>
   date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+const toLocalCalendarStamp = (date) =>
+  [
+    date.getFullYear(),
+    padCalendarPart(date.getMonth() + 1),
+    padCalendarPart(date.getDate()),
+  ].join("") +
+  "T" +
+  [
+    padCalendarPart(date.getHours()),
+    padCalendarPart(date.getMinutes()),
+    padCalendarPart(date.getSeconds()),
+  ].join("");
 
 const formatRelativeDate = (isoValue) => {
   if (!isoValue) return "Recently active";
@@ -553,7 +568,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     if (type === "google") {
       const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
         title,
-      )}&dates=${toCalendarStamp(start)}/${toCalendarStamp(end)}&details=${encodeURIComponent(
+      )}&dates=${toLocalCalendarStamp(start)}/${toLocalCalendarStamp(end)}&details=${encodeURIComponent(
         description,
       )}&location=${encodeURIComponent(matchData.location)}`;
       window.open(url, "_blank");
@@ -566,9 +581,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       "PRODID:-//Matchplay//Match Creator//EN",
       "CALSCALE:GREGORIAN",
       "BEGIN:VEVENT",
-      `DTSTAMP:${toCalendarStamp(new Date())}`,
-      `DTSTART:${toCalendarStamp(start)}`,
-      `DTEND:${toCalendarStamp(end)}`,
+      `DTSTAMP:${toUtcCalendarStamp(new Date())}`,
+      `DTSTART:${toLocalCalendarStamp(start)}`,
+      `DTEND:${toLocalCalendarStamp(end)}`,
       `SUMMARY:${title}`,
       `DESCRIPTION:${description.replace(/\n/g, "\\n")}`,
       `LOCATION:${matchData.location}`,
