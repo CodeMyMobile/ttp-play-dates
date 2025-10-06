@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { joinMatch, removeParticipant } from "../services/matches";
+import { joinMatch, leaveMatch, removeParticipant } from "../services/matches";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
@@ -92,6 +92,7 @@ const MatchDetailsModal = ({
   const [status, setStatus] = useState("details");
   const [joining, setJoining] = useState(false);
   const [removingParticipantId, setRemovingParticipantId] = useState(null);
+  const [leaving, setLeaving] = useState(false);
 
   const match = matchData?.match || null;
   const participants = useMemo(() => {
@@ -177,6 +178,7 @@ const MatchDetailsModal = ({
     if (!isOpen) {
       setStatus("details");
       setJoining(false);
+      setLeaving(false);
       return;
     }
     if (status === "success") return;
@@ -392,6 +394,42 @@ const MatchDetailsModal = ({
       }
     } finally {
       setRemovingParticipantId(null);
+    }
+  };
+
+  const handleLeaveMatch = async () => {
+    if (!match?.id) return;
+    if (!currentUser) {
+      onRequireSignIn?.();
+      return;
+    }
+    if (!window.confirm("Need to back out? We'll let the organizer know you're leaving.")) {
+      return;
+    }
+    try {
+      setLeaving(true);
+      await leaveMatch(match.id);
+      onToast?.("You're off the roster. We'll notify the organizer.");
+      setStatus("details");
+      await onMatchRefresh?.();
+      if (onReloadMatch && onUpdateMatch) {
+        const updated = await onReloadMatch(match.id, { includeArchived: false });
+        if (updated) {
+          onUpdateMatch(updated);
+        }
+      }
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        onToast?.("This match has been archived. There's nothing to leave.", "error");
+      } else {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to leave match";
+        onToast?.(message, "error");
+      }
+    } finally {
+      setLeaving(false);
     }
   };
 
@@ -623,27 +661,42 @@ const MatchDetailsModal = ({
           {status === "alreadyJoined" && !isHost && (
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
               <Check className="mt-0.5 h-4 w-4" />
-              You're already on the roster. See you on the courts!
+              {isOpenMatch
+                ? "You're already on the roster. Need to back out? You can leave the match below."
+                : "You're already on the roster. Reach out to the organizer if you need changes."}
             </div>
           )}
         </div>
 
         <div className="border-t border-gray-100 pt-5">
-          <button
-            type="button"
-            onClick={handleJoin}
-            disabled={joining || !!disabledReason || status !== "details"}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {joining ? "Joining match..." : "Join this match"}
-          </button>
-          {status === "details" && disabledReason && (
-            <p className="mt-2 text-center text-xs font-semibold text-gray-500">{disabledReason}</p>
-          )}
-          {remainingSpots !== null && (
-            <p className="mt-2 text-center text-xs font-semibold text-gray-500">
-              {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
-            </p>
+          {isJoined && !isHost && isOpenMatch ? (
+            <button
+              type="button"
+              onClick={handleLeaveMatch}
+              disabled={leaving || isArchived || isCancelled}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {leaving ? "Leaving match..." : "Leave this match"}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleJoin}
+                disabled={joining || !!disabledReason || status !== "details"}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {joining ? "Joining match..." : "Join this match"}
+              </button>
+              {status === "details" && disabledReason && (
+                <p className="mt-2 text-center text-xs font-semibold text-gray-500">{disabledReason}</p>
+              )}
+              {remainingSpots !== null && (
+                <p className="mt-2 text-center text-xs font-semibold text-gray-500">
+                  {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
