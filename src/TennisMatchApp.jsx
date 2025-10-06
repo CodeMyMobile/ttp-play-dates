@@ -69,7 +69,7 @@ import {
   isMatchArchivedError,
 } from "./utils/archive";
 import {
-  countUniqueAcceptedInvitees,
+  countUniqueMatchOccupants,
   idsMatch,
   uniqueActiveParticipants,
 } from "./utils/participants";
@@ -435,9 +435,10 @@ const TennisMatchApp = () => {
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
-        const participantCount = activeParticipants.length;
-        const acceptedInvites = countUniqueAcceptedInvitees(m.invitees);
-        const occupied = participantCount + acceptedInvites;
+        const occupied = countUniqueMatchOccupants(
+          m.participants,
+          m.invitees,
+        );
 
         const matchId = m.match_id || m.id;
         const isHost = m.host_id === currentUser?.id;
@@ -640,7 +641,6 @@ const TennisMatchApp = () => {
           : match.invitees || [];
 
         const validParticipants = uniqueActiveParticipants(participantsSource);
-        const acceptedInvites = countUniqueAcceptedInvitees(inviteesSource);
         const participantIds = validParticipants
           .map((p) => Number(p.player_id))
           .filter((id) => Number.isFinite(id) && id > 0);
@@ -659,7 +659,10 @@ const TennisMatchApp = () => {
           : match.host_profile?.full_name ||
             match.host_name ||
             (computedHostId ? `Player ${computedHostId}` : "");
-        const occupied = validParticipants.length + acceptedInvites;
+        const occupied = countUniqueMatchOccupants(
+          participantsSource,
+          inviteesSource,
+        );
 
         validParticipants.forEach((p) => {
           const pid = Number(p.player_id);

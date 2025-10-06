@@ -70,6 +70,30 @@ export const uniqueActiveParticipants = (participants = []) =>
 export const countUniqueActiveParticipants = (participants = []) =>
   uniqueActiveParticipants(participants).length;
 
+export const uniqueMatchOccupants = (
+  participants = [],
+  invitees = [],
+) => {
+  const activeParticipants = uniqueActiveParticipants(participants);
+  const acceptedInvitees = uniqueAcceptedInvitees(invitees);
+
+  if (acceptedInvitees.length === 0) {
+    return activeParticipants;
+  }
+
+  if (activeParticipants.length === 0) {
+    return acceptedInvitees;
+  }
+
+  return dedupeByIdentity(
+    [...activeParticipants, ...acceptedInvitees],
+    ["player_id", "invitee_id", "id"],
+  );
+};
+
+export const countUniqueMatchOccupants = (participants = [], invitees = []) =>
+  uniqueMatchOccupants(participants, invitees).length;
+
 export const uniqueInvitees = (invitees = []) => {
   if (!Array.isArray(invitees)) return [];
   return dedupeByIdentity(invitees.filter(Boolean), [

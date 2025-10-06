@@ -16,6 +16,7 @@ import {
 import { joinMatch, removeParticipant } from "../services/matches";
 import { isMatchArchivedError } from "../utils/archive";
 import {
+  countUniqueMatchOccupants,
   idsMatch,
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
@@ -135,8 +136,6 @@ const MatchDetailsModal = ({
     [invitees],
   );
 
-  const acceptedInviteCount = acceptedInvitees.length;
-
   const numericPlayerLimit = useMemo(() => {
     const candidate =
       match?.player_limit ??
@@ -147,8 +146,7 @@ const MatchDetailsModal = ({
     return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
   }, [match]);
 
-  const totalCommitted =
-    committedParticipants.length + acceptedInviteCount;
+  const totalCommitted = countUniqueMatchOccupants(participants, invitees);
 
   const remainingSpots =
     numericPlayerLimit === null
