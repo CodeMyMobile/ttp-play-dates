@@ -35,6 +35,11 @@ const buildIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
   return null;
 };
 
+const hasIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
+  if (!item || typeof item !== "object") return false;
+  return buildIdentity(item, keys) !== null;
+};
+
 export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
   if (!Array.isArray(items) || items.length === 0) {
     return [];
@@ -44,10 +49,9 @@ export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
   for (const item of items) {
     if (!item || typeof item !== "object") continue;
     const identity = buildIdentity(item, keys);
-    if (identity) {
-      if (seen.has(identity)) continue;
-      seen.add(identity);
-    }
+    if (!identity) continue;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     deduped.push(item);
   }
   return deduped;
@@ -55,11 +59,11 @@ export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
 
 export const uniqueParticipants = (participants = []) => {
   if (!Array.isArray(participants)) return [];
-  return dedupeByIdentity(participants.filter(Boolean), [
-    "player_id",
-    "invitee_id",
-    "id",
-  ]);
+  const identityKeys = ["player_id", "invitee_id", "id"];
+  return dedupeByIdentity(
+    participants.filter((participant) => hasIdentity(participant, identityKeys)),
+    identityKeys,
+  );
 };
 
 const isParticipantActive = (participant) => {
@@ -134,11 +138,11 @@ export const countUniqueMatchOccupants = (participants = [], invitees = []) =>
 
 export const uniqueInvitees = (invitees = []) => {
   if (!Array.isArray(invitees)) return [];
-  return dedupeByIdentity(invitees.filter(Boolean), [
-    "invitee_id",
-    "player_id",
-    "id",
-  ]);
+  const identityKeys = ["invitee_id", "player_id", "id"];
+  return dedupeByIdentity(
+    invitees.filter((invite) => hasIdentity(invite, identityKeys)),
+    identityKeys,
+  );
 };
 
 const hasAnyValue = (item, keys = []) => {
@@ -226,11 +230,16 @@ const isInviteActive = (invite) => {
   return true;
 };
 
-export const uniqueAcceptedInvitees = (invitees = []) =>
-  dedupeByIdentity(
-    Array.isArray(invitees) ? invitees.filter(isInviteActive) : [],
-    ["invitee_id", "player_id", "id"],
+export const uniqueAcceptedInvitees = (invitees = []) => {
+  if (!Array.isArray(invitees) || invitees.length === 0) return [];
+  const identityKeys = ["invitee_id", "player_id", "id"];
+  return dedupeByIdentity(
+    invitees.filter(
+      (invite) => hasIdentity(invite, identityKeys) && isInviteActive(invite),
+    ),
+    identityKeys,
   );
+};
 
 export const countUniqueAcceptedInvitees = (invitees = []) =>
   uniqueAcceptedInvitees(invitees).length;
@@ -248,4 +257,72 @@ export const idsMatch = (a, b) => {
   const right = normalizeForComparison(b);
   if (left === null || right === null) return false;
   return left === right;
+};
+
+const pruneItemsByIdentity = (items, memberId) => {
+  if (!Array.isArray(items)) return items;
+  return items.filter((item) => {
+    if (!item || typeof item !== "object") return true;
+    return (
+      !idsMatch(item.player_id, memberId) &&
+      !idsMatch(item.invitee_id, memberId) &&
+      !idsMatch(item.id, memberId)
+    );
+  });
+};
+
+const JOIN_METADATA_KEYS = [
+  "joined_at",
+  "joinedAt",
+  "joined",
+  "joined_on",
+  "joinedOn",
+  "joined_by_player_id",
+  "joinedByPlayerId",
+  "joined_player_id",
+  "joinedPlayerId",
+  "joined_status",
+  "joinedStatus",
+  "is_joined",
+  "isJoined",
+];
+
+const clearJoinMetadata = (target) => {
+  if (!target || typeof target !== "object") return target;
+  for (const key of JOIN_METADATA_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+      delete target[key];
+    }
+  }
+  return target;
+};
+
+const pruneParticipantCollections = (target, memberId, seen) => {
+  if (!target || typeof target !== "object") return target;
+  if (seen.has(target)) return target;
+  seen.add(target);
+
+  const next = clearJoinMetadata({ ...target });
+
+  if (Array.isArray(next.participants)) {
+    next.participants = pruneItemsByIdentity(next.participants, memberId);
+  }
+
+  if (Array.isArray(next.invitees)) {
+    next.invitees = pruneItemsByIdentity(next.invitees, memberId);
+  }
+
+  if (next.match && typeof next.match === "object") {
+    next.match = pruneParticipantCollections(next.match, memberId, seen);
+    clearJoinMetadata(next.match);
+  }
+
+  return next;
+};
+
+export const pruneParticipantFromMatchData = (data, memberId) => {
+  if (memberId === null || memberId === undefined) return data;
+  if (!data || typeof data !== "object") return data;
+  const seen = new WeakSet();
+  return pruneParticipantCollections(data, memberId, seen);
 };
