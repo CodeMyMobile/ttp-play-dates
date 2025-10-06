@@ -62,10 +62,46 @@ export const uniqueParticipants = (participants = []) => {
   ]);
 };
 
+const isParticipantActive = (participant) => {
+  if (!participant || typeof participant !== "object") return false;
+
+  if (participant.is_active === false || participant.active === false) {
+    return false;
+  }
+
+  const statusValue =
+    participant.status ??
+    participant.participant_status ??
+    participant.participantStatus ??
+    "";
+  if (isInactiveStatus(statusValue)) {
+    return false;
+  }
+
+  if (
+    hasAnyValue(participant, [
+      "left_at",
+      "leftAt",
+      "removed_at",
+      "removedAt",
+      "cancelled_at",
+      "cancelledAt",
+      "canceled_at",
+      "canceledAt",
+      "declined_at",
+      "declinedAt",
+      "withdrawn_at",
+      "withdrawnAt",
+    ])
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
 export const uniqueActiveParticipants = (participants = []) =>
-  uniqueParticipants(participants).filter((participant) =>
-    participant?.status ? participant.status !== "left" : true,
-  );
+  uniqueParticipants(participants).filter(isParticipantActive);
 
 export const countUniqueActiveParticipants = (participants = []) =>
   uniqueActiveParticipants(participants).length;
