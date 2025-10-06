@@ -71,6 +71,7 @@ import {
 import {
   countUniqueMatchOccupants,
   idsMatch,
+  pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
 } from "./utils/participants";
@@ -1924,6 +1925,57 @@ const TennisMatchApp = () => {
               onClick={async () => {
                 try {
                   await leaveMatch(matchId);
+                  setMatches((prevMatches) => {
+                    if (!Array.isArray(prevMatches)) return prevMatches;
+                    const updated = [];
+                    for (const match of prevMatches) {
+                      if (!match || match.id !== matchId) {
+                        updated.push(match);
+                        continue;
+                      }
+                      const pruned = pruneParticipantFromMatchData(
+                        match,
+                        currentUser?.id,
+                      );
+                      const participants = Array.isArray(pruned?.participants)
+                        ? pruned.participants
+                        : Array.isArray(match.participants)
+                        ? match.participants
+                        : [];
+                      const invitees = Array.isArray(pruned?.invitees)
+                        ? pruned.invitees
+                        : Array.isArray(match.invitees)
+                        ? match.invitees
+                        : [];
+                      const occupied = countUniqueMatchOccupants(
+                        participants,
+                        invitees,
+                      );
+                      const playerLimit = Number.isFinite(match.playerLimit)
+                        ? match.playerLimit
+                        : Number.isFinite(pruned?.playerLimit)
+                        ? pruned.playerLimit
+                        : null;
+                      const spotsAvailable =
+                        playerLimit !== null
+                          ? Math.max(playerLimit - occupied, 0)
+                          : pruned?.spotsAvailable ??
+                            match.spotsAvailable ??
+                            null;
+                      const nextMatch = {
+                        ...match,
+                        ...pruned,
+                        type: match.type === "hosted" ? "hosted" : "available",
+                        occupied,
+                        spotsAvailable,
+                      };
+                      if (activeFilter === "joined" && nextMatch.type !== "hosted") {
+                        continue;
+                      }
+                      updated.push(nextMatch);
+                    }
+                    return updated;
+                  });
                   displayToast("Left match");
                   onClose();
                   fetchMatches();

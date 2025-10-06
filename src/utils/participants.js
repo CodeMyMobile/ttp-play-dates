@@ -249,3 +249,44 @@ export const idsMatch = (a, b) => {
   if (left === null || right === null) return false;
   return left === right;
 };
+
+const pruneItemsByIdentity = (items, memberId) => {
+  if (!Array.isArray(items)) return items;
+  return items.filter((item) => {
+    if (!item || typeof item !== "object") return true;
+    return (
+      !idsMatch(item.player_id, memberId) &&
+      !idsMatch(item.invitee_id, memberId) &&
+      !idsMatch(item.id, memberId)
+    );
+  });
+};
+
+const pruneParticipantCollections = (target, memberId, seen) => {
+  if (!target || typeof target !== "object") return target;
+  if (seen.has(target)) return target;
+  seen.add(target);
+
+  const next = { ...target };
+
+  if (Array.isArray(next.participants)) {
+    next.participants = pruneItemsByIdentity(next.participants, memberId);
+  }
+
+  if (Array.isArray(next.invitees)) {
+    next.invitees = pruneItemsByIdentity(next.invitees, memberId);
+  }
+
+  if (next.match && typeof next.match === "object") {
+    next.match = pruneParticipantCollections(next.match, memberId, seen);
+  }
+
+  return next;
+};
+
+export const pruneParticipantFromMatchData = (data, memberId) => {
+  if (memberId === null || memberId === undefined) return data;
+  if (!data || typeof data !== "object") return data;
+  const seen = new WeakSet();
+  return pruneParticipantCollections(data, memberId, seen);
+};
