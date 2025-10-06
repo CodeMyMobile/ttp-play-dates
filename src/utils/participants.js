@@ -69,12 +69,14 @@ const isParticipantActive = (participant) => {
     return false;
   }
 
-  const statusValue =
-    participant.status ??
-    participant.participant_status ??
-    participant.participantStatus ??
-    "";
-  if (isInactiveStatus(statusValue)) {
+  const statusCandidates = [
+    participant.status,
+    participant.participant_status,
+    participant.participantStatus,
+    participant.status_reason,
+    participant.statusReason,
+  ];
+  if (statusCandidates.some((value) => isInactiveStatus(value))) {
     return false;
   }
 
