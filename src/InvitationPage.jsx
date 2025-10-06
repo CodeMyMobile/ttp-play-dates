@@ -485,8 +485,9 @@ export default function InvitationPage() {
       : preview?.inviter
         ? [{ profile: { full_name: preview.inviter.full_name } }]
         : [];
-  const effectivePlayers =
-    occupancyFromMatch ?? (participants.length ? participants.length : null);
+  const effectivePlayers = participants.length
+    ? participants.length
+    : occupancyFromMatch ?? null;
   const occupancyLabel = playerLimit
     ? `${effectivePlayers ?? avatarPlayers.length}/${playerLimit}`
     : effectivePlayers ?? avatarPlayers.length
