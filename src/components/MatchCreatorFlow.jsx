@@ -330,8 +330,25 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
   const combineDateTime = useCallback(() => {
     if (!matchData.date || !matchData.startTime) return null;
-    const iso = `${matchData.date}T${matchData.startTime}:00`;
-    const date = new Date(iso);
+
+    const [yearStr, monthStr, dayStr] = matchData.date.split("-");
+    const [hourStr, minuteStr] = matchData.startTime.split(":");
+
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    const day = Number(dayStr);
+    const hour = Number(hourStr);
+    const minute = Number(minuteStr);
+
+    if (
+      [year, month, day, hour, minute].some(
+        (value) => !Number.isFinite(value),
+      )
+    ) {
+      return null;
+    }
+
+    const date = new Date(year, month - 1, day, hour, minute, 0, 0);
     if (Number.isNaN(date.getTime())) return null;
     return formatWithOffset(date);
   }, [matchData.date, matchData.startTime]);
