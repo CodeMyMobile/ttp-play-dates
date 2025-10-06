@@ -1,19 +1,28 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Calendar,
   Check,
   CheckCircle2,
   ClipboardList,
+  Copy,
   FileText,
+  Mail,
   MapPin,
   MessageCircle,
+  Send,
+  Share2,
   Sparkles,
   Trophy,
   Users,
   X,
 } from "lucide-react";
-import { joinMatch, leaveMatch, removeParticipant } from "../services/matches";
+import {
+  getShareLink,
+  joinMatch,
+  leaveMatch,
+  removeParticipant,
+} from "../services/matches";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
@@ -93,6 +102,20 @@ const MatchDetailsModal = ({
   const [joining, setJoining] = useState(false);
   const [removingParticipantId, setRemovingParticipantId] = useState(null);
   const [leaving, setLeaving] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
+  const shareCopyTimeoutRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      if (shareCopyTimeoutRef.current) {
+        clearTimeout(shareCopyTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const match = matchData?.match || null;
   const participants = useMemo(() => {
@@ -174,6 +197,53 @@ const MatchDetailsModal = ({
   const isOpenMatch = match?.privacy !== "private";
   const isFull = remainingSpots === 0;
 
+  const requestShareLink = useCallback(
+    async ({ silent = false, signal } = {}) => {
+      if (!match?.id || !isOpenMatch) return;
+      setShareLoading(true);
+      setShareError("");
+      setShareCopied(false);
+      try {
+        const { shareUrl } = await getShareLink(match.id);
+        if (signal?.aborted) return;
+        setShareLink(shareUrl || "");
+      } catch (error) {
+        if (signal?.aborted) return;
+        console.error(error);
+        setShareLink("");
+        const message =
+          error?.response?.data?.message ||
+          "We couldn't generate a share link. Try again.";
+        setShareError(message);
+        if (!silent) {
+          onToast?.(message, "error");
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setShareLoading(false);
+        }
+      }
+    },
+    [isOpenMatch, match?.id, onToast],
+  );
+
+  useEffect(() => {
+    if (!isOpen || !isOpenMatch || !match?.id) {
+      setShareLink("");
+      setShareError("");
+      setShareLoading(false);
+      setShareCopied(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    requestShareLink({ silent: true, signal: controller.signal });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isOpen, isOpenMatch, match?.id, requestShareLink]);
+
   useEffect(() => {
     if (!isOpen) {
       setStatus("details");
@@ -240,6 +310,103 @@ const MatchDetailsModal = ({
         end: endDate || startDate,
       }
     : null;
+
+  const shareDateTimeLabel = useMemo(() => {
+    if (!startDate) return null;
+    return formatDateTime
+      ? formatDateTime(startDate)
+      : startDate.toLocaleString();
+  }, [formatDateTime, startDate]);
+
+  const shareMatchLabel = useMemo(
+    () => match?.match_format || match?.format || "Tennis match",
+    [match?.format, match?.match_format],
+  );
+
+  const shareMessage = useMemo(() => {
+    if (!isOpenMatch) return "";
+    const parts = [`Join me for a ${shareMatchLabel}!`];
+    if (shareDateTimeLabel) parts.push(`When: ${shareDateTimeLabel}`);
+    if (match?.location_text || match?.location) {
+      parts.push(`Where: ${match.location_text || match.location}`);
+    }
+    if (hostName) parts.push(`Host: ${hostName}`);
+    if (Number.isFinite(remainingSpots) && remainingSpots > 0) {
+      parts.push(`Spots remaining: ${remainingSpots}`);
+    }
+    if (shareLink) parts.push(`Join here: ${shareLink}`);
+    return parts.join("\n");
+  }, [
+    hostName,
+    isOpenMatch,
+    match?.location,
+    match?.location_text,
+    remainingSpots,
+    shareDateTimeLabel,
+    shareLink,
+    shareMatchLabel,
+  ]);
+
+  const shareEmailSubject = useMemo(() => {
+    const base = shareMatchLabel || "Tennis Match";
+    if (!shareDateTimeLabel) return `${base} Invite`;
+    return `${base} – ${shareDateTimeLabel}`;
+  }, [shareDateTimeLabel, shareMatchLabel]);
+
+  const shareLinkReady = !!shareLink && !shareLoading;
+
+  const handleCopyShareLink = async () => {
+    if (!shareLinkReady) return;
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(shareLink);
+      setShareCopied(true);
+      onToast?.("Share link copied!");
+      if (shareCopyTimeoutRef.current) {
+        clearTimeout(shareCopyTimeoutRef.current);
+      }
+      shareCopyTimeoutRef.current = setTimeout(() => {
+        setShareCopied(false);
+        shareCopyTimeoutRef.current = null;
+      }, 2000);
+    } catch (error) {
+      console.error(error);
+      setShareCopied(false);
+      onToast?.("We couldn't copy the link", "error");
+    }
+  };
+
+  const handleShareSms = () => {
+    if (!shareLinkReady) return;
+    const body = encodeURIComponent(shareMessage);
+    const url = `sms:?&body=${body}`;
+    onToast?.("Opening messages...");
+    window.location.href = url;
+  };
+
+  const handleShareWhatsApp = () => {
+    if (!shareLinkReady) return;
+    const text = encodeURIComponent(shareMessage);
+    const url = `https://wa.me/?text=${text}`;
+    onToast?.("Opening WhatsApp...");
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleShareEmail = () => {
+    if (!shareLinkReady) return;
+    const subject = encodeURIComponent(shareEmailSubject);
+    const body = encodeURIComponent(shareMessage);
+    const url = `mailto:?subject=${subject}&body=${body}`;
+    onToast?.("Opening email...");
+    window.location.href = url;
+  };
+
+  const handleRefreshShareLink = () => {
+    if (shareLoading || !isOpenMatch || !match?.id) return;
+    requestShareLink({ silent: false });
+  };
 
   const matchDistanceLabel = useMemo(
     () =>
@@ -649,6 +816,79 @@ const MatchDetailsModal = ({
             </div>
             {renderPlayers()}
           </section>
+
+          {isOpenMatch && !isArchived && !isCancelled && (
+            <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+              <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
+                <Share2 className="h-4 w-4" />
+                Invite other players
+              </div>
+              <p className="text-xs font-semibold text-emerald-700">
+                Share this match link with tennis friends so they can grab a spot before it fills up.
+              </p>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-gray-600">
+                  <span className="flex-1 truncate font-mono text-gray-700">
+                    {shareLoading
+                      ? "Generating share link..."
+                      : shareLinkReady
+                      ? shareLink
+                      : "Share link unavailable"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={shareLinkReady ? handleCopyShareLink : handleRefreshShareLink}
+                    disabled={shareLoading || (!shareLinkReady && !shareError)}
+                    className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {shareCopied ? "Copied!" : shareLinkReady ? "Copy" : "Retry"}
+                  </button>
+                </div>
+                {!shareLoading && shareError && (
+                  <div className="flex items-start justify-between gap-2 text-xs font-semibold text-rose-600">
+                    <span className="flex-1">{shareError}</span>
+                    <button
+                      type="button"
+                      onClick={handleRefreshShareLink}
+                      className="text-rose-600 underline-offset-2 hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={handleShareSms}
+                  disabled={!shareLinkReady}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Text link
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareWhatsApp}
+                  disabled={!shareLinkReady}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Send className="h-4 w-4" />
+                  WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareEmail}
+                  disabled={!shareLinkReady}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Mail className="h-4 w-4" />
+                  Email invite
+                </button>
+              </div>
+            </section>
+          )}
 
           {match.notes && (
             <section className="rounded-2xl border border-gray-100 bg-white p-4">
