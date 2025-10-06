@@ -144,7 +144,7 @@ export default function InvitationPage() {
               title: "Match archived",
               message: "This match has been archived. You can review the details but no actions are available.",
             });
-          } catch (archErr) {
+          } catch {
             setPreview(null);
             setLoadError({
               emoji: "🗂️",

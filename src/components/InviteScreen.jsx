@@ -119,7 +119,7 @@ const InviteScreen = ({
     return () => {
       alive = false;
     };
-  }, [matchId]);
+  }, [matchId, onToast]);
 
   useEffect(() => {
     if (searchTerm === "" || searchTerm.length >= 2) {
