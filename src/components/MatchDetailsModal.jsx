@@ -16,6 +16,13 @@ import {
 import { joinMatch, removeParticipant } from "../services/matches";
 import { isMatchArchivedError } from "../utils/archive";
 import {
+  countUniqueMatchOccupants,
+  idsMatch,
+  uniqueAcceptedInvitees,
+  uniqueActiveParticipants,
+  uniqueParticipants,
+} from "../utils/participants";
+import {
   DEFAULT_EVENT_DURATION_MINUTES,
   downloadICSFile,
   ensureEventEnd,
@@ -88,8 +95,12 @@ const MatchDetailsModal = ({
 
   const match = matchData?.match || null;
   const participants = useMemo(() => {
-    if (Array.isArray(matchData?.participants)) return matchData.participants;
-    if (Array.isArray(match?.participants)) return match.participants;
+    if (Array.isArray(matchData?.participants)) {
+      return uniqueParticipants(matchData.participants);
+    }
+    if (Array.isArray(match?.participants)) {
+      return uniqueParticipants(match.participants);
+    }
     return [];
   }, [matchData, match]);
   const invitees = useMemo(() => {
@@ -100,7 +111,9 @@ const MatchDetailsModal = ({
 
   const hostParticipant = useMemo(() => {
     if (!match?.host_id) return null;
-    return participants.find((p) => p.player_id === match.host_id) || null;
+    return (
+      participants.find((p) => idsMatch(p.player_id, match.host_id)) || null
+    );
   }, [match?.host_id, participants]);
 
   const hostProfile = match?.host_profile || hostParticipant?.profile || null;
@@ -114,12 +127,12 @@ const MatchDetailsModal = ({
   const hostAvatar = hostProfile?.avatar_url || hostProfile?.avatar || null;
 
   const committedParticipants = useMemo(
-    () => participants.filter((p) => p.status !== "left"),
+    () => uniqueActiveParticipants(participants),
     [participants],
   );
 
-  const acceptedInviteCount = useMemo(
-    () => invitees.filter((invite) => invite.status === "accepted").length,
+  const acceptedInvitees = useMemo(
+    () => uniqueAcceptedInvitees(invitees),
     [invitees],
   );
 
@@ -133,20 +146,24 @@ const MatchDetailsModal = ({
     return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
   }, [match]);
 
-  const totalCommitted =
-    committedParticipants.length + acceptedInviteCount;
+  const totalCommitted = countUniqueMatchOccupants(participants, invitees);
 
   const remainingSpots =
     numericPlayerLimit === null
       ? null
       : Math.max(numericPlayerLimit - totalCommitted, 0);
 
-  const isHost = currentUser?.id && currentUser.id === match?.host_id;
-  const isParticipant = committedParticipants.some(
-    (p) => p.player_id === currentUser?.id,
+  const isHost =
+    currentUser?.id && match?.host_id
+      ? idsMatch(currentUser.id, match.host_id)
+      : false;
+  const isParticipant = committedParticipants.some((p) =>
+    idsMatch(p.player_id, currentUser?.id),
   );
-  const hasAcceptedInvite = invitees.some(
-    (invite) => invite.invitee_id === currentUser?.id && invite.status === "accepted",
+  const hasAcceptedInvite = acceptedInvitees.some(
+    (invite) =>
+      idsMatch(invite.invitee_id, currentUser?.id) ||
+      idsMatch(invite.player_id, currentUser?.id),
   );
   const isJoined = isHost || isParticipant || hasAcceptedInvite;
 
