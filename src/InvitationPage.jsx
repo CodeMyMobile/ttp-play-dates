@@ -20,6 +20,7 @@ import {
   claimInvite,
 } from "./services/invites";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
+import { uniqueActiveParticipants } from "./utils/participants";
 import Header from "./components/Header.jsx";
 
 export default function InvitationPage() {
@@ -1195,7 +1196,7 @@ function getActiveParticipants(match, preview) {
     ? preview.participants
     : [];
   const source = fromMatch.length ? fromMatch : fromPreview;
-  return source.filter((p) => p && p.status !== "left");
+  return uniqueActiveParticipants(source);
 }
 
 function participantDisplayName(participant) {

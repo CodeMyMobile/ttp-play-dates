@@ -68,6 +68,11 @@ import {
   MATCH_ARCHIVED_ERROR,
   isMatchArchivedError,
 } from "./utils/archive";
+import {
+  countUniqueAcceptedInvitees,
+  idsMatch,
+  uniqueActiveParticipants,
+} from "./utils/participants";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -429,12 +434,9 @@ const TennisMatchApp = () => {
       setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
       let transformed = rawMatches.map((m) => {
-        const participantCount = (m.participants || []).filter(
-          (p) => p.status !== "left",
-        ).length;
-        const acceptedInvites = (m.invitees || []).filter(
-          (i) => i.status === "accepted",
-        ).length;
+        const activeParticipants = uniqueActiveParticipants(m.participants);
+        const participantCount = activeParticipants.length;
+        const acceptedInvites = countUniqueAcceptedInvitees(m.invitees);
         const occupied = participantCount + acceptedInvites;
 
         const matchId = m.match_id || m.id;
@@ -442,8 +444,8 @@ const TennisMatchApp = () => {
         const isJoined =
           !isHost &&
           (m.joined_at ||
-            (m.participants || []).some(
-              (p) => p.player_id === currentUser?.id && p.status !== "left",
+            activeParticipants.some((p) =>
+              idsMatch(p.player_id, currentUser?.id),
             ));
 
         return {
@@ -637,12 +639,8 @@ const TennisMatchApp = () => {
           ? data.invitees
           : match.invitees || [];
 
-        const validParticipants = participantsSource.filter(
-          (p) => p && p.status !== "left",
-        );
-        const acceptedInvites = inviteesSource.filter(
-          (i) => i && i.status === "accepted",
-        ).length;
+        const validParticipants = uniqueActiveParticipants(participantsSource);
+        const acceptedInvites = countUniqueAcceptedInvitees(inviteesSource);
         const participantIds = validParticipants
           .map((p) => Number(p.player_id))
           .filter((id) => Number.isFinite(id) && id > 0);
@@ -2752,7 +2750,7 @@ const TennisMatchApp = () => {
             onToast("This match has been archived. Invites are read-only.", "error");
             return;
           }
-          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+          setParticipants(uniqueActiveParticipants(data.participants));
           setHostId(data.match?.host_id ?? null);
         } catch (error) {
           console.error(error);
@@ -2816,9 +2814,11 @@ const TennisMatchApp = () => {
     const handleRemoveParticipant = async (playerId) => {
       if (!matchId) return;
       if (!window.confirm("Remove this participant from the match?")) return;
-      try {
-        await removeParticipant(matchId, playerId);
-        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        try {
+          await removeParticipant(matchId, playerId);
+          setParticipants((prev) =>
+            prev.filter((p) => !idsMatch(p.player_id, playerId)),
+          );
         setExistingPlayerIds((prev) => {
           const next = new Set([...prev]);
           next.delete(playerId);
@@ -4012,7 +4012,7 @@ const TennisMatchApp = () => {
             setRemoveErr("This match has been archived.");
             return;
           }
-          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+          setParticipants(uniqueActiveParticipants(data.participants));
           setHostId(data.match?.host_id ?? null);
         } catch (error) {
           console.error(error);
@@ -4028,14 +4028,17 @@ const TennisMatchApp = () => {
       };
     }, [isOpen, matchId]);
 
-    const isHost = currentUser?.id && hostId && currentUser.id === hostId;
+    const isHost =
+      currentUser?.id && hostId ? idsMatch(currentUser.id, hostId) : false;
 
     const handleRemoveParticipant = async (playerId) => {
       if (!matchId) return;
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
         await removeParticipant(matchId, playerId);
-        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        setParticipants((prev) =>
+          prev.filter((p) => !idsMatch(p.player_id, playerId)),
+        );
         setRemoveErr("");
       } catch (error) {
         console.error(error);
@@ -4074,14 +4077,19 @@ const TennisMatchApp = () => {
               {participants.length ? (
                 <ul className="divide-y divide-gray-100 border rounded-xl">
                   {participants.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between px-3 py-2 text-sm"
+                    >
                       <span className="text-gray-800">
                         {p.profile?.full_name || `Player ${p.player_id}`}
-                        {p.player_id === hostId && (
-                          <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                        {idsMatch(p.player_id, hostId) && (
+                          <span className="ml-2 text-blue-700 text-xs font-bold">
+                            Host
+                          </span>
                         )}
                       </span>
-                      {isHost && p.player_id !== hostId ? (
+                      {isHost && !idsMatch(p.player_id, hostId) ? (
                         <button
                           onClick={() => handleRemoveParticipant(p.player_id)}
                           className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
@@ -4136,7 +4144,7 @@ const TennisMatchApp = () => {
             setRemoveErr("This match has been archived.");
             return;
           }
-          setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+          setParticipants(uniqueActiveParticipants(data.participants));
           setHostId(data.match?.host_id ?? null);
         } catch (error) {
           console.error(error);
@@ -4153,14 +4161,17 @@ const TennisMatchApp = () => {
       };
     }, [isOpen, matchToEdit?.id]);
 
-    const isHost = currentUser?.id && hostId && currentUser.id === hostId;
+    const isHost =
+      currentUser?.id && hostId ? idsMatch(currentUser.id, hostId) : false;
 
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
       try {
         if (!matchToEdit?.id) return;
         await removeParticipant(matchToEdit.id, playerId);
-        setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+        setParticipants((prev) =>
+          prev.filter((p) => !idsMatch(p.player_id, playerId)),
+        );
         setRemoveErr("");
       } catch (error) {
         console.error(error);
@@ -4326,14 +4337,19 @@ const TennisMatchApp = () => {
                 ) : participants.length ? (
                   <ul className="divide-y divide-gray-100 border rounded-xl">
                     {participants.map((p) => (
-                      <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <li
+                        key={p.id}
+                        className="flex items-center justify-between px-3 py-2 text-sm"
+                      >
                         <span className="text-gray-800">
                           {p.profile?.full_name || `Player ${p.player_id}`}
-                          {p.player_id === hostId && (
-                            <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                          {idsMatch(p.player_id, hostId) && (
+                            <span className="ml-2 text-blue-700 text-xs font-bold">
+                              Host
+                            </span>
                           )}
                         </span>
-                        {p.player_id !== hostId && (
+                        {!idsMatch(p.player_id, hostId) && (
                           <button
                             onClick={() => handleRemoveParticipant(p.player_id)}
                             className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"

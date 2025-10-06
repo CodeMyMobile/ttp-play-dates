@@ -19,6 +19,7 @@ import {
   sendInvites,
 } from "../services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
+import { idsMatch, uniqueActiveParticipants } from "../utils/participants";
 
 const InviteScreen = ({
   matchId,
@@ -99,7 +100,7 @@ const InviteScreen = ({
           onToast("This match has been archived. Invites are read-only.", "error");
           return;
         }
-        setParticipants((data.participants || []).filter((p) => p.status !== "left"));
+        setParticipants(uniqueActiveParticipants(data.participants));
         setHostId(data.match?.host_id ?? null);
       } catch (error) {
         console.error(error);
@@ -158,13 +159,8 @@ const InviteScreen = ({
 
   const canRemove = (pid) => {
     const host = hostId ?? currentUser?.id;
-    return (
-      !isArchived &&
-      currentUser?.id &&
-      host &&
-      currentUser.id === host &&
-      pid !== host
-    );
+    if (!host || !currentUser?.id || isArchived) return false;
+    return idsMatch(currentUser.id, host) && !idsMatch(pid, host);
   };
 
   const handleRemoveParticipant = async (playerId) => {
@@ -176,7 +172,9 @@ const InviteScreen = ({
     }
     try {
       await removeParticipant(matchId, playerId);
-      setParticipants((prev) => prev.filter((p) => p.player_id !== playerId));
+      setParticipants((prev) =>
+        prev.filter((p) => !idsMatch(p.player_id, playerId)),
+      );
       setExistingPlayerIds((prev) => {
         const next = new Set([...prev]);
         next.delete(playerId);

@@ -5,6 +5,7 @@ import { getMatch, removeParticipant } from "../services/matches";
 import { Calendar, MapPin, Users, ClipboardList, FileText, X } from "lucide-react";
 import Header from "../components/Header.jsx";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
+import { idsMatch, uniqueActiveParticipants } from "../utils/participants";
 
 export default function MatchPage() {
   const { id } = useParams();
@@ -65,7 +66,9 @@ export default function MatchPage() {
       await removeParticipant(data.match.id, playerId);
       setData({
         ...data,
-        participants: data.participants.filter((p) => p.player_id !== playerId),
+        participants: (data.participants || []).filter(
+          (p) => !idsMatch(p.player_id, playerId),
+        ),
       });
     } catch (error) {
       if (isMatchArchivedError(error)) {
@@ -97,8 +100,9 @@ export default function MatchPage() {
       </>
     );
 
-  const { match, participants = [] } = data;
-  const isHost = currentUser?.id === match.host_id;
+  const match = data.match;
+  const participants = uniqueActiveParticipants(data.participants || []);
+  const isHost = idsMatch(currentUser?.id, match.host_id);
 
   return (
     <>
