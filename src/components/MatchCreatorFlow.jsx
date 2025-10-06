@@ -36,13 +36,30 @@ import { downloadICSFile, openGoogleCalendar, openOutlookCalendar } from "../uti
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
 
+const pad = (value) => String(value).padStart(2, "0");
+
+const formatLocalDate = (date) =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+const formatLocalTime = (date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+const formatWithOffset = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  const offsetMinutes = date.getTimezoneOffset();
+  const sign = offsetMinutes > 0 ? "-" : "+";
+  const absMinutes = Math.abs(offsetMinutes);
+  const offsetHours = pad(Math.floor(absMinutes / 60));
+  const offsetMins = pad(absMinutes % 60);
+  return `${formatLocalDate(date)}T${formatLocalTime(date)}:${pad(date.getSeconds())}${sign}${offsetHours}:${offsetMins}`;
+};
+
 const defaultDateInfo = () => {
   const base = new Date();
   base.setDate(base.getDate() + 1);
   base.setHours(18, 0, 0, 0);
   return {
-    date: base.toISOString().slice(0, 10),
-    time: base.toISOString().slice(11, 16),
+    date: formatLocalDate(base),
+    time: formatLocalTime(base),
   };
 };
 
@@ -316,7 +333,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     const iso = `${matchData.date}T${matchData.startTime}:00`;
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return null;
-    return date.toISOString();
+    return formatWithOffset(date);
   }, [matchData.date, matchData.startTime]);
 
   const handleTimeChange = useCallback(
