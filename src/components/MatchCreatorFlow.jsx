@@ -31,6 +31,7 @@ import {
   searchPlayers,
   sendInvites,
 } from "../services/matches";
+import { downloadICSFile, openGoogleCalendar, openOutlookCalendar } from "../utils/calendar";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -136,24 +137,6 @@ const formatDateDisplay = (dateStr) => {
     day: "numeric",
   });
 };
-
-const padCalendarPart = (value) => String(value).padStart(2, "0");
-
-const toUtcCalendarStamp = (date) =>
-  date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
-const toLocalCalendarStamp = (date) =>
-  [
-    date.getFullYear(),
-    padCalendarPart(date.getMonth() + 1),
-    padCalendarPart(date.getDate()),
-  ].join("") +
-  "T" +
-  [
-    padCalendarPart(date.getHours()),
-    padCalendarPart(date.getMinutes()),
-    padCalendarPart(date.getSeconds()),
-  ].join("");
 
 const formatRelativeDate = (isoValue) => {
   if (!isoValue) return "Recently active";
@@ -555,6 +538,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       showToast("Add match details first", "error");
       return;
     }
+
     const start = new Date(isoStart);
     const durationHours = parseFloat(matchData.duration || "1");
     const end = new Date(start.getTime() + durationHours * HOURS_IN_MS);
@@ -565,42 +549,28 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     }
     if (matchData.notes) description += ` ${matchData.notes}`;
 
-    if (type === "google") {
-      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
-        title,
-      )}&dates=${toLocalCalendarStamp(start)}/${toLocalCalendarStamp(end)}&details=${encodeURIComponent(
-        description,
-      )}&location=${encodeURIComponent(matchData.location)}`;
-      window.open(url, "_blank");
-      return;
+    const details = {
+      title,
+      description,
+      location: matchData.location,
+      start,
+      end,
+    };
+
+    try {
+      if (type === "google") {
+        openGoogleCalendar(details);
+        return;
+      }
+      if (type === "outlook") {
+        openOutlookCalendar(details);
+        return;
+      }
+      downloadICSFile(details);
+    } catch (error) {
+      console.error(error);
+      showToast("Unable to open calendar. Please try again.", "error");
     }
-
-    const ics = [
-      "BEGIN:VCALENDAR",
-      "VERSION:2.0",
-      "PRODID:-//Matchplay//Match Creator//EN",
-      "CALSCALE:GREGORIAN",
-      "BEGIN:VEVENT",
-      `DTSTAMP:${toUtcCalendarStamp(new Date())}`,
-      `DTSTART:${toLocalCalendarStamp(start)}`,
-      `DTEND:${toLocalCalendarStamp(end)}`,
-      `SUMMARY:${title}`,
-      `DESCRIPTION:${description.replace(/\n/g, "\\n")}`,
-      `LOCATION:${matchData.location}`,
-      `UID:match-${Date.now()}@matchplay`,
-      "END:VEVENT",
-      "END:VCALENDAR",
-    ].join("\n");
-
-    const blob = new Blob([ics], { type: "text/calendar" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "tennis-match.ics";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const goBackToHome = () => {

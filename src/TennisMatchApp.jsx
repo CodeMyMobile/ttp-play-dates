@@ -57,12 +57,11 @@ import {
   Activity,
   Sparkles,
   Target,
-  ClipboardList,
-  FileText,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
+import MatchDetailsModal from "./components/MatchDetailsModal";
 import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
 import {
   ARCHIVE_FILTER_VALUE,
@@ -218,6 +217,8 @@ const TennisMatchApp = () => {
   const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
   const [viewMatch, setViewMatch] = useState(null);
+  const [showMatchDetailsModal, setShowMatchDetailsModal] = useState(false);
+  const [matchDetailsOrigin, setMatchDetailsOrigin] = useState("browse");
   const [pendingInvites, setPendingInvites] = useState([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState("");
@@ -320,6 +321,7 @@ const TennisMatchApp = () => {
       setInvitesLoading(false);
     }
   }, [currentUser]);
+
 
   const detectCurrentLocation = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -530,6 +532,10 @@ const TennisMatchApp = () => {
     fetchPendingInvites();
   }, [fetchPendingInvites]);
 
+  const refreshMatchesAndInvites = useCallback(async () => {
+    await Promise.all([fetchMatches(), fetchPendingInvites()]);
+  }, [fetchMatches, fetchPendingInvites]);
+
   const respondToInvite = useCallback(
     async (token, action) => {
       if (!token) return;
@@ -581,6 +587,19 @@ const TennisMatchApp = () => {
       navigate("/invites");
     }
   }, [location.pathname, navigate]);
+
+  const closeMatchDetailsModal = useCallback(() => {
+    setShowMatchDetailsModal(false);
+    setViewMatch(null);
+    if (matchDetailsOrigin === "browse") {
+      goToBrowse({ replace: true });
+    } else if (matchDetailsOrigin === "invites") {
+      goToInvites();
+    } else if (matchDetailsOrigin === "create") {
+      setCurrentScreen("create");
+    }
+    setMatchDetailsOrigin("browse");
+  }, [goToBrowse, goToInvites, matchDetailsOrigin]);
 
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
@@ -753,9 +772,9 @@ const TennisMatchApp = () => {
     }
 
     lastInviteLoadRef.current = null;
-    // Do not override other in-app screens (e.g., details/create) when the URL
+    // Do not override other in-app screens (e.g., create) when the URL
     // doesn't explicitly target a special route.
-    if (currentScreen !== "browse" && currentScreen !== "details" && currentScreen !== "create") {
+    if (currentScreen !== "browse" && currentScreen !== "create") {
       setCurrentScreen("browse");
     }
   }, [currentScreen, location.pathname, openInviteScreen]);
@@ -821,8 +840,9 @@ const TennisMatchApp = () => {
             try {
               const data = await fetchMatchDetailsWithArchivedFallback(matchId);
               if (data) {
+                setMatchDetailsOrigin("browse");
                 setViewMatch(data);
-                setCurrentScreen("details");
+                setShowMatchDetailsModal(true);
               }
             } catch (error) {
               if (!isMatchArchivedError(error)) {
@@ -851,8 +871,9 @@ const TennisMatchApp = () => {
       if ((data.match || {}).status === "archived" && activeFilter !== "archived") {
         setActiveFilter("archived");
       }
+      setMatchDetailsOrigin(currentScreen);
       setViewMatch(data);
-      setCurrentScreen("details");
+      setShowMatchDetailsModal(true);
     } catch (err) {
       if (isMatchArchivedError(err)) {
         displayToast("This match has been archived.", "error");
@@ -2750,7 +2771,7 @@ const TennisMatchApp = () => {
       return () => {
         alive = false;
       };
-    }, [matchId]);
+    }, [matchId, onToast]);
 
     useEffect(() => {
       if (searchTerm === "" || searchTerm.length >= 2) {
@@ -3297,257 +3318,6 @@ const TennisMatchApp = () => {
                 {totalSelectedInvitees > 0 && ` (${totalSelectedInvitees})`}
               </button>
             </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const MatchDetailsScreen = () => {
-    const [joining, setJoining] = useState(false);
-    const matchData = viewMatch;
-    if (!matchData) return null;
-    const { match, participants = [], invitees = [] } = matchData;
-    const isHost = currentUser?.id === match.host_id;
-    const isJoined = participants.some(
-      (p) => p.player_id === currentUser?.id && p.status !== "left",
-    );
-    const isArchived = match.status === "archived";
-    const committedParticipants = participants.filter((p) => p.status !== "left");
-    const acceptedInviteCount = invitees.filter((i) => i.status === "accepted").length;
-    const totalCommitted = committedParticipants.length + acceptedInviteCount;
-    const numericPlayerLimit =
-      typeof match.player_limit === "number"
-        ? match.player_limit
-        : Number.parseInt(match.player_limit, 10);
-    const remainingSpots = Number.isFinite(numericPlayerLimit)
-      ? Math.max(numericPlayerLimit - totalCommitted, 0)
-      : null;
-    const canJoin =
-      !isHost &&
-      !isJoined &&
-      !isArchived &&
-      match.status === "upcoming" &&
-      (remainingSpots === null || remainingSpots > 0);
-
-    const handleRemoveParticipant = async (playerId) => {
-      if (isArchived) {
-        displayToast("Archived matches cannot be edited", "error");
-        return;
-      }
-      if (!window.confirm("Remove this participant from the match?")) return;
-      try {
-        await removeParticipant(match.id, playerId);
-        setViewMatch({
-          ...viewMatch,
-          participants: participants.filter((p) => p.player_id !== playerId),
-        });
-        displayToast("Participant removed");
-        fetchMatches();
-      } catch (error) {
-        if (isMatchArchivedError(error)) {
-          displayToast(
-            "This match has been archived. Participants can no longer be managed.",
-            "error",
-          );
-          fetchMatches();
-        } else {
-          displayToast("Failed to remove participant", "error");
-        }
-      }
-    };
-
-    const handleJoinMatch = async () => {
-      if (!currentUser) {
-        setShowSignInModal(true);
-        return;
-      }
-
-      try {
-        setJoining(true);
-        await joinMatch(match.id);
-        displayToast("You're in! Match details updated. 🎾");
-        fetchMatches();
-        fetchPendingInvites();
-        const updated = await fetchMatchDetails(match.id, { includeArchived: false });
-        setViewMatch(updated);
-      } catch (err) {
-        if (isMatchArchivedError(err)) {
-          displayToast("This match has been archived. You can't join.", "error");
-          fetchMatches();
-        } else {
-          displayToast(
-            err?.response?.data?.message || err?.message || "Failed to join match",
-            "error",
-          );
-        }
-      } finally {
-        setJoining(false);
-      }
-    };
-
-    return (
-      <div className="max-w-2xl mx-auto p-4">
-        <div className="bg-white rounded-xl shadow p-6">
-          <button
-            onClick={() => {
-              setViewMatch(null);
-              goToBrowse();
-            }}
-            className="mb-4 flex items-center text-sm font-bold text-gray-600 hover:text-gray-800"
-          >
-            <ChevronLeft className="w-4 h-4 mr-1" /> Back
-          </button>
-          <h2 className="text-2xl font-black mb-2">Match Details</h2>
-          {match?.status === "cancelled" && (
-            <div className="mb-4">
-              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
-                CANCELLED
-              </span>
-            </div>
-          )}
-          {isArchived && (
-            <div className="mb-4">
-              <span className="inline-block px-3 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300 rounded-full text-xs font-black">
-                ARCHIVED
-              </span>
-              <p className="mt-2 text-sm text-slate-600 font-semibold">
-                This match has been archived. Actions are disabled.
-              </p>
-            </div>
-          )}
-          {match && (
-            <div className="space-y-1 mb-6">
-              <p className="text-gray-700 flex items-center gap-1">
-                <Calendar className="w-4 h-4" />
-                {formatDateTime(match.start_date_time)}
-              </p>
-              {match.location_text && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <MapPin className="w-4 h-4" /> {match.location_text}
-                </p>
-              )}
-              {match.match_format && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <ClipboardList className="w-4 h-4" /> {match.match_format}
-                </p>
-              )}
-              {match.player_limit && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <Users className="w-4 h-4" /> Player limit: {match.player_limit}
-                </p>
-              )}
-              {match.notes && (
-                <p className="text-gray-700 flex items-center gap-1">
-                  <FileText className="w-4 h-4" /> {match.notes}
-                </p>
-              )}
-            </div>
-          )}
-          {canJoin && (
-            <div className="mb-6">
-              <button
-                onClick={handleJoinMatch}
-                disabled={joining}
-                className="w-full px-5 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {joining ? "Joining match..." : "Join this match"}
-              </button>
-              {remainingSpots !== null && (
-                <p className="text-xs text-gray-500 font-semibold mt-2 text-center">
-                  {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
-                </p>
-              )}
-            </div>
-          )}
-          {!canJoin && !isHost && !isJoined && remainingSpots === 0 && (
-            <p className="mb-6 text-sm font-semibold text-red-500">
-              This match is currently full. Check back later or explore other matches.
-            </p>
-          )}
-          <div className="mb-6">
-            <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
-              <Users className="w-4 h-4" /> Participants
-            </h3>
-            {participants.length ? (
-              <ul className="space-y-1">
-                {participants.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between text-gray-700"
-                  >
-                    <span>
-                      {p.profile?.full_name || `Player ${p.player_id}`}
-                    {p.player_id === match.host_id && (
-                      <span className="ml-1 text-blue-700 text-xs">Host</span>
-                    )}
-                  </span>
-                    {isHost && !isArchived && p.player_id !== match.host_id && (
-                      <button
-                        onClick={() => handleRemoveParticipant(p.player_id)}
-                        className="text-red-600 hover:text-red-800"
-                        aria-label="Remove participant"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No participants yet.</p>
-            )}
-          </div>
-          <div>
-            <h3 className="text-lg font-bold mb-2 flex items-center gap-1">
-              <User className="w-4 h-4" /> Invitees
-            </h3>
-            {invitees.length ? (
-              <ul className="space-y-1">
-                {invitees.map((i) => (
-                  <li
-                    key={i.id || i.invitee_id}
-                    className="flex items-start justify-between gap-3 text-gray-700 bg-gray-50 rounded-lg px-3 py-2"
-                  >
-                    <div>
-                      <div className="font-semibold">
-                        {i.profile?.full_name || `Player ${i.invitee_id}`}
-                      </div>
-                      {(() => {
-                        const phone =
-                          i.profile?.phone ||
-                          i.profile?.phone_number ||
-                          i.phone_number ||
-                          i.phone;
-                        const email = i.profile?.email;
-                        const isPlaceholderEmail =
-                          typeof email === "string" && email.endsWith("@ttpplaydates.com");
-                        return (
-                          <>
-                            {phone && (
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <Phone className="w-3 h-3" />
-                                {formatPhoneDisplay(String(phone))}
-                              </div>
-                            )}
-                            {isPlaceholderEmail && (
-                              <div className="text-xs text-blue-600 font-semibold">
-                                SMS invite active
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      {i.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No invites sent.</p>
-            )}
           </div>
         </div>
       </div>
@@ -4716,7 +4486,6 @@ const TennisMatchApp = () => {
           formatDateTime={formatDateTime}
         />
       )}
-      {currentScreen === "details" && <MatchDetailsScreen />}
       {currentScreen === "invites" && (
         <InvitesList onInviteResponse={handleInviteResponse} />
       )}
@@ -4726,6 +4495,18 @@ const TennisMatchApp = () => {
       <ParticipantsModal
         isOpen={showParticipantsModal}
         matchId={participantsMatchId}
+      />
+      <MatchDetailsModal
+        isOpen={showMatchDetailsModal && !!viewMatch}
+        matchData={viewMatch}
+        currentUser={currentUser}
+        onClose={closeMatchDetailsModal}
+        onRequireSignIn={() => setShowSignInModal(true)}
+        onMatchRefresh={refreshMatchesAndInvites}
+        onReloadMatch={fetchMatchDetails}
+        onUpdateMatch={setViewMatch}
+        onToast={displayToast}
+        formatDateTime={formatDateTime}
       />
       {Toast()}
       <ProfileManager
