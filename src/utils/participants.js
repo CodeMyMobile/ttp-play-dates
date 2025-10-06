@@ -103,13 +103,94 @@ export const uniqueInvitees = (invitees = []) => {
   ]);
 };
 
+const hasAnyValue = (item, keys = []) => {
+  if (!item) return false;
+  return keys.some((key) => {
+    if (!Object.prototype.hasOwnProperty.call(item, key)) return false;
+    const value = item[key];
+    if (value === undefined || value === null) return false;
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    if (value instanceof Date) {
+      return !Number.isNaN(value.getTime());
+    }
+    return true;
+  });
+};
+
+const isInactiveStatus = (value) => {
+  if (!value) return false;
+  const normalized = value.toString().trim().toLowerCase();
+  return [
+    "left",
+    "removed",
+    "cancelled",
+    "canceled",
+    "declined",
+    "rejected",
+    "withdrawn",
+    "expired",
+  ].includes(normalized);
+};
+
+const isInviteActive = (invite) => {
+  if (!invite || typeof invite !== "object") return false;
+  const status = invite.status ? invite.status.toString().trim().toLowerCase() : "";
+  if (status !== "accepted" || isInactiveStatus(status)) {
+    return false;
+  }
+
+  if (invite.is_active === false || invite.active === false) {
+    return false;
+  }
+
+  const participantStatus = invite.participant_status
+    ? invite.participant_status.toString().trim().toLowerCase()
+    : invite.participantStatus
+    ? invite.participantStatus.toString().trim().toLowerCase()
+    : "";
+  if (isInactiveStatus(participantStatus)) {
+    return false;
+  }
+
+  if (
+    hasAnyValue(invite, [
+      "left_at",
+      "leftAt",
+      "removed_at",
+      "removedAt",
+      "cancelled_at",
+      "cancelledAt",
+      "canceled_at",
+      "canceledAt",
+      "declined_at",
+      "declinedAt",
+      "withdrawn_at",
+      "withdrawnAt",
+    ])
+  ) {
+    return false;
+  }
+
+  const statusReason = invite.status_reason
+    ? invite.status_reason.toString().trim().toLowerCase()
+    : invite.statusReason
+    ? invite.statusReason.toString().trim().toLowerCase()
+    : "";
+  if (isInactiveStatus(statusReason)) {
+    return false;
+  }
+
+  return true;
+};
+
 export const uniqueAcceptedInvitees = (invitees = []) =>
   dedupeByIdentity(
-    Array.isArray(invitees)
-      ? invitees.filter(
-          (invite) => invite && invite.status === "accepted",
-        )
-      : [],
+    Array.isArray(invitees) ? invitees.filter(isInviteActive) : [],
     ["invitee_id", "player_id", "id"],
   );
 
