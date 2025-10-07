@@ -7,9 +7,11 @@ import {
   ClipboardList,
   Copy,
   FileText,
+  Loader2,
   Mail,
   MapPin,
   MessageCircle,
+  Pencil,
   Send,
   Share2,
   Sparkles,
@@ -22,6 +24,7 @@ import {
   joinMatch,
   leaveMatch,
   removeParticipant,
+  updateMatch,
 } from "../services/matches";
 import { isMatchArchivedError } from "../utils/archive";
 import {
@@ -39,6 +42,7 @@ import {
   openGoogleCalendar,
   openOutlookCalendar,
 } from "../utils/calendar";
+import { matchFormatOptions, skillLevelOptions } from "../utils/matchOptions";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -64,6 +68,65 @@ const distanceLabel = (distance) => {
     : rounded.toFixed(1);
   const plural = Math.abs(rounded - 1) < 0.05 ? "" : "s";
   return `${display} mile${plural} away`;
+};
+
+const toDateInputValue = (date) => {
+  if (!date) return "";
+  const d = safeDate(date);
+  if (!d) return "";
+  const year = d.getFullYear();
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toTimeInputValue = (date) => {
+  if (!date) return "";
+  const d = safeDate(date);
+  if (!d) return "";
+  const hours = `${d.getHours()}`.padStart(2, "0");
+  const minutes = `${d.getMinutes()}`.padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const combineLocalDateTime = (date, time) => {
+  if (!date || !time) return null;
+  const candidate = new Date(`${date}T${time}`);
+  if (Number.isNaN(candidate.getTime())) return null;
+  return candidate.toISOString();
+};
+
+const buildEditStateFromMatch = (match) => {
+  if (!match) {
+    return {
+      date: "",
+      time: "",
+      isoStart: null,
+      location: "",
+      latitude: null,
+      longitude: null,
+      matchFormat: "",
+      skillLevel: "",
+      notes: "",
+    };
+  }
+
+  const startValue =
+    match.start_date_time || match.startDateTime || match.dateTime || null;
+  const startDate = safeDate(startValue);
+
+  return {
+    date: toDateInputValue(startDate),
+    time: toTimeInputValue(startDate),
+    isoStart: startDate ? startDate.toISOString() : null,
+    location: match.location_text || match.location || "",
+    latitude: Number.isFinite(match.latitude) ? match.latitude : null,
+    longitude: Number.isFinite(match.longitude) ? match.longitude : null,
+    matchFormat: match.match_format || match.format || "",
+    skillLevel:
+      match.skill_level || match.skill_level_min || match.skillLevel || "",
+    notes: match.notes || "",
+  };
 };
 
 const buildMatchDescription = ({ match, hostName }) => {
@@ -108,6 +171,13 @@ const MatchDetailsModal = ({
   const [shareError, setShareError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const shareCopyTimeoutRef = useRef(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState(() =>
+    buildEditStateFromMatch(matchData?.match),
+  );
+  const [editErrors, setEditErrors] = useState({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const initialEditSnapshotRef = useRef(editForm);
 
   useEffect(
     () => () => {
@@ -119,6 +189,32 @@ const MatchDetailsModal = ({
   );
 
   const match = matchData?.match || null;
+
+  const editMatchSignature = useMemo(() => {
+    if (!match) return "";
+    const parts = [
+      match.id,
+      match.start_date_time || match.startDateTime || match.dateTime || "",
+      match.location_text || match.location || "",
+      match.match_format || match.format || "",
+      match.skill_level || match.skill_level_min || "",
+      match.notes || "",
+    ];
+    return parts.join("|");
+  }, [match]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsEditing(false);
+      setEditErrors({});
+      return;
+    }
+    const snapshot = buildEditStateFromMatch(match);
+    setEditForm(snapshot);
+    initialEditSnapshotRef.current = snapshot;
+    setEditErrors({});
+    setIsEditing(false);
+  }, [isOpen, editMatchSignature, match]);
   const participants = useMemo(() => {
     if (Array.isArray(matchData?.participants)) {
       return uniqueParticipants(matchData.participants);
@@ -197,6 +293,26 @@ const MatchDetailsModal = ({
   const isUpcoming = match?.status === "upcoming";
   const isOpenMatch = match?.privacy !== "private";
   const isFull = remainingSpots === 0;
+  const showEditAction =
+    isHost && isOpenMatch && !isArchived && !isCancelled && !isEditing;
+  const editBaseline = initialEditSnapshotRef.current;
+  const nextEditIso = combineLocalDateTime(editForm.date, editForm.time);
+  const normalizedBaselineLocation = (editBaseline?.location || "").trim();
+  const normalizedCurrentLocation = (editForm.location || "").trim();
+  const normalizedBaselineNotes = (editBaseline?.notes || "").trim();
+  const normalizedCurrentNotes = (editForm.notes || "").trim();
+  const hasFormChanges = editBaseline
+    ? editBaseline.date !== editForm.date ||
+      editBaseline.time !== editForm.time ||
+      editBaseline.matchFormat !== editForm.matchFormat ||
+      editBaseline.skillLevel !== editForm.skillLevel ||
+      normalizedBaselineLocation !== normalizedCurrentLocation ||
+      normalizedBaselineNotes !== normalizedCurrentNotes
+    : false;
+  const scheduleChangePending =
+    !!editBaseline &&
+    ((editBaseline.isoStart || null) !== (nextEditIso || null) ||
+      normalizedBaselineLocation !== normalizedCurrentLocation);
 
   const requestShareLink = useCallback(
     async ({ silent = false, signal } = {}) => {
@@ -604,6 +720,160 @@ const MatchDetailsModal = ({
     }
   };
 
+  const handleStartEdit = () => {
+    if (!match) return;
+    const snapshot = buildEditStateFromMatch(match);
+    setEditForm(snapshot);
+    setEditErrors({});
+    setIsEditing(true);
+    setStatus("details");
+  };
+
+  const handleCancelEdit = () => {
+    const baseline = initialEditSnapshotRef.current;
+    if (baseline) {
+      setEditForm(baseline);
+    } else {
+      setEditForm(buildEditStateFromMatch(match));
+    }
+    setEditErrors({});
+    setIsEditing(false);
+  };
+
+  const handleSaveEdit = async (event) => {
+    event?.preventDefault();
+    if (!match?.id) return;
+
+    const trimmedLocation = (editForm.location || "").trim();
+    const trimmedNotes = (editForm.notes || "").trim();
+    const isoStart = combineLocalDateTime(editForm.date, editForm.time);
+
+    const errors = {};
+    if (!editForm.date) {
+      errors.date = "Date is required";
+    }
+    if (!editForm.time) {
+      errors.time = "Time is required";
+    }
+    if (!trimmedLocation) {
+      errors.location = "Location is required";
+    }
+    if (!isoStart) {
+      errors.time = errors.time || "Please provide a valid date and time";
+    }
+
+    setEditErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      onToast?.("Please fix the highlighted fields", "error");
+      return;
+    }
+
+    const baseline = initialEditSnapshotRef.current || {};
+    const scheduleChanged =
+      (baseline.isoStart || null) !== (isoStart || null) ||
+      (baseline.location || "").trim() !== trimmedLocation;
+
+    if (scheduleChanged) {
+      const confirmed = window.confirm(
+        "Updating the date, time, or location will notify all players. Continue?",
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const payload = {
+      start_date_time: isoStart,
+      location_text: trimmedLocation,
+      location: trimmedLocation,
+    };
+
+    if (editForm.matchFormat) {
+      payload.match_format = editForm.matchFormat;
+    }
+
+    if (editForm.skillLevel) {
+      payload.skill_level_min = editForm.skillLevel;
+    }
+
+    if (trimmedNotes || baseline?.notes) {
+      payload.notes = trimmedNotes;
+    }
+
+    if (Number.isFinite(editForm.latitude)) {
+      payload.latitude = editForm.latitude;
+    }
+
+    if (Number.isFinite(editForm.longitude)) {
+      payload.longitude = editForm.longitude;
+    }
+
+    setSavingEdit(true);
+    try {
+      await updateMatch(match.id, payload);
+      onToast?.("Match updated successfully!");
+      await onMatchRefresh?.();
+      if (onReloadMatch && onUpdateMatch) {
+        const updated = await onReloadMatch(match.id, { includeArchived: false });
+        if (updated) {
+          onUpdateMatch(updated);
+          const refreshedSnapshot = buildEditStateFromMatch(
+            updated.match || updated,
+          );
+          setEditForm(refreshedSnapshot);
+          initialEditSnapshotRef.current = refreshedSnapshot;
+        }
+      } else if (onUpdateMatch) {
+        onUpdateMatch((prev) => {
+          if (!prev) return prev;
+          const nextMatch = {
+            ...(prev.match || prev),
+            start_date_time: isoStart,
+            dateTime: isoStart,
+            match_format: editForm.matchFormat || null,
+            format: editForm.matchFormat || null,
+            skill_level: editForm.skillLevel || null,
+            skill_level_min: editForm.skillLevel || null,
+            location_text: trimmedLocation,
+            location: trimmedLocation,
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            notes: trimmedNotes || null,
+          };
+          if (prev.match) {
+            return { ...prev, match: nextMatch };
+          }
+          return nextMatch;
+        });
+        const nextSnapshot = {
+          ...editForm,
+          isoStart,
+          location: trimmedLocation,
+          notes: trimmedNotes,
+        };
+        setEditForm(nextSnapshot);
+        initialEditSnapshotRef.current = nextSnapshot;
+      }
+      setIsEditing(false);
+      setEditErrors({});
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        onToast?.(
+          "This match has been archived. You can no longer make changes.",
+          "error",
+        );
+      } else {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to update match";
+        onToast?.(message, "error");
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const renderPlayers = () => (
     <div className="space-y-3">
       {playersList.map((player) => {
@@ -672,6 +942,272 @@ const MatchDetailsModal = ({
     </div>
   );
 
+  const renderEditView = () => (
+    <form className="flex flex-col" onSubmit={handleSaveEdit}>
+      <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative h-12 w-12">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
+                {hostAvatar ? (
+                  <img
+                    src={hostAvatar}
+                    alt={hostName}
+                    className="h-12 w-12 rounded-full object-cover"
+                  />
+                ) : (
+                  buildAvatarLabel(hostName)
+                )}
+              </div>
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-gray-900">Edit Match</h2>
+              <p className="text-sm font-semibold text-gray-500">
+                Adjust the details for this open match
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-xs font-black uppercase tracking-wide text-gray-600 transition hover:bg-gray-50"
+            disabled={savingEdit}
+          >
+            Cancel
+          </button>
+        </div>
+        <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-xs font-semibold text-amber-700">
+          <AlertCircle className="mt-0.5 h-4 w-4" />
+          Changes to the date, time, or location will notify everyone on the roster.
+        </div>
+        {scheduleChangePending && (
+          <div className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700">
+            <Sparkles className="mt-0.5 h-4 w-4" />
+            You're planning updates that impact players. We'll send them a heads up when you save.
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-6 py-5">
+        <section className="rounded-2xl bg-gray-50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100">
+              <Calendar className="h-5 w-5 text-purple-600" />
+            </div>
+            <div className="flex-1 space-y-4">
+              <div>
+                <p className="text-sm font-black text-gray-900">Match schedule</p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Set when play begins so everyone can plan ahead.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-gray-500">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.date}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, date: event.target.value }))
+                    }
+                    className={`w-full rounded-xl border-2 px-4 py-3 font-bold text-gray-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 ${
+                      editErrors.date ? "border-rose-400" : "border-gray-200"
+                    }`}
+                  />
+                  {editErrors.date && (
+                    <p className="mt-1 text-xs font-semibold text-rose-600">{editErrors.date}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-gray-500">
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={editForm.time}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, time: event.target.value }))
+                    }
+                    className={`w-full rounded-xl border-2 px-4 py-3 font-bold text-gray-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 ${
+                      editErrors.time ? "border-rose-400" : "border-gray-200"
+                    }`}
+                  />
+                  {editErrors.time && (
+                    <p className="mt-1 text-xs font-semibold text-rose-600">{editErrors.time}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-gray-50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
+              <MapPin className="h-5 w-5 text-red-600" />
+            </div>
+            <div className="flex-1 space-y-3">
+              <div>
+                <p className="text-sm font-black text-gray-900">Location</p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Provide the courts or facility where you're meeting.
+                </p>
+              </div>
+              <div>
+                <textarea
+                  rows={2}
+                  value={editForm.location}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({ ...prev, location: event.target.value }))
+                  }
+                  className={`w-full rounded-xl border-2 px-4 py-3 font-bold text-gray-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 ${
+                    editErrors.location ? "border-rose-400" : "border-gray-200"
+                  }`}
+                />
+                {editErrors.location && (
+                  <p className="mt-1 text-xs font-semibold text-rose-600">{editErrors.location}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-gray-50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
+              <Trophy className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="flex-1 space-y-4">
+              <div>
+                <p className="text-sm font-black text-gray-900">Match format</p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Choose what kind of play people should expect.
+                </p>
+              </div>
+              <div className="relative">
+                <select
+                  value={editForm.matchFormat}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      matchFormat: event.target.value,
+                    }))
+                  }
+                  className="w-full appearance-none rounded-xl border-2 border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                >
+                  <option value="">Select match format</option>
+                  {matchFormatOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-3">
+                <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+                  Skill level
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {skillLevelOptions.map((level) => {
+                    const isSelected = editForm.skillLevel === level.value;
+                    return (
+                      <button
+                        key={level.value}
+                        type="button"
+                        onClick={() =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            skillLevel: level.value,
+                          }))
+                        }
+                        className={`rounded-xl border-2 p-4 text-left transition-all hover:scale-[1.01] ${
+                          isSelected
+                            ? "border-gray-900 shadow-lg"
+                            : "border-gray-200 hover:border-gray-400 bg-white"
+                        }`}
+                      >
+                        <div
+                          className={`text-xl font-black ${
+                            isSelected
+                              ? `bg-gradient-to-r ${level.color} bg-clip-text text-transparent`
+                              : "text-gray-700"
+                          }`}
+                        >
+                          {level.label}
+                        </div>
+                        <div className="text-xs font-semibold text-gray-500">
+                          {level.desc}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100">
+              <FileText className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div className="flex-1 space-y-3">
+              <div>
+                <p className="text-sm font-black text-gray-900">Notes for players</p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Share parking tips, what to bring, or any last-minute reminders.
+                </p>
+              </div>
+              <textarea
+                rows={3}
+                value={editForm.notes}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, notes: event.target.value }))
+                }
+                className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 font-semibold text-gray-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="border-t border-gray-100 pt-5">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            className="flex-1 rounded-2xl border-2 border-gray-200 px-4 py-3 text-sm font-black text-gray-600 transition hover:bg-gray-50"
+            disabled={savingEdit}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-4 py-3 text-sm font-black text-white shadow-lg transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={savingEdit || !hasFormChanges}
+          >
+            {savingEdit ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+              </>
+            ) : (
+              "Save changes"
+            )}
+          </button>
+        </div>
+        {!hasFormChanges && !savingEdit && (
+          <p className="mt-2 text-center text-xs font-semibold text-gray-500">
+            Update a field to enable saving.
+          </p>
+        )}
+      </div>
+    </form>
+  );
+
   const headerChips = (
     <div className="flex flex-wrap items-center gap-2">
       {startDate && (
@@ -708,26 +1244,38 @@ const MatchDetailsModal = ({
     return (
       <div className="flex flex-col">
         <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
-          <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
-                {hostAvatar ? (
-                  <img
-                    src={hostAvatar}
-                    alt={hostName}
-                    className="h-12 w-12 rounded-full object-cover"
-                  />
-                ) : (
-                  buildAvatarLabel(hostName)
-                )}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative h-12 w-12">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
+                  {hostAvatar ? (
+                    <img
+                      src={hostAvatar}
+                      alt={hostName}
+                      className="h-12 w-12 rounded-full object-cover"
+                    />
+                  ) : (
+                    buildAvatarLabel(hostName)
+                  )}
+                </div>
+              </div>
+              <div>
+                <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
+                  Match Details
+                </h2>
+                <p className="text-sm font-semibold text-gray-500">Hosted by {hostName}</p>
               </div>
             </div>
-            <div>
-              <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
-                Match Details
-              </h2>
-              <p className="text-sm font-semibold text-gray-500">Hosted by {hostName}</p>
-            </div>
+            {showEditAction && (
+              <button
+                type="button"
+                onClick={handleStartEdit}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-gray-800"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Match
+              </button>
+            )}
           </div>
           {headerChips}
         </div>
@@ -1089,7 +1637,11 @@ const MatchDetailsModal = ({
           <X className="h-5 w-5" />
         </button>
         <div className="max-h-[80vh] overflow-y-auto px-5 pb-6 pt-10 sm:px-8">
-          {status === "success" ? renderSuccessView() : renderDefaultView()}
+          {status === "success"
+            ? renderSuccessView()
+            : isEditing
+            ? renderEditView()
+            : renderDefaultView()}
         </div>
       </div>
     </div>
