@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Autocomplete from "react-google-autocomplete";
 import {
   AlertCircle,
   Calendar,
@@ -10,6 +11,7 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  Pencil,
   Send,
   Share2,
   Sparkles,
@@ -22,6 +24,7 @@ import {
   joinMatch,
   leaveMatch,
   removeParticipant,
+  updateMatch,
 } from "../services/matches";
 import { isMatchArchivedError } from "../utils/archive";
 import {
@@ -39,6 +42,13 @@ import {
   openGoogleCalendar,
   openOutlookCalendar,
 } from "../utils/calendar";
+import {
+  MATCH_FORMAT_OPTIONS,
+  SKILL_LEVEL_OPTIONS,
+  ensureOptionPresent,
+  isValidOptionValue,
+} from "../utils/matchOptions";
+import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -87,6 +97,72 @@ const buildMatchDescription = ({ match, hostName }) => {
   return parts.join(". ");
 };
 
+const DEFAULT_EDIT_FORM = {
+  date: "",
+  time: "",
+  location: "",
+  latitude: null,
+  longitude: null,
+  matchFormat: "",
+  level: "",
+  notes: "",
+};
+
+const parseCoordinate = (value) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number.parseFloat(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+};
+
+const toDateInput = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toTimeInput = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const combineDateTime = (date, time) => {
+  if (!date || !time) return null;
+  const timestamp = new Date(`${date}T${time}`);
+  if (Number.isNaN(timestamp.getTime())) return null;
+  return timestamp.toISOString();
+};
+
+const buildInitialEditForm = (match) => {
+  if (!match) return { ...DEFAULT_EDIT_FORM };
+  const latitude =
+    parseCoordinate(match.latitude) ?? parseCoordinate(match.lat);
+  const longitude =
+    parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
+  return {
+    date: toDateInput(match.start_date_time || match.startDateTime),
+    time: toTimeInput(match.start_date_time || match.startDateTime),
+    location: match.location_text || match.location || match.locationText || "",
+    latitude,
+    longitude,
+    matchFormat: match.match_format || match.format || "",
+    level: match.skill_level || match.skill_level_min || "",
+    notes: match.notes || "",
+  };
+};
+
 const MatchDetailsModal = ({
   isOpen,
   matchData,
@@ -107,6 +183,11 @@ const MatchDetailsModal = ({
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState(DEFAULT_EDIT_FORM);
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
   useEffect(
@@ -133,6 +214,37 @@ const MatchDetailsModal = ({
     if (Array.isArray(match?.invitees)) return match.invitees;
     return [];
   }, [matchData, match]);
+
+  const originalEditForm = useMemo(() => buildInitialEditForm(match), [match]);
+  const availableMatchFormats = useMemo(
+    () => ensureOptionPresent(MATCH_FORMAT_OPTIONS, originalEditForm.matchFormat),
+    [originalEditForm.matchFormat],
+  );
+  const availableSkillLevels = useMemo(
+    () => ensureOptionPresent(SKILL_LEVEL_OPTIONS, originalEditForm.level),
+    [originalEditForm.level],
+  );
+
+  useEffect(() => {
+    setEditForm(originalEditForm);
+  }, [originalEditForm]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsEditing(false);
+      setEditError("");
+    }
+  }, [isOpen]);
+
+  const hasEditChanges = useMemo(
+    () => JSON.stringify(editForm) !== JSON.stringify(originalEditForm),
+    [editForm, originalEditForm],
+  );
+
+  const scheduleChanged =
+    originalEditForm.date !== editForm.date ||
+    originalEditForm.time !== editForm.time ||
+    originalEditForm.location.trim() !== editForm.location.trim();
 
   const hostParticipant = useMemo(() => {
     if (!match?.host_id) return null;
@@ -197,6 +309,12 @@ const MatchDetailsModal = ({
   const isUpcoming = match?.status === "upcoming";
   const isOpenMatch = match?.privacy !== "private";
   const isFull = remainingSpots === 0;
+
+  useEffect(() => {
+    if ((!isHost || isArchived || isCancelled) && isEditing) {
+      setIsEditing(false);
+    }
+  }, [isHost, isArchived, isCancelled, isEditing]);
 
   const requestShareLink = useCallback(
     async ({ silent = false, signal } = {}) => {
@@ -355,6 +473,154 @@ const MatchDetailsModal = ({
   }, [shareDateTimeLabel, shareMatchLabel]);
 
   const shareLinkReady = !!shareLink && !shareLoading;
+
+  const handleEditFieldChange = (field, value) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleEditLocationChange = useCallback((value) => {
+    setEditForm((prev) => ({
+      ...prev,
+      location: value,
+      latitude: null,
+      longitude: null,
+    }));
+  }, []);
+
+  const handleEditLocationSelect = useCallback((place) => {
+    if (!place) return;
+    setEditForm((prev) => {
+      const placeName = typeof place?.name === "string" ? place.name.trim() : "";
+      const formattedAddress =
+        typeof place?.formatted_address === "string"
+          ? place.formatted_address.trim()
+          : "";
+      const locationLabel = placeName || formattedAddress || prev.location || "";
+      const lat = place?.geometry?.location?.lat?.();
+      const lng = place?.geometry?.location?.lng?.();
+      return {
+        ...prev,
+        location: locationLabel || prev.location,
+        latitude: typeof lat === "number" ? lat : prev.latitude,
+        longitude: typeof lng === "number" ? lng : prev.longitude,
+      };
+    });
+  }, []);
+
+  const handleStartEdit = () => {
+    if (!isHost || isArchived || isCancelled) return;
+    setEditError("");
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditForm(originalEditForm);
+    setEditError("");
+    setIsEditing(false);
+  };
+
+  const handleEditSubmit = async (event) => {
+    event.preventDefault();
+    if (!match?.id) return;
+    setEditError("");
+    const trimmedLocation = editForm.location.trim();
+    if (!editForm.date || !editForm.time || !trimmedLocation) {
+      setEditError("Date, time, and location are required.");
+      return;
+    }
+    const isoDate = combineDateTime(editForm.date, editForm.time);
+    if (!isoDate) {
+      setEditError("Please provide a valid date and time.");
+      return;
+    }
+    if (scheduleChanged) {
+      const confirmed = window.confirm(
+        "Changing the schedule will notify players. Continue?",
+      );
+      if (!confirmed) return;
+    }
+
+    const matchFormat = editForm.matchFormat?.trim?.() ?? "";
+    if (matchFormat && !isValidOptionValue(availableMatchFormats, matchFormat)) {
+      setEditError("Select a valid match format.");
+      return;
+    }
+
+    const level = editForm.level?.trim?.() ?? "";
+    if (isOpenMatch && level && !isValidOptionValue(availableSkillLevels, level)) {
+      setEditError("Select a valid level.");
+      return;
+    }
+
+    const notes = editForm.notes.trim();
+    const latitude = parseCoordinate(editForm.latitude);
+    const longitude = parseCoordinate(editForm.longitude);
+
+    const payload = buildMatchUpdatePayload({
+      startDateTime: isoDate,
+      locationText: trimmedLocation,
+      matchFormat,
+      previousMatchFormat: originalEditForm.matchFormat,
+      notes,
+      isOpenMatch,
+      skillLevel: level,
+      previousSkillLevel: originalEditForm.level,
+      latitude,
+      longitude,
+      previousLatitude: originalEditForm.latitude,
+      previousLongitude: originalEditForm.longitude,
+    });
+
+    try {
+      setEditSaving(true);
+      await updateMatch(match.id, payload);
+      onToast?.("Match updated");
+      setIsEditing(false);
+      await onMatchRefresh?.();
+      if (onReloadMatch && onUpdateMatch) {
+        const updated = await onReloadMatch(match.id, { includeArchived: false });
+        if (updated) {
+          onUpdateMatch(updated);
+        }
+      } else if (onUpdateMatch) {
+        onUpdateMatch((prev) => {
+          if (!prev) return prev;
+          const nextMatch = {
+            ...(prev.match || {}),
+            start_date_time: isoDate,
+            startDateTime: isoDate,
+            location_text: trimmedLocation,
+            locationText: trimmedLocation,
+            location: trimmedLocation,
+            match_format: matchFormat || null,
+            format: matchFormat || null,
+          };
+          if (latitude !== null) {
+            nextMatch.latitude = latitude;
+          }
+          if (longitude !== null) {
+            nextMatch.longitude = longitude;
+          }
+          if (isOpenMatch) {
+            nextMatch.skill_level = level || null;
+            nextMatch.skill_level_min = level || null;
+            nextMatch.skillLevel = level || null;
+            nextMatch.notes = notes || null;
+          }
+          return { ...prev, match: nextMatch };
+        });
+      }
+    } catch (error) {
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "We couldn't update the match.";
+      setEditError(message);
+      onToast?.(message, "error");
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const handleCopyShareLink = async () => {
     if (!shareLinkReady) return;
@@ -703,6 +969,153 @@ const MatchDetailsModal = ({
     </div>
   );
 
+  const renderEditControls = () => {
+    if (!isHost || isArchived || isCancelled) return null;
+    return (
+      <section className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-black text-gray-900">Manage match details</p>
+            <p className="text-xs font-semibold text-gray-500">
+              Update the schedule and match information for your players.
+            </p>
+          </div>
+          {!isEditing && (
+            <button
+              type="button"
+              onClick={handleStartEdit}
+              className="inline-flex items-center gap-2 self-start rounded-xl border border-gray-200 px-3 py-2 text-xs font-black text-gray-700 transition hover:bg-gray-50"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit match
+            </button>
+          )}
+        </div>
+        {isEditing && (
+          <form className="space-y-4" onSubmit={handleEditSubmit}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Date
+                <input
+                  type="date"
+                  value={editForm.date}
+                  onChange={(event) => handleEditFieldChange("date", event.target.value)}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Time
+                <input
+                  type="time"
+                  value={editForm.time}
+                  onChange={(event) => handleEditFieldChange("time", event.target.value)}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  required
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Location
+              <div className="rounded-xl">
+                {googleApiKey ? (
+                  <Autocomplete
+                    apiKey={googleApiKey}
+                    value={editForm.location}
+                    onChange={(event) => handleEditLocationChange(event.target.value)}
+                    onPlaceSelected={handleEditLocationSelect}
+                    options={{
+                      types: ["establishment"],
+                      fields: ["formatted_address", "geometry", "name"],
+                    }}
+                    placeholder="Where are you playing?"
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={editForm.location}
+                    onChange={(event) => handleEditLocationChange(event.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    placeholder="Where are you playing?"
+                    required
+                  />
+                )}
+              </div>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Match format
+              <select
+                value={editForm.matchFormat}
+                onChange={(event) => handleEditFieldChange("matchFormat", event.target.value)}
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              >
+                <option value="">Select format</option>
+                {availableMatchFormats.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isOpenMatch && (
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Level
+                <select
+                  value={editForm.level}
+                  onChange={(event) => handleEditFieldChange("level", event.target.value)}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                >
+                  <option value="">Select level</option>
+                  {availableSkillLevels.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.desc ? `${option.label} – ${option.desc}` : option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {isOpenMatch && (
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Notes for players
+                <textarea
+                  rows={3}
+                  value={editForm.notes}
+                  onChange={(event) => handleEditFieldChange("notes", event.target.value)}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  placeholder="Share extra details about parking, format, etc."
+                />
+              </label>
+            )}
+            {editError && (
+              <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={editSaving}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editSaving || !hasEditChanges}
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {editSaving ? "Saving..." : "Save changes"}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+    );
+  };
+
   const renderDefaultView = () => {
     const disabledReason = joinDisabledReason();
     return (
@@ -733,6 +1146,7 @@ const MatchDetailsModal = ({
         </div>
 
         <div className="space-y-6 py-5">
+          {renderEditControls()}
           <section className="rounded-2xl bg-gray-50 p-4">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
