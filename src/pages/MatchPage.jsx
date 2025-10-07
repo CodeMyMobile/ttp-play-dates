@@ -1,11 +1,12 @@
 // src/pages/MatchPage.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import Autocomplete from "react-google-autocomplete";
 import {
   Calendar,
   MapPin,
@@ -31,14 +32,33 @@ import {
   removeParticipant,
   updateMatch,
 } from "../services/matches";
+import {
+  MATCH_FORMAT_OPTIONS,
+  SKILL_LEVEL_OPTIONS,
+  ensureOptionPresent,
+  isValidOptionValue,
+} from "../utils/matchOptions";
 
 const DEFAULT_FORM = {
   date: "",
   time: "",
   location: "",
+  latitude: null,
+  longitude: null,
   matchFormat: "",
   level: "",
   notes: "",
+};
+
+const parseCoordinate = (value) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number.parseFloat(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
 };
 
 const toDateInput = (value) => {
@@ -69,10 +89,16 @@ const combineDateTime = (date, time) => {
 
 const buildInitialForm = (match) => {
   if (!match) return { ...DEFAULT_FORM };
+  const latitude =
+    parseCoordinate(match.latitude) ?? parseCoordinate(match.lat);
+  const longitude =
+    parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
   return {
     date: toDateInput(match.start_date_time),
     time: toTimeInput(match.start_date_time),
     location: match.location_text || match.location || "",
+    latitude,
+    longitude,
     matchFormat: match.match_format || match.format || "",
     level: match.skill_level || match.skill_level_min || "",
     notes: match.notes || "",
@@ -94,6 +120,7 @@ export default function MatchPage() {
   const [shareLink, setShareLink] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+  const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
 
   const [currentUser] = useState(() => {
     try {
@@ -131,6 +158,16 @@ export default function MatchPage() {
   );
 
   const originalForm = useMemo(() => buildInitialForm(match), [match]);
+
+  const availableMatchFormats = useMemo(
+    () => ensureOptionPresent(MATCH_FORMAT_OPTIONS, originalForm.matchFormat),
+    [originalForm.matchFormat],
+  );
+
+  const availableSkillLevels = useMemo(
+    () => ensureOptionPresent(SKILL_LEVEL_OPTIONS, originalForm.level),
+    [originalForm.level],
+  );
 
   useEffect(() => {
     setFormState(originalForm);
@@ -230,6 +267,35 @@ export default function MatchPage() {
     setIsEditing((prev) => !prev);
   };
 
+  const handleLocationInputChange = useCallback((value) => {
+    setFormState((prev) => ({
+      ...prev,
+      location: value,
+      latitude: null,
+      longitude: null,
+    }));
+  }, []);
+
+  const handleLocationSelect = useCallback((place) => {
+    if (!place) return;
+    setFormState((prev) => {
+      const placeName = typeof place?.name === "string" ? place.name.trim() : "";
+      const formattedAddress =
+        typeof place?.formatted_address === "string"
+          ? place.formatted_address.trim()
+          : "";
+      const locationLabel = placeName || formattedAddress || prev.location || "";
+      const lat = place?.geometry?.location?.lat?.();
+      const lng = place?.geometry?.location?.lng?.();
+      return {
+        ...prev,
+        location: locationLabel || prev.location,
+        latitude: typeof lat === "number" ? lat : prev.latitude,
+        longitude: typeof lng === "number" ? lng : prev.longitude,
+      };
+    });
+  }, []);
+
   const handleFormChange = (field, value) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
@@ -263,15 +329,29 @@ export default function MatchPage() {
       if (!confirmed) return;
     }
 
-    const matchFormat = formState.matchFormat.trim();
+    const matchFormat = formState.matchFormat?.trim?.() ?? "";
+    if (matchFormat && !isValidOptionValue(availableMatchFormats, matchFormat)) {
+      setFormError("Select a valid match format.");
+      return;
+    }
+
+    const level = formState.level?.trim?.() ?? "";
+    if (isOpenMatch && level && !isValidOptionValue(availableSkillLevels, level)) {
+      setFormError("Select a valid level.");
+      return;
+    }
+
     const notes = formState.notes.trim();
-    const level = formState.level.trim();
+    const latitude = parseCoordinate(formState.latitude);
+    const longitude = parseCoordinate(formState.longitude);
+
     const payload = sanitizePayload({
       start_date_time: isoDate,
       location_text: trimmedLocation,
-      location: trimmedLocation,
+      latitude: latitude ?? undefined,
+      longitude: longitude ?? undefined,
       match_format: matchFormat || null,
-      notes: notes || null,
+      notes: isOpenMatch ? (notes || null) : undefined,
       ...(isOpenMatch
         ? {
             skill_level: level || null,
@@ -434,15 +514,48 @@ export default function MatchPage() {
                 </Field>
               </div>
               <Field label="Location" required>
-                <input
-                  type="text"
-                  value={formState.location}
+                {googleApiKey ? (
+                  <Autocomplete
+                    apiKey={googleApiKey}
+                    value={formState.location}
+                    onChange={(event) =>
+                      handleLocationInputChange(event.target.value)
+                    }
+                    onPlaceSelected={handleLocationSelect}
+                    options={{
+                      types: ["establishment"],
+                      fields: ["formatted_address", "geometry", "name"],
+                    }}
+                    placeholder="Court name or address"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={formState.location}
+                    onChange={(event) =>
+                      handleLocationInputChange(event.target.value)
+                    }
+                    placeholder="Court name or address"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                )}
+              </Field>
+              <Field label="Match format">
+                <select
+                  value={formState.matchFormat}
                   onChange={(event) =>
-                    handleFormChange("location", event.target.value)
+                    handleFormChange("matchFormat", event.target.value)
                   }
-                  placeholder="Court name or address"
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                />
+                >
+                  <option value="">Select format</option>
+                  {availableMatchFormats.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </Field>
               {isOpenMatch && (
                 <Field label="Level">
@@ -454,41 +567,29 @@ export default function MatchPage() {
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   >
                     <option value="">Select level</option>
-                    {["2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0"].map(
-                      (level) => (
-                        <option key={level} value={level}>
-                          {level}
-                        </option>
-                      ),
-                    )}
+                    {availableSkillLevels.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.desc
+                          ? `${option.label} – ${option.desc}`
+                          : option.label}
+                      </option>
+                    ))}
                   </select>
                 </Field>
               )}
-              <Field label="Match format">
-                <select
-                  value={formState.matchFormat}
-                  onChange={(event) =>
-                    handleFormChange("matchFormat", event.target.value)
-                  }
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                >
-                  <option value="">Select format</option>
-                  <option value="Singles">Singles</option>
-                  <option value="Doubles">Doubles</option>
-                  <option value="Rotation">Rotation format</option>
-                </select>
-              </Field>
-              <Field label="Notes">
-                <textarea
-                  value={formState.notes}
-                  onChange={(event) =>
-                    handleFormChange("notes", event.target.value)
-                  }
-                  rows={4}
-                  placeholder="Add context, scoring, or reminders"
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                />
-              </Field>
+              {isOpenMatch && (
+                <Field label="Notes / Description">
+                  <textarea
+                    value={formState.notes}
+                    onChange={(event) =>
+                      handleFormChange("notes", event.target.value)
+                    }
+                    rows={4}
+                    placeholder="Add context, scoring, or reminders"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                </Field>
+              )}
 
               {formError && (
                 <p className="text-sm font-semibold text-red-600">{formError}</p>

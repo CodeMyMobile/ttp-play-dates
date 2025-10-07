@@ -32,6 +32,10 @@ import {
   sendInvites,
 } from "../services/matches";
 import { downloadICSFile, openGoogleCalendar, openOutlookCalendar } from "../utils/calendar";
+import {
+  MATCH_FORMAT_OPTIONS,
+  SKILL_LEVEL_OPTIONS,
+} from "../utils/matchOptions";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -90,22 +94,8 @@ const durations = [
   { value: "3", label: "3h" },
 ];
 
-const skillLevels = [
-  { value: "2.5", label: "2.5", desc: "Beginner" },
-  { value: "3.0", label: "3.0", desc: "Developing" },
-  { value: "3.5", label: "3.5", desc: "Intermediate" },
-  { value: "4.0", label: "4.0", desc: "Advanced" },
-  { value: "4.5", label: "4.5+", desc: "Expert" },
-];
-
-const matchFormatOptions = [
-  { value: "Singles", label: "Singles" },
-  { value: "Doubles", label: "Doubles" },
-  { value: "Mixed Doubles", label: "Mixed Doubles" },
-  { value: "Dingles", label: "Dingles" },
-  { value: "Round Robin", label: "Round Robin" },
-  { value: "Other", label: "Other" },
-];
+const skillLevels = SKILL_LEVEL_OPTIONS;
+const matchFormatOptions = MATCH_FORMAT_OPTIONS;
 
 const MIN_START_TIME = "06:00";
 const MAX_START_TIME = "22:00";

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Autocomplete from "react-google-autocomplete";
 import {
   AlertCircle,
   Calendar,
@@ -41,6 +42,12 @@ import {
   openGoogleCalendar,
   openOutlookCalendar,
 } from "../utils/calendar";
+import {
+  MATCH_FORMAT_OPTIONS,
+  SKILL_LEVEL_OPTIONS,
+  ensureOptionPresent,
+  isValidOptionValue,
+} from "../utils/matchOptions";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -93,9 +100,22 @@ const DEFAULT_EDIT_FORM = {
   date: "",
   time: "",
   location: "",
+  latitude: null,
+  longitude: null,
   matchFormat: "",
   level: "",
   notes: "",
+};
+
+const parseCoordinate = (value) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number.parseFloat(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
 };
 
 const toDateInput = (value) => {
@@ -126,10 +146,16 @@ const combineDateTime = (date, time) => {
 
 const buildInitialEditForm = (match) => {
   if (!match) return { ...DEFAULT_EDIT_FORM };
+  const latitude =
+    parseCoordinate(match.latitude) ?? parseCoordinate(match.lat);
+  const longitude =
+    parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
   return {
     date: toDateInput(match.start_date_time || match.startDateTime),
     time: toTimeInput(match.start_date_time || match.startDateTime),
     location: match.location_text || match.location || match.locationText || "",
+    latitude,
+    longitude,
     matchFormat: match.match_format || match.format || "",
     level: match.skill_level || match.skill_level_min || "",
     notes: match.notes || "",
@@ -165,6 +191,7 @@ const MatchDetailsModal = ({
   const [editForm, setEditForm] = useState(DEFAULT_EDIT_FORM);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
   useEffect(
@@ -193,6 +220,14 @@ const MatchDetailsModal = ({
   }, [matchData, match]);
 
   const originalEditForm = useMemo(() => buildInitialEditForm(match), [match]);
+  const availableMatchFormats = useMemo(
+    () => ensureOptionPresent(MATCH_FORMAT_OPTIONS, originalEditForm.matchFormat),
+    [originalEditForm.matchFormat],
+  );
+  const availableSkillLevels = useMemo(
+    () => ensureOptionPresent(SKILL_LEVEL_OPTIONS, originalEditForm.level),
+    [originalEditForm.level],
+  );
 
   useEffect(() => {
     setEditForm(originalEditForm);
@@ -447,6 +482,35 @@ const MatchDetailsModal = ({
     setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleEditLocationChange = useCallback((value) => {
+    setEditForm((prev) => ({
+      ...prev,
+      location: value,
+      latitude: null,
+      longitude: null,
+    }));
+  }, []);
+
+  const handleEditLocationSelect = useCallback((place) => {
+    if (!place) return;
+    setEditForm((prev) => {
+      const placeName = typeof place?.name === "string" ? place.name.trim() : "";
+      const formattedAddress =
+        typeof place?.formatted_address === "string"
+          ? place.formatted_address.trim()
+          : "";
+      const locationLabel = placeName || formattedAddress || prev.location || "";
+      const lat = place?.geometry?.location?.lat?.();
+      const lng = place?.geometry?.location?.lng?.();
+      return {
+        ...prev,
+        location: locationLabel || prev.location,
+        latitude: typeof lat === "number" ? lat : prev.latitude,
+        longitude: typeof lng === "number" ? lng : prev.longitude,
+      };
+    });
+  }, []);
+
   const handleStartEdit = () => {
     if (!isHost || isArchived || isCancelled) return;
     setEditError("");
@@ -480,16 +544,29 @@ const MatchDetailsModal = ({
       if (!confirmed) return;
     }
 
-    const matchFormat = editForm.matchFormat.trim();
+    const matchFormat = editForm.matchFormat?.trim?.() ?? "";
+    if (matchFormat && !isValidOptionValue(availableMatchFormats, matchFormat)) {
+      setEditError("Select a valid match format.");
+      return;
+    }
+
+    const level = editForm.level?.trim?.() ?? "";
+    if (isOpenMatch && level && !isValidOptionValue(availableSkillLevels, level)) {
+      setEditError("Select a valid level.");
+      return;
+    }
+
     const notes = editForm.notes.trim();
-    const level = editForm.level.trim();
+    const latitude = parseCoordinate(editForm.latitude);
+    const longitude = parseCoordinate(editForm.longitude);
 
     const payload = sanitizeUpdates({
       start_date_time: isoDate,
       location_text: trimmedLocation,
-      location: trimmedLocation,
+      latitude: latitude ?? undefined,
+      longitude: longitude ?? undefined,
       match_format: matchFormat || null,
-      notes: isOpenMatch ? notes || null : undefined,
+      notes: isOpenMatch ? (notes || null) : undefined,
       skill_level: isOpenMatch ? level || null : undefined,
       skill_level_min: isOpenMatch ? level || null : undefined,
     });
@@ -518,6 +595,12 @@ const MatchDetailsModal = ({
             match_format: matchFormat || null,
             format: matchFormat || null,
           };
+          if (latitude !== null) {
+            nextMatch.latitude = latitude;
+          }
+          if (longitude !== null) {
+            nextMatch.longitude = longitude;
+          }
           if (isOpenMatch) {
             nextMatch.skill_level = level || null;
             nextMatch.skill_level_min = level || null;
@@ -934,35 +1017,62 @@ const MatchDetailsModal = ({
             </div>
             <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
               Location
-              <input
-                type="text"
-                value={editForm.location}
-                onChange={(event) => handleEditFieldChange("location", event.target.value)}
-                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                placeholder="Where are you playing?"
-                required
-              />
+              <div className="rounded-xl">
+                {googleApiKey ? (
+                  <Autocomplete
+                    apiKey={googleApiKey}
+                    value={editForm.location}
+                    onChange={(event) => handleEditLocationChange(event.target.value)}
+                    onPlaceSelected={handleEditLocationSelect}
+                    options={{
+                      types: ["establishment"],
+                      fields: ["formatted_address", "geometry", "name"],
+                    }}
+                    placeholder="Where are you playing?"
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={editForm.location}
+                    onChange={(event) => handleEditLocationChange(event.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    placeholder="Where are you playing?"
+                    required
+                  />
+                )}
+              </div>
             </label>
             <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
               Match format
-              <input
-                type="text"
+              <select
                 value={editForm.matchFormat}
                 onChange={(event) => handleEditFieldChange("matchFormat", event.target.value)}
                 className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                placeholder="Singles, doubles, rotation, etc."
-              />
+              >
+                <option value="">Select format</option>
+                {availableMatchFormats.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             {isOpenMatch && (
               <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Level
-                <input
-                  type="text"
+                <select
                   value={editForm.level}
                   onChange={(event) => handleEditFieldChange("level", event.target.value)}
                   className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                  placeholder="3.0, 3.5, 4.0..."
-                />
+                >
+                  <option value="">Select level</option>
+                  {availableSkillLevels.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.desc ? `${option.label} – ${option.desc}` : option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             )}
             {isOpenMatch && (
