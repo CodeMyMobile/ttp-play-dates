@@ -784,16 +784,29 @@ const MatchDetailsModal = ({
 
     const payload = {
       start_date_time: isoStart,
-      match_format: editForm.matchFormat || null,
-      format: editForm.matchFormat || null,
-      skill_level_min: editForm.skillLevel || null,
-      skill_level: editForm.skillLevel || null,
-      notes: trimmedNotes || null,
       location_text: trimmedLocation,
       location: trimmedLocation,
-      latitude: Number.isFinite(editForm.latitude) ? editForm.latitude : null,
-      longitude: Number.isFinite(editForm.longitude) ? editForm.longitude : null,
     };
+
+    if (editForm.matchFormat) {
+      payload.match_format = editForm.matchFormat;
+    }
+
+    if (editForm.skillLevel) {
+      payload.skill_level_min = editForm.skillLevel;
+    }
+
+    if (trimmedNotes || baseline?.notes) {
+      payload.notes = trimmedNotes;
+    }
+
+    if (Number.isFinite(editForm.latitude)) {
+      payload.latitude = editForm.latitude;
+    }
+
+    if (Number.isFinite(editForm.longitude)) {
+      payload.longitude = editForm.longitude;
+    }
 
     setSavingEdit(true);
     try {
