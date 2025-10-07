@@ -205,6 +205,7 @@ const TennisMatchApp = () => {
     notes: "",
     hostId: null,
     hostName: "",
+    privacy: "open",
   });
 
   const [matches, setMatches] = useState([]);
@@ -782,30 +783,40 @@ const TennisMatchApp = () => {
         setManualContacts(new Map());
         setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
         lastInviteLoadRef.current = numericMatchId;
-        setMatchData((prev) => ({
-          ...prev,
-          type:
-            match.match_type === "private" || match.match_type === "closed"
-              ? "closed"
-              : "open",
-          skillLevel:
-            match.skill_level_min || match.skill_level || prev.skillLevel || "",
-          format: match.match_format || prev.format || "",
-          playerCount: match.player_limit ?? prev.playerCount,
-          occupied,
-          dateTime: match.start_date_time || prev.dateTime,
-          location: match.location_text || prev.location,
-          latitude: match.latitude ?? prev.latitude,
-          longitude: match.longitude ?? prev.longitude,
-          mapUrl: buildMapsUrl(
-            match.latitude,
-            match.longitude,
-            match.location_text,
-          ),
-          notes: match.notes || "",
-          hostId: computedHostId ?? prev.hostId,
-          hostName: computedHostName || prev.hostName || "",
-        }));
+
+        const rawMatchType =
+          (match.match_type || match.matchType || match.privacy || "")
+            .toString()
+            .toLowerCase();
+        const isPrivateMatch = rawMatchType === "private" || rawMatchType === "closed";
+
+        setMatchData((prev) => {
+          const nextSkillLevel = isPrivateMatch
+            ? ""
+            : match.skill_level_min || match.skill_level || prev.skillLevel || "";
+
+          return {
+            ...prev,
+            type: isPrivateMatch ? "closed" : "open",
+            privacy: isPrivateMatch ? "private" : "open",
+            skillLevel: nextSkillLevel,
+            format: match.match_format || prev.format || "",
+            playerCount: match.player_limit ?? prev.playerCount,
+            occupied,
+            dateTime: match.start_date_time || prev.dateTime,
+            location: match.location_text || prev.location,
+            latitude: match.latitude ?? prev.latitude,
+            longitude: match.longitude ?? prev.longitude,
+            mapUrl: buildMapsUrl(
+              match.latitude,
+              match.longitude,
+              match.location_text,
+            ),
+            notes: match.notes || "",
+            hostId: computedHostId ?? prev.hostId,
+            hostName: computedHostName || prev.hostName || "",
+          };
+        });
         setInviteMatchId((prev) =>
           prev === numericMatchId ? prev : numericMatchId,
         );
@@ -4635,6 +4646,8 @@ const TennisMatchApp = () => {
           setMatchData={setMatchData}
           selectedPlayers={selectedPlayers}
           setSelectedPlayers={setSelectedPlayers}
+          manualContacts={manualContacts}
+          setManualContacts={setManualContacts}
           existingPlayerIds={existingPlayerIds}
           setExistingPlayerIds={setExistingPlayerIds}
           onToast={displayToast}
