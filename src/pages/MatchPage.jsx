@@ -38,6 +38,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
+import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
 const DEFAULT_FORM = {
   date: "",
@@ -104,11 +105,6 @@ const buildInitialForm = (match) => {
     notes: match.notes || "",
   };
 };
-
-const sanitizePayload = (payload) =>
-  Object.fromEntries(
-    Object.entries(payload).filter(([, value]) => value !== undefined),
-  );
 
 export default function MatchPage() {
   const { id } = useParams();
@@ -345,19 +341,19 @@ export default function MatchPage() {
     const latitude = parseCoordinate(formState.latitude);
     const longitude = parseCoordinate(formState.longitude);
 
-    const payload = sanitizePayload({
-      start_date_time: isoDate,
-      location_text: trimmedLocation,
-      latitude: latitude ?? undefined,
-      longitude: longitude ?? undefined,
-      match_format: matchFormat || null,
-      notes: isOpenMatch ? (notes || null) : undefined,
-      ...(isOpenMatch
-        ? {
-            skill_level: level || null,
-            skill_level_min: level || null,
-          }
-        : {}),
+    const payload = buildMatchUpdatePayload({
+      startDateTime: isoDate,
+      locationText: trimmedLocation,
+      matchFormat,
+      previousMatchFormat: originalForm.matchFormat,
+      notes,
+      isOpenMatch,
+      skillLevel: level,
+      previousSkillLevel: originalForm.level,
+      latitude,
+      longitude,
+      previousLatitude: originalForm.latitude,
+      previousLongitude: originalForm.longitude,
     });
 
     try {

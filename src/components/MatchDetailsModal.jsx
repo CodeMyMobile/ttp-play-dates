@@ -48,6 +48,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
+import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -161,11 +162,6 @@ const buildInitialEditForm = (match) => {
     notes: match.notes || "",
   };
 };
-
-const sanitizeUpdates = (updates) =>
-  Object.fromEntries(
-    Object.entries(updates).filter(([, value]) => value !== undefined),
-  );
 
 const MatchDetailsModal = ({
   isOpen,
@@ -560,15 +556,19 @@ const MatchDetailsModal = ({
     const latitude = parseCoordinate(editForm.latitude);
     const longitude = parseCoordinate(editForm.longitude);
 
-    const payload = sanitizeUpdates({
-      start_date_time: isoDate,
-      location_text: trimmedLocation,
-      latitude: latitude ?? undefined,
-      longitude: longitude ?? undefined,
-      match_format: matchFormat || null,
-      notes: isOpenMatch ? (notes || null) : undefined,
-      skill_level: isOpenMatch ? level || null : undefined,
-      skill_level_min: isOpenMatch ? level || null : undefined,
+    const payload = buildMatchUpdatePayload({
+      startDateTime: isoDate,
+      locationText: trimmedLocation,
+      matchFormat,
+      previousMatchFormat: originalEditForm.matchFormat,
+      notes,
+      isOpenMatch,
+      skillLevel: level,
+      previousSkillLevel: originalEditForm.level,
+      latitude,
+      longitude,
+      previousLatitude: originalEditForm.latitude,
+      previousLongitude: originalEditForm.longitude,
     });
 
     try {
