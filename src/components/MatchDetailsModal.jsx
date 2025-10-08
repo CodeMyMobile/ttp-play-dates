@@ -235,6 +235,16 @@ const MatchDetailsModal = ({
     [originalEditForm.level],
   );
 
+  const suggestedLevel =
+    isOpenMatch
+      ? match?.skill_level ||
+        match?.skill_level_min ||
+        match?.skillLevel ||
+        match?.skillLevelMin ||
+        originalEditForm.level ||
+        ""
+      : "";
+
   useEffect(() => {
     setEditForm(originalEditForm);
   }, [originalEditForm]);
@@ -979,6 +989,12 @@ const MatchDetailsModal = ({
       ) : (
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-600">
           Open Match
+        </span>
+      )}
+      {suggestedLevel && (
+        <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-600">
+          <Sparkles className="h-3.5 w-3.5" />
+          Suggested level: {suggestedLevel}
         </span>
       )}
       {Number.isFinite(numericPlayerLimit) && (
