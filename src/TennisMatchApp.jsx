@@ -681,27 +681,6 @@ const TennisMatchApp = () => {
     }
   }, [location.pathname, navigate]);
 
-  const closeMatchDetailsModal = useCallback(() => {
-    setShowMatchDetailsModal(false);
-    setViewMatch(null);
-    if (matchDetailsOrigin === "browse") {
-      goToBrowse({ replace: true });
-    } else if (matchDetailsOrigin === "invites") {
-      goToInvites();
-    } else if (matchDetailsOrigin === "create") {
-      setCurrentScreen("create");
-    }
-    setMatchDetailsOrigin("browse");
-  }, [goToBrowse, goToInvites, matchDetailsOrigin]);
-
-  const handleManageInvitesFromDetails = useCallback(
-    (matchId) => {
-      if (!matchId) return;
-      openInviteScreen(matchId, { onClose: closeMatchDetailsModal });
-    },
-    [closeMatchDetailsModal, openInviteScreen],
-  );
-
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
       const numericMatchId = Number(matchId);
@@ -844,6 +823,27 @@ const TennisMatchApp = () => {
       }
     },
     [displayToast, goToBrowse, navigate],
+  );
+
+  const closeMatchDetailsModal = useCallback(() => {
+    setShowMatchDetailsModal(false);
+    setViewMatch(null);
+    if (matchDetailsOrigin === "browse") {
+      goToBrowse({ replace: true });
+    } else if (matchDetailsOrigin === "invites") {
+      goToInvites();
+    } else if (matchDetailsOrigin === "create") {
+      setCurrentScreen("create");
+    }
+    setMatchDetailsOrigin("browse");
+  }, [goToBrowse, goToInvites, matchDetailsOrigin]);
+
+  const handleManageInvitesFromDetails = useCallback(
+    (matchId) => {
+      if (!matchId) return;
+      openInviteScreen(matchId, { onClose: closeMatchDetailsModal });
+    },
+    [closeMatchDetailsModal, openInviteScreen],
   );
 
   useEffect(() => {
