@@ -64,6 +64,15 @@ const buildAvatarLabel = (name = "") => {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 };
 
+const pickFirstNonEmptyString = (...values) => {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+};
+
 const safeDate = (value) => {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -762,34 +771,127 @@ const MatchDetailsModal = ({
   );
 
   const playersList = useMemo(() => {
+    const participantIdentities = committedParticipants.map((participant) => ({
+      playerId: participant.player_id,
+      inviteeId: participant.invitee_id,
+      id: participant.id,
+    }));
+
     const list = committedParticipants.map((participant) => {
       const profile = participant.profile || {};
+      const name =
+        pickFirstNonEmptyString(
+          participant.full_name,
+          participant.fullName,
+          participant.name,
+          profile.full_name,
+          profile.fullName,
+          profile.name,
+        ) ||
+        (participant.player_id
+          ? `Player ${participant.player_id}`
+          : "Player");
       return {
-        id: participant.id || participant.player_id,
+        id: participant.id || participant.player_id || participant.invitee_id,
         playerId: participant.player_id,
-        name:
-          profile.full_name ||
-          profile.fullName ||
-          profile.name ||
-          `Player ${participant.player_id}`,
-        avatar: profile.avatar_url || profile.avatar,
-        isHost: participant.player_id === match?.host_id,
+        name,
+        avatar:
+          profile.avatar_url ||
+          profile.avatar ||
+          participant.avatar_url ||
+          participant.avatar ||
+          null,
+        isHost: idsMatch(participant.player_id, match?.host_id),
         rating:
+          participant.rating ||
           profile.usta_rating ||
           profile.rating ||
           profile.skill_rating ||
           profile.ntrp_rating ||
           null,
+        type: "participant",
       };
     });
 
+    const inviteesToDisplay = acceptedInvitees
+      .filter((invite) => {
+        const identifiers = [invite.player_id, invite.invitee_id, invite.id].filter(
+          Boolean,
+        );
+        if (identifiers.length === 0) return true;
+        return !participantIdentities.some((participant) =>
+          identifiers.some(
+            (identifier) =>
+              idsMatch(participant.playerId, identifier) ||
+              idsMatch(participant.inviteeId, identifier) ||
+              idsMatch(participant.id, identifier),
+          ),
+        );
+      })
+      .map((invite, index) => {
+        const profile =
+          invite.invitee_profile ||
+          invite.profile ||
+          invite.invitee?.profile ||
+          invite.invitee ||
+          invite.player_profile ||
+          invite.player?.profile ||
+          {};
+        const name =
+          pickFirstNonEmptyString(
+            invite.full_name,
+            invite.fullName,
+            invite.name,
+            profile.full_name,
+            profile.fullName,
+            profile.name,
+            invite.email,
+            invite.phone,
+          ) || "Accepted player";
+        const identifier =
+          invite.id ||
+          invite.invitee_id ||
+          invite.player_id ||
+          invite.email ||
+          invite.phone ||
+          `${index}`;
+        return {
+          id: `invite-${identifier}-${index}`,
+          playerId: invite.player_id,
+          name,
+          avatar:
+            profile.avatar_url ||
+            profile.avatar ||
+            invite.avatar_url ||
+            invite.avatar ||
+            null,
+          isHost: false,
+          rating:
+            invite.rating ||
+            profile.usta_rating ||
+            profile.rating ||
+            profile.skill_rating ||
+            profile.ntrp_rating ||
+            null,
+          type: "invitee",
+          isAcceptedInvite: true,
+        };
+      });
+
+    const combined = [...list, ...inviteesToDisplay];
+
     if (remainingSpots && remainingSpots > 0) {
       for (let i = 0; i < remainingSpots; i += 1) {
-        list.push({ id: `placeholder-${i}`, placeholder: true });
+        combined.push({ id: `placeholder-${i}`, placeholder: true });
       }
     }
-    return list;
-  }, [committedParticipants, match?.host_id, remainingSpots]);
+    return combined;
+  }, [
+    acceptedInvitees,
+    committedParticipants,
+    match?.host_id,
+    remainingSpots,
+  ]);
 
   if (!isOpen || !match) return null;
 
@@ -983,14 +1085,19 @@ const MatchDetailsModal = ({
               )}
             </div>
             <div className="flex-1">
-              <p className="text-sm font-black text-gray-900">
-                {player.name}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-black text-gray-900">{player.name}</span>
                 {player.isHost && (
-                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
                     Host
                   </span>
                 )}
-              </p>
+                {player.isAcceptedInvite && (
+                  <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-700">
+                    Accepted invite
+                  </span>
+                )}
+              </div>
               {player.rating && (
                 <p className="text-xs font-semibold text-gray-500">Rating {player.rating}</p>
               )}
@@ -998,6 +1105,7 @@ const MatchDetailsModal = ({
             {isHost &&
               !player.placeholder &&
               !player.isHost &&
+              player.type === "participant" &&
               !isArchived &&
               !isCancelled && (
                 <button
