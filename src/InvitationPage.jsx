@@ -68,11 +68,26 @@ export default function InvitationPage() {
     return now >= new Date(resendAt).getTime();
   }, [resendAt, now]);
 
-  const inviteeEmail = preview?.invitee?.email || "";
+  const invitee = preview?.invitee || null;
+  const availableChannels = preview?.availableChannels || [];
+  const inviteeEmail = (invitee?.email || "").trim().toLowerCase();
+  const inviteeName = (
+    invitee?.full_name || invitee?.first_name || invitee?.last_name || ""
+  ).trim();
+  const hasSmsChannel = availableChannels.includes("sms");
   const inviteeRequiresAccountClaim = useMemo(() => {
-    if (!inviteeEmail) return false;
-    return inviteeEmail.toLowerCase().endsWith("@ttpplaydates.com");
-  }, [inviteeEmail]);
+    if (!invitee) return true;
+    if (inviteeEmail && inviteeEmail.endsWith("@ttpplaydates.com")) {
+      return true;
+    }
+    if (!inviteeEmail && hasSmsChannel) {
+      return true;
+    }
+    if (!inviteeName && hasSmsChannel) {
+      return true;
+    }
+    return false;
+  }, [hasSmsChannel, invitee, inviteeEmail, inviteeName]);
 
   const isArchivedMatch = (preview?.match?.status === "archived") || archivedNotice;
 
@@ -350,6 +365,10 @@ export default function InvitationPage() {
     const trimmedEmail = email.trim();
     const trimmedName = fullName.trim();
 
+    if (!trimmedName) {
+      setError("Please tell us your name so everyone knows who's joining.");
+      return;
+    }
     if (!trimmedEmail || !password) {
       setError("Please enter your email and create a password.");
       return;
@@ -498,7 +517,6 @@ export default function InvitationPage() {
   const inviterFirstName = inviterName.split(" ").filter(Boolean)[0] || "";
   const inviterInitials = getInitials(inviterName || "Matchplay");
 
-  const availableChannels = preview?.availableChannels || [];
   const maskedIdentifier = preview?.maskedIdentifier;
   const activeChannel = lastChannel || selectedChannel;
   const activeChannelMeta = getChannelMeta(activeChannel);
@@ -551,8 +569,8 @@ export default function InvitationPage() {
             Quick signup to join the match
           </p>
           <p className="text-sm text-slate-500">
-            We pre-filled your details from the invite so you can claim your
-            profile and get playing faster.
+            Add your details so we can set up your Matchplay profile and let
+            the host know exactly who's joining.
           </p>
         </div>
       </div>
@@ -593,6 +611,7 @@ export default function InvitationPage() {
             onChange={(event) => setFullName(event.target.value)}
             placeholder="Enter your name"
             autoComplete="name"
+            required
           />
         </label>
         <label className="block">
