@@ -78,6 +78,67 @@ import {
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
+const DEPARTURE_KEYS = [
+  "left_at",
+  "leftAt",
+  "removed_at",
+  "removedAt",
+  "cancelled_at",
+  "cancelledAt",
+  "canceled_at",
+  "canceledAt",
+  "declined_at",
+  "declinedAt",
+  "withdrawn_at",
+  "withdrawnAt",
+];
+
+const PARTICIPANT_STATUS_KEYS = [
+  "participant_status",
+  "participantStatus",
+  "status_reason",
+  "statusReason",
+];
+
+const INACTIVE_PARTICIPANT_STATUSES = new Set([
+  "left",
+  "removed",
+  "cancelled",
+  "canceled",
+  "declined",
+  "rejected",
+  "withdrawn",
+  "expired",
+]);
+
+const hasAnyValue = (subject, keys = []) => {
+  if (!subject) return false;
+  return keys.some((key) => {
+    const value = subject?.[key];
+    if (value === undefined || value === null) return false;
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    if (value instanceof Date) {
+      return !Number.isNaN(value.getTime());
+    }
+    return true;
+  });
+};
+
+const hasInactiveStatus = (subject) => {
+  if (!subject) return false;
+  return PARTICIPANT_STATUS_KEYS.some((key) => {
+    const value = subject?.[key];
+    if (!value) return false;
+    const normalized = value.toString().trim().toLowerCase();
+    return INACTIVE_PARTICIPANT_STATUSES.has(normalized);
+  });
+};
+
 const matchFormatOptions = [
   "Singles",
   "Doubles",
@@ -435,63 +496,6 @@ const TennisMatchApp = () => {
         counts.archived ?? counts.archieve ?? counts.archive ?? 0;
       setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
-
-      const DEPARTURE_KEYS = [
-        "left_at",
-        "leftAt",
-        "removed_at",
-        "removedAt",
-        "cancelled_at",
-        "cancelledAt",
-        "canceled_at",
-        "canceledAt",
-        "declined_at",
-        "declinedAt",
-        "withdrawn_at",
-        "withdrawnAt",
-      ];
-      const PARTICIPANT_STATUS_KEYS = [
-        "participant_status",
-        "participantStatus",
-        "status_reason",
-        "statusReason",
-      ];
-      const INACTIVE_PARTICIPANT_STATUSES = new Set([
-        "left",
-        "removed",
-        "cancelled",
-        "canceled",
-        "declined",
-        "rejected",
-        "withdrawn",
-        "expired",
-      ]);
-      const hasAnyValue = (subject, keys = []) => {
-        if (!subject) return false;
-        return keys.some((key) => {
-          const value = subject?.[key];
-          if (value === undefined || value === null) return false;
-          if (typeof value === "string") {
-            return value.trim().length > 0;
-          }
-          if (typeof value === "number") {
-            return Number.isFinite(value);
-          }
-          if (value instanceof Date) {
-            return !Number.isNaN(value.getTime());
-          }
-          return true;
-        });
-      };
-      const hasInactiveStatus = (subject) => {
-        if (!subject) return false;
-        return PARTICIPANT_STATUS_KEYS.some((key) => {
-          const value = subject?.[key];
-          if (!value) return false;
-          const normalized = value.toString().trim().toLowerCase();
-          return INACTIVE_PARTICIPANT_STATUSES.has(normalized);
-        });
-      };
 
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
@@ -1733,7 +1737,7 @@ const TennisMatchApp = () => {
             onClick={() => handleViewDetails(match.id)}
             className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-colors"
           >
-            View details
+            {isHosted ? "View & manage" : "View details"}
           </button>
           {match.type === "available" && isUpcoming && !isArchived && (
             <button
@@ -1766,24 +1770,6 @@ const TennisMatchApp = () => {
             >
               <Zap className="w-4 h-4" />
               Join match
-            </button>
-          )}
-          {isHosted && !isArchived && (
-            <button
-              onClick={() => {
-                setEditMatch({
-                  id: match.id,
-                  dateTime: new Date(match.dateTime).toISOString().slice(0, 16),
-                  location: match.location,
-                  latitude: match.latitude,
-                  longitude: match.longitude,
-                  notes: match.notes || "",
-                });
-                setShowEditModal(true);
-              }}
-              className="px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
-            >
-              Manage match
             </button>
           )}
           {isArchived && (
@@ -4374,7 +4360,7 @@ const TennisMatchApp = () => {
           </button>
           <h2 className="text-2xl font-black text-gray-900 mb-2">Edit Match</h2>
           <p className="text-sm text-gray-500 mb-6 font-semibold">
-            Changes will notify all confirmed players
+            All participants will be notified automatically when you save changes.
           </p>
 
           <div className="space-y-4">

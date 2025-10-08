@@ -319,6 +319,15 @@ const MatchDetailsModal = ({
   const isUpcoming = match?.status === "upcoming";
   const isPrivate = matchPrivacy === "private";
   const isOpenMatch = !isPrivate;
+  const suggestedLevel =
+    isOpenMatch
+      ? match?.skill_level ||
+        match?.skill_level_min ||
+        match?.skillLevel ||
+        match?.skillLevelMin ||
+        originalEditForm.level ||
+        ""
+      : "";
   const isFull = remainingSpots === 0;
   const matchId = match?.id ?? null;
   const canManageInvites = Boolean(onManageInvites) && isHost && matchId;
@@ -981,6 +990,12 @@ const MatchDetailsModal = ({
           Open Match
         </span>
       )}
+      {suggestedLevel && (
+        <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-600">
+          <Sparkles className="h-3.5 w-3.5" />
+          Suggested level: {suggestedLevel}
+        </span>
+      )}
       {Number.isFinite(numericPlayerLimit) && (
         <span className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-600">
           {totalCommitted}/{numericPlayerLimit} players
@@ -997,7 +1012,8 @@ const MatchDetailsModal = ({
           <div>
             <p className="text-sm font-black text-gray-900">Manage match details</p>
             <p className="text-xs font-semibold text-gray-500">
-              Update the schedule and match information for your players.
+              Update the schedule and match information for your players. Participants are automatically notified when you save
+              changes.
             </p>
           </div>
           {!isEditing && (
