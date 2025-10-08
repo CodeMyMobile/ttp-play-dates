@@ -81,6 +81,58 @@ const distanceLabel = (distance) => {
   return `${display} mile${plural} away`;
 };
 
+const skillLevelString = (value) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : "";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (trimmed.toLowerCase() === "any level") return "";
+    return trimmed;
+  }
+  return "";
+};
+
+const skillLevelNumeric = (value) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const numeric = Number.parseFloat(value);
+    return Number.isNaN(numeric) ? null : numeric;
+  }
+  return null;
+};
+
+const getSkillLevelDisplay = (match) => {
+  if (!match) return "";
+
+  const directLevels = [match.skill_level, match.skillLevel];
+  for (const level of directLevels) {
+    const display = skillLevelString(level);
+    if (display) return display;
+  }
+
+  const minRaw = match.skill_level_min ?? match.skillLevelMin;
+  const maxRaw = match.skill_level_max ?? match.skillLevelMax;
+  const minDisplay = skillLevelString(minRaw);
+  const maxDisplay = skillLevelString(maxRaw);
+  const minNumeric = skillLevelNumeric(minRaw);
+  const maxNumeric = skillLevelNumeric(maxRaw);
+
+  if (minDisplay && maxDisplay && minNumeric !== null && maxNumeric !== null) {
+    return `${minDisplay} - ${maxDisplay}`;
+  }
+  if (minDisplay && minNumeric !== null) {
+    return `${minDisplay}+`;
+  }
+  if (maxDisplay && maxNumeric !== null) {
+    return `Up to ${maxDisplay}`;
+  }
+  return minDisplay || maxDisplay || "";
+};
+
 const buildMatchDescription = ({ match, hostName }) => {
   if (!match) return "Tennis match";
   const parts = [];
@@ -93,8 +145,9 @@ const buildMatchDescription = ({ match, hostName }) => {
   if (hostName) {
     parts.push(`hosted by ${hostName}`);
   }
-  if (match.skill_level) {
-    parts.push(`Skill level: ${match.skill_level}`);
+  const skillLevelDisplay = getSkillLevelDisplay(match);
+  if (skillLevelDisplay) {
+    parts.push(`Skill level: ${skillLevelDisplay}`);
   }
   if (match.notes) {
     parts.push(match.notes);
@@ -157,6 +210,12 @@ const buildInitialEditForm = (match) => {
   const longitude =
     parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
   const privateMatch = isMatchPrivate(match);
+  const openLevel =
+    match.skill_level ||
+    match.skillLevel ||
+    match.skill_level_min ||
+    match.skillLevelMin ||
+    "";
   return {
     date: toDateInput(match.start_date_time || match.startDateTime),
     time: toTimeInput(match.start_date_time || match.startDateTime),
@@ -164,9 +223,7 @@ const buildInitialEditForm = (match) => {
     latitude,
     longitude,
     matchFormat: match.match_format || match.format || "",
-    level: privateMatch
-      ? ""
-      : match.skill_level || match.skill_level_min || "",
+    level: privateMatch ? "" : openLevel,
     notes: match.notes || "",
   };
 };
@@ -210,6 +267,7 @@ const MatchDetailsModal = ({
 
   const match = matchData?.match || null;
   const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
+  const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
   const participants = useMemo(() => {
     if (Array.isArray(matchData?.participants)) {
       return uniqueParticipants(matchData.participants);
@@ -981,6 +1039,11 @@ const MatchDetailsModal = ({
           Open Match
         </span>
       )}
+      {isOpenMatch && suggestedSkillLevel && (
+        <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">
+          Suggested level: {suggestedSkillLevel}
+        </span>
+      )}
       {Number.isFinite(numericPlayerLimit) && (
         <span className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-600">
           {totalCommitted}/{numericPlayerLimit} players
@@ -1206,8 +1269,10 @@ const MatchDetailsModal = ({
                 <p className="text-sm font-semibold text-gray-700">
                   {match.match_format || match.format || "Details coming soon"}
                 </p>
-                {match.skill_level && (
-                  <p className="text-xs font-semibold text-gray-500">Skill level: {match.skill_level}</p>
+                {suggestedSkillLevel && (
+                  <p className="text-xs font-semibold text-gray-500">
+                    {isOpenMatch ? "Suggested level" : "Skill level"}: {suggestedSkillLevel}
+                  </p>
                 )}
               </div>
             </div>
