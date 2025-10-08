@@ -78,6 +78,67 @@ import {
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
+const DEPARTURE_KEYS = [
+  "left_at",
+  "leftAt",
+  "removed_at",
+  "removedAt",
+  "cancelled_at",
+  "cancelledAt",
+  "canceled_at",
+  "canceledAt",
+  "declined_at",
+  "declinedAt",
+  "withdrawn_at",
+  "withdrawnAt",
+];
+
+const PARTICIPANT_STATUS_KEYS = [
+  "participant_status",
+  "participantStatus",
+  "status_reason",
+  "statusReason",
+];
+
+const INACTIVE_PARTICIPANT_STATUSES = new Set([
+  "left",
+  "removed",
+  "cancelled",
+  "canceled",
+  "declined",
+  "rejected",
+  "withdrawn",
+  "expired",
+]);
+
+const hasAnyValue = (subject, keys = []) => {
+  if (!subject) return false;
+  return keys.some((key) => {
+    const value = subject?.[key];
+    if (value === undefined || value === null) return false;
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    if (value instanceof Date) {
+      return !Number.isNaN(value.getTime());
+    }
+    return true;
+  });
+};
+
+const hasInactiveStatus = (subject) => {
+  if (!subject) return false;
+  return PARTICIPANT_STATUS_KEYS.some((key) => {
+    const value = subject?.[key];
+    if (!value) return false;
+    const normalized = value.toString().trim().toLowerCase();
+    return INACTIVE_PARTICIPANT_STATUSES.has(normalized);
+  });
+};
+
 const matchFormatOptions = [
   "Singles",
   "Doubles",
@@ -435,63 +496,6 @@ const TennisMatchApp = () => {
         counts.archived ?? counts.archieve ?? counts.archive ?? 0;
       setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
-
-      const DEPARTURE_KEYS = [
-        "left_at",
-        "leftAt",
-        "removed_at",
-        "removedAt",
-        "cancelled_at",
-        "cancelledAt",
-        "canceled_at",
-        "canceledAt",
-        "declined_at",
-        "declinedAt",
-        "withdrawn_at",
-        "withdrawnAt",
-      ];
-      const PARTICIPANT_STATUS_KEYS = [
-        "participant_status",
-        "participantStatus",
-        "status_reason",
-        "statusReason",
-      ];
-      const INACTIVE_PARTICIPANT_STATUSES = new Set([
-        "left",
-        "removed",
-        "cancelled",
-        "canceled",
-        "declined",
-        "rejected",
-        "withdrawn",
-        "expired",
-      ]);
-      const hasAnyValue = (subject, keys = []) => {
-        if (!subject) return false;
-        return keys.some((key) => {
-          const value = subject?.[key];
-          if (value === undefined || value === null) return false;
-          if (typeof value === "string") {
-            return value.trim().length > 0;
-          }
-          if (typeof value === "number") {
-            return Number.isFinite(value);
-          }
-          if (value instanceof Date) {
-            return !Number.isNaN(value.getTime());
-          }
-          return true;
-        });
-      };
-      const hasInactiveStatus = (subject) => {
-        if (!subject) return false;
-        return PARTICIPANT_STATUS_KEYS.some((key) => {
-          const value = subject?.[key];
-          if (!value) return false;
-          const normalized = value.toString().trim().toLowerCase();
-          return INACTIVE_PARTICIPANT_STATUSES.has(normalized);
-        });
-      };
 
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
