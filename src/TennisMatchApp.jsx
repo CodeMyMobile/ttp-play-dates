@@ -1345,7 +1345,7 @@ const TennisMatchApp = () => {
                               onClick={() => handleViewDetails(invite.match.id)}
                               className="w-full px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold text-xs border border-white/30 hover:bg-white/20 transition-colors"
                             >
-                              View details
+                              View & manage
                             </button>
                           )}
                         </div>
@@ -1733,7 +1733,7 @@ const TennisMatchApp = () => {
             onClick={() => handleViewDetails(match.id)}
             className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-colors"
           >
-            View details
+            View & manage
           </button>
           {match.type === "available" && isUpcoming && !isArchived && (
             <button
@@ -1766,24 +1766,6 @@ const TennisMatchApp = () => {
             >
               <Zap className="w-4 h-4" />
               Join match
-            </button>
-          )}
-          {isHosted && !isArchived && (
-            <button
-              onClick={() => {
-                setEditMatch({
-                  id: match.id,
-                  dateTime: new Date(match.dateTime).toISOString().slice(0, 16),
-                  location: match.location,
-                  latitude: match.latitude,
-                  longitude: match.longitude,
-                  notes: match.notes || "",
-                });
-                setShowEditModal(true);
-              }}
-              className="px-5 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-105 transition-all shadow-lg"
-            >
-              Manage match
             </button>
           )}
           {isArchived && (
@@ -1927,7 +1909,7 @@ const TennisMatchApp = () => {
               }}
               className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
             >
-              <Calendar className="w-4 h-4 text-gray-500" /> View Details
+              <Calendar className="w-4 h-4 text-gray-500" /> View & manage
             </button>
             <button
               onClick={() => {
