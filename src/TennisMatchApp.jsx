@@ -694,6 +694,14 @@ const TennisMatchApp = () => {
     setMatchDetailsOrigin("browse");
   }, [goToBrowse, goToInvites, matchDetailsOrigin]);
 
+  const handleManageInvitesFromDetails = useCallback(
+    (matchId) => {
+      if (!matchId) return;
+      openInviteScreen(matchId, { onClose: closeMatchDetailsModal });
+    },
+    [closeMatchDetailsModal, openInviteScreen],
+  );
+
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
       const numericMatchId = Number(matchId);
@@ -4667,6 +4675,7 @@ const TennisMatchApp = () => {
         onUpdateMatch={setViewMatch}
         onToast={displayToast}
         formatDateTime={formatDateTime}
+        onManageInvites={handleManageInvitesFromDetails}
       />
       {Toast()}
       <ProfileManager

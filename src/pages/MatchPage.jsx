@@ -38,6 +38,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
+import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
 const DEFAULT_FORM = {
@@ -94,6 +95,7 @@ const buildInitialForm = (match) => {
     parseCoordinate(match.latitude) ?? parseCoordinate(match.lat);
   const longitude =
     parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
+  const privateMatch = isPrivateMatch(match);
   return {
     date: toDateInput(match.start_date_time),
     time: toTimeInput(match.start_date_time),
@@ -101,7 +103,9 @@ const buildInitialForm = (match) => {
     latitude,
     longitude,
     matchFormat: match.match_format || match.format || "",
-    level: match.skill_level || match.skill_level_min || "",
+    level: privateMatch
+      ? ""
+      : match.skill_level || match.skill_level_min || "",
     notes: match.notes || "",
   };
 };
@@ -175,7 +179,7 @@ export default function MatchPage() {
 
   const archived = match?.status === "archived";
   const cancelled = match?.status === "cancelled";
-  const isPrivate = match?.privacy === "private";
+  const isPrivate = isPrivateMatch(match);
   const isOpenMatch = Boolean(match) && !isPrivate;
   const isHost = Boolean(match?.host_id) && idsMatch(currentUser?.id, match.host_id);
   const canEdit = isHost && !archived && !cancelled;
