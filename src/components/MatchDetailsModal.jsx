@@ -16,6 +16,7 @@ import {
   Share2,
   Sparkles,
   Trophy,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -49,6 +50,10 @@ import {
   isValidOptionValue,
 } from "../utils/matchOptions";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
+import {
+  getMatchPrivacy,
+  isPrivateMatch as isMatchPrivate,
+} from "../utils/matchPrivacy";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -151,6 +156,7 @@ const buildInitialEditForm = (match) => {
     parseCoordinate(match.latitude) ?? parseCoordinate(match.lat);
   const longitude =
     parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
+  const privateMatch = isMatchPrivate(match);
   return {
     date: toDateInput(match.start_date_time || match.startDateTime),
     time: toTimeInput(match.start_date_time || match.startDateTime),
@@ -158,7 +164,9 @@ const buildInitialEditForm = (match) => {
     latitude,
     longitude,
     matchFormat: match.match_format || match.format || "",
-    level: match.skill_level || match.skill_level_min || "",
+    level: privateMatch
+      ? ""
+      : match.skill_level || match.skill_level_min || "",
     notes: match.notes || "",
   };
 };
@@ -174,6 +182,7 @@ const MatchDetailsModal = ({
   onUpdateMatch,
   onToast,
   formatDateTime,
+  onManageInvites,
 }) => {
   const [status, setStatus] = useState("details");
   const [joining, setJoining] = useState(false);
@@ -200,6 +209,7 @@ const MatchDetailsModal = ({
   );
 
   const match = matchData?.match || null;
+  const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
   const participants = useMemo(() => {
     if (Array.isArray(matchData?.participants)) {
       return uniqueParticipants(matchData.participants);
@@ -307,8 +317,16 @@ const MatchDetailsModal = ({
   const isArchived = match?.status === "archived";
   const isCancelled = match?.status === "cancelled";
   const isUpcoming = match?.status === "upcoming";
-  const isOpenMatch = match?.privacy !== "private";
+  const isPrivate = matchPrivacy === "private";
+  const isOpenMatch = !isPrivate;
   const isFull = remainingSpots === 0;
+  const matchId = match?.id ?? null;
+  const canManageInvites = Boolean(onManageInvites) && isHost && matchId;
+
+  const handleManageInvites = useCallback(() => {
+    if (!canManageInvites || !matchId) return;
+    onManageInvites(matchId);
+  }, [canManageInvites, matchId, onManageInvites]);
 
   useEffect(() => {
     if ((!isHost || isArchived || isCancelled) && isEditing) {
@@ -556,6 +574,8 @@ const MatchDetailsModal = ({
     const latitude = parseCoordinate(editForm.latitude);
     const longitude = parseCoordinate(editForm.longitude);
 
+    const skillLevel = isOpenMatch ? level : "";
+
     const payload = buildMatchUpdatePayload({
       startDateTime: isoDate,
       locationText: trimmedLocation,
@@ -563,8 +583,8 @@ const MatchDetailsModal = ({
       previousMatchFormat: originalEditForm.matchFormat,
       notes,
       isOpenMatch,
-      skillLevel: level,
-      previousSkillLevel: originalEditForm.level,
+      skillLevel,
+      previousSkillLevel: isOpenMatch ? originalEditForm.level : "",
       latitude,
       longitude,
       previousLatitude: originalEditForm.latitude,
@@ -602,9 +622,9 @@ const MatchDetailsModal = ({
             nextMatch.longitude = longitude;
           }
           if (isOpenMatch) {
-            nextMatch.skill_level = level || null;
-            nextMatch.skill_level_min = level || null;
-            nextMatch.skillLevel = level || null;
+            nextMatch.skill_level = skillLevel || null;
+            nextMatch.skill_level_min = skillLevel || null;
+            nextMatch.skillLevel = skillLevel || null;
             nextMatch.notes = notes || null;
           }
           return { ...prev, match: nextMatch };
@@ -952,7 +972,7 @@ const MatchDetailsModal = ({
           {matchDistanceLabel}
         </span>
       )}
-      {match.privacy === "private" ? (
+      {matchPrivacy === "private" ? (
         <span className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-black text-gray-600">
           Private Match
         </span>
@@ -1204,77 +1224,107 @@ const MatchDetailsModal = ({
             {renderPlayers()}
           </section>
 
-          {isOpenMatch && !isArchived && !isCancelled && (
-            <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
-              <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
-                <Share2 className="h-4 w-4" />
-                Invite other players
-              </div>
-              <p className="text-xs font-semibold text-emerald-700">
-                Share this match link with tennis friends so they can grab a spot before it fills up.
-              </p>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-gray-600">
-                  <span className="flex-1 truncate font-mono text-gray-700">
-                    {shareLoading
-                      ? "Generating share link..."
-                      : shareLinkReady
-                      ? shareLink
-                      : "Share link unavailable"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={shareLinkReady ? handleCopyShareLink : handleRefreshShareLink}
-                    disabled={shareLoading || (!shareLinkReady && !shareError)}
-                    className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    {shareCopied ? "Copied!" : shareLinkReady ? "Copy" : "Retry"}
-                  </button>
+          {!isArchived && !isCancelled && (
+            isOpenMatch ? (
+              <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+                <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
+                  <Share2 className="h-4 w-4" />
+                  Invite other players
                 </div>
-                {!shareLoading && shareError && (
-                  <div className="flex items-start justify-between gap-2 text-xs font-semibold text-rose-600">
-                    <span className="flex-1">{shareError}</span>
+                <p className="text-xs font-semibold text-emerald-700">
+                  Share this match link with tennis friends so they can grab a spot before it fills up.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-gray-600">
+                    <span className="flex-1 truncate font-mono text-gray-700">
+                      {shareLoading
+                        ? "Generating share link..."
+                        : shareLinkReady
+                        ? shareLink
+                        : "Share link unavailable"}
+                    </span>
                     <button
                       type="button"
-                      onClick={handleRefreshShareLink}
-                      className="text-rose-600 underline-offset-2 hover:underline"
+                      onClick={shareLinkReady ? handleCopyShareLink : handleRefreshShareLink}
+                      disabled={shareLoading || (!shareLinkReady && !shareError)}
+                      className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Try again
+                      <Copy className="h-3.5 w-3.5" />
+                      {shareCopied ? "Copied!" : shareLinkReady ? "Copy" : "Retry"}
                     </button>
                   </div>
-                )}
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={handleShareSms}
-                  disabled={!shareLinkReady}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  Text link
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShareWhatsApp}
-                  disabled={!shareLinkReady}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Send className="h-4 w-4" />
-                  WhatsApp
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShareEmail}
-                  disabled={!shareLinkReady}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Mail className="h-4 w-4" />
-                  Email invite
-                </button>
-              </div>
-            </section>
+                  {!shareLoading && shareError && (
+                    <div className="flex items-start justify-between gap-2 text-xs font-semibold text-rose-600">
+                      <span className="flex-1">{shareError}</span>
+                      <button
+                        type="button"
+                        onClick={handleRefreshShareLink}
+                        className="text-rose-600 underline-offset-2 hover:underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={handleShareSms}
+                    disabled={!shareLinkReady}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Text link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShareWhatsApp}
+                    disabled={!shareLinkReady}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Send className="h-4 w-4" />
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShareEmail}
+                    disabled={!shareLinkReady}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Mail className="h-4 w-4" />
+                    Email invite
+                  </button>
+                </div>
+              </section>
+            ) : (
+              isHost && (
+                <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+                  <div className="flex items-center gap-2 text-sm font-black text-blue-900">
+                    <UserPlus className="h-4 w-4" />
+                    Invite players directly
+                  </div>
+                  <p className="text-xs font-semibold text-blue-700">
+                    Send invites to specific players just like when you created the match.
+                  </p>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleManageInvites}
+                      disabled={!canManageInvites}
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Manage invites
+                    </button>
+                    {!canManageInvites && (
+                      <p className="mt-2 text-xs font-semibold text-blue-600">
+                        Invites are unavailable right now.
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )
+            )
           )}
 
           {match.notes && (
@@ -1291,7 +1341,7 @@ const MatchDetailsModal = ({
             </section>
           )}
 
-          {match.privacy === "private" && (
+          {matchPrivacy === "private" && (
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm font-semibold text-gray-600">
               Private matches can be joined with an invite. Reach out to the organizer if you need access.
             </div>
