@@ -1,24 +1,24 @@
 // src/InvitationPage.jsx
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   CalendarDays,
   MapPin,
   ClipboardList,
   Users,
-  MessageCircle,
-  Mail,
-  Send,
   ArrowRight,
+  ArrowLeft,
   AlertCircle,
   Archive,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
 import {
   getInvitePreview,
-  beginInviteVerification,
-  verifyInviteCode,
   claimInvite,
+  acceptInvite,
 } from "./services/invites";
+import { login, signup } from "./services/auth";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import { uniqueActiveParticipants } from "./utils/participants";
 import Header from "./components/Header.jsx";
@@ -26,19 +26,11 @@ import Header from "./components/Header.jsx";
 export default function InvitationPage() {
   const { token } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState(null);
-  const [phase, setPhase] = useState("preview"); // 'preview'|'otp'
-  const [code, setCode] = useState("");
+  const [phase, setPhase] = useState("preview"); // 'preview' | 'auth'
   const [error, setError] = useState("");
-  const [resendAt, setResendAt] = useState(null);
-  const [now, setNow] = useState(Date.now());
-  const [showPicker, setShowPicker] = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState(null);
-  const [identifier, setIdentifier] = useState("");
-  const [lastChannel, setLastChannel] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -47,26 +39,14 @@ export default function InvitationPage() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [archivedNotice, setArchivedNotice] = useState(false);
-  const autoVerifyAttemptRef = useRef(null);
-
-  const codeFromQuery = useMemo(() => {
-    const search = location?.search || "";
-    if (!search) return "";
-    const params = new URLSearchParams(search);
-    const raw = params.get("code");
-    return (raw || "").trim();
-  }, [location?.search]);
-
-  // 1s ticker for resend countdown
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const canResend = useMemo(() => {
-    if (!resendAt) return true;
-    return now >= new Date(resendAt).getTime();
-  }, [resendAt, now]);
+  const [authMode, setAuthMode] = useState("signIn");
+  const [signInEmail, setSignInEmail] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
+  const [signUpName, setSignUpName] = useState("");
+  const [signUpEmail, setSignUpEmail] = useState("");
+  const [signUpPassword, setSignUpPassword] = useState("");
+  const [signUpPhone, setSignUpPhone] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
 
   const inviteeEmail = preview?.invitee?.email || "";
   const inviteeRequiresAccountClaim = useMemo(() => {
@@ -93,15 +73,6 @@ export default function InvitationPage() {
         if (!alive) return;
         setPreview(data);
         setPhase("preview");
-        // Initialize channel preference from available channels
-        const channels = data?.availableChannels || [];
-        const defaultChannel = channels.includes("sms")
-          ? "sms"
-          : channels[0] || null;
-        setSelectedChannel(defaultChannel);
-        setLastChannel(null);
-        setShowPicker(false);
-        setIdentifier("");
         const invitee = data?.invitee || null;
         if (invitee) {
           setFullName(invitee.full_name || "");
@@ -114,6 +85,14 @@ export default function InvitationPage() {
         }
         setPassword("");
         setAgreeTerms(false);
+        setAuthMode("signIn");
+        setSignInEmail(invitee?.email || "");
+        setSignInPassword("");
+        setSignUpName(invitee?.full_name || "");
+        setSignUpEmail(invitee?.email || "");
+        setSignUpPhone(invitee?.phone || "");
+        setSignUpPassword("");
+        setAuthSubmitting(false);
         setArchivedNotice(data?.match?.status === "archived");
       } catch (err) {
         if (!alive) return;
@@ -124,10 +103,6 @@ export default function InvitationPage() {
             setPreview(archived);
             setArchivedNotice(true);
             setPhase("preview");
-            setSelectedChannel(null);
-            setLastChannel(null);
-            setShowPicker(false);
-            setIdentifier("");
             const invitee = archived?.invitee || null;
             if (invitee) {
               setFullName(invitee.full_name || "");
@@ -140,6 +115,14 @@ export default function InvitationPage() {
             }
             setPassword("");
             setAgreeTerms(false);
+            setAuthMode("signIn");
+            setSignInEmail(invitee?.email || "");
+            setSignInPassword("");
+            setSignUpName(invitee?.full_name || "");
+            setSignUpEmail(invitee?.email || "");
+            setSignUpPhone(invitee?.phone || "");
+            setSignUpPassword("");
+            setAuthSubmitting(false);
             setLoadError({
               emoji: "🗂️",
               title: "Match archived",
@@ -156,10 +139,6 @@ export default function InvitationPage() {
         } else {
           setPreview(null);
           setPhase("preview");
-          setSelectedChannel(null);
-          setLastChannel(null);
-          setShowPicker(false);
-          setIdentifier("");
           const isNotFound = err?.status === 404 || err?.message === "not_found";
           setLoadError(
             isNotFound
@@ -186,19 +165,22 @@ export default function InvitationPage() {
     };
   }, [token]);
 
-  const persistSession = useCallback((data) => {
+  const persistSession = useCallback((data, fallback = {}) => {
     if (!data) return;
     const {
       access_token,
       refresh_token,
+      token: legacyToken,
       profile,
       user_id,
       user_type,
+      user: userFromApi,
     } = data || {};
 
-    if (access_token) {
+    const tokenToStore = access_token || legacyToken || fallback.accessToken;
+    if (tokenToStore) {
       try {
-        localStorage.setItem("authToken", access_token);
+        localStorage.setItem("authToken", tokenToStore);
       } catch {
         // ignore localStorage write errors
       }
@@ -211,14 +193,17 @@ export default function InvitationPage() {
       }
     }
 
+    let userRecord = null;
+
     if (user_id || profile) {
-      const name = (profile?.full_name || "").trim() || "Player";
-      const user = {
-        id: user_id,
+      const name = (profile?.full_name || fallback.name || fallback.email || "")
+        .trim() || "Player";
+      userRecord = {
+        id: user_id || profile?.id,
         type: user_type,
         name,
-        email: profile?.email || "",
-        phone: profile?.phone || "",
+        email: profile?.email || fallback.email || "",
+        phone: profile?.phone || fallback.phone || "",
         avatar: name
           .split(" ")
           .filter(Boolean)
@@ -227,115 +212,173 @@ export default function InvitationPage() {
           .toUpperCase(),
         skillLevel: profile?.usta_rating || "",
       };
+    } else if (userFromApi) {
+      const name =
+        (userFromApi.full_name ||
+          userFromApi.name ||
+          fallback.name ||
+          fallback.email ||
+          "")
+          .trim() || "Player";
+      userRecord = {
+        id: userFromApi.id || userFromApi.user_id,
+        type: userFromApi.user_type || user_type,
+        name,
+        email: userFromApi.email || fallback.email || "",
+        phone: userFromApi.phone || fallback.phone || "",
+        avatar: name
+          .split(" ")
+          .filter(Boolean)
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase(),
+        skillLevel: userFromApi.usta_rating || "",
+      };
+    } else if (fallback.email || fallback.name) {
+      const name = (fallback.name || fallback.email || "").trim() || "Player";
+      userRecord = {
+        id: null,
+        type: user_type,
+        name,
+        email: fallback.email || "",
+        phone: fallback.phone || "",
+        avatar: name
+          .split(" ")
+          .filter(Boolean)
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase(),
+        skillLevel: "",
+      };
+    }
+
+    if (userRecord) {
       try {
-        localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("user", JSON.stringify(userRecord));
       } catch {
         // ignore localStorage write errors
       }
     }
   }, []);
 
-  const begin = async () => {
+  const getInviteDestination = useCallback(
+    (authData = {}, acceptance = {}) => {
+      const redirect = acceptance?.redirect || authData?.redirect;
+      if (redirect) return { redirect };
+      const matchId =
+        acceptance?.matchId ||
+        acceptance?.match_id ||
+        authData?.matchId ||
+        authData?.match_id ||
+        preview?.match?.id ||
+        preview?.match?.match_id ||
+        preview?.matchId;
+      return { matchId };
+    },
+    [preview],
+  );
+
+  const completeJoin = useCallback(
+    async (authData, fallback = {}) => {
+      persistSession(authData, fallback);
+      const acceptance = await acceptInvite(token);
+      return getInviteDestination(authData, acceptance);
+    },
+    [getInviteDestination, persistSession, token],
+  );
+
+  const navigateAfterJoin = useCallback(
+    (destination) => {
+      if (!destination) {
+        navigate(`/matches`, { replace: true });
+        return;
+      }
+      if (destination.redirect) {
+        navigate(destination.redirect, { replace: true });
+        return;
+      }
+      if (destination.matchId !== undefined && destination.matchId !== null) {
+        navigate(`/matches/${destination.matchId}`, { replace: true });
+        return;
+      }
+      navigate(`/matches`, { replace: true });
+    },
+    [navigate],
+  );
+
+  const handleSignInSubmit = async (event) => {
+    event.preventDefault();
+    if (authSubmitting) return;
     setError("");
     if (isArchivedMatch) {
       setError("This match has been archived. Invites are read-only.");
       return;
     }
+    const trimmedEmail = signInEmail.trim();
+    if (!trimmedEmail || !signInPassword) {
+      setError("Please enter your email and password to sign in.");
+      return;
+    }
+    setAuthSubmitting(true);
     try {
-      const payload = {};
-      if (selectedChannel) payload.channel = selectedChannel;
-      if (identifier) payload.identifier = identifier.trim();
-      const resp = await beginInviteVerification(token, payload);
-      if (resp?.channel) setLastChannel(resp.channel);
-      setResendAt(resp?.resendAt || null);
-      setPhase("otp");
-      setCode("");
-      setShowPicker(false);
-    } catch (e) {
-      if (isMatchArchivedError(e)) {
+      const data = await login(trimmedEmail, signInPassword);
+      const destination = await completeJoin(data, { email: trimmedEmail });
+      navigateAfterJoin(destination);
+    } catch (err) {
+      if (isMatchArchivedError(err)) {
         setArchivedNotice(true);
         setError("This match has been archived. Invites are read-only.");
+      } else if (isAcceptError(err)) {
+        setError(mapAcceptError(err));
       } else {
-        const msg = mapBeginError(e?.message);
-        setError(msg);
+        setError(mapSignInError(err));
       }
+    } finally {
+      setAuthSubmitting(false);
     }
   };
 
-  const verify = async () => {
+  const handleSignUpSubmit = async (event) => {
+    event.preventDefault();
+    if (authSubmitting) return;
     setError("");
     if (isArchivedMatch) {
       setError("This match has been archived. Invites are read-only.");
       return;
     }
+    const trimmedEmail = signUpEmail.trim();
+    const trimmedName = signUpName.trim();
+    const trimmedPhone = signUpPhone.trim();
+    if (!trimmedEmail || !signUpPassword) {
+      setError("Please enter your email and create a password to sign up.");
+      return;
+    }
+    setAuthSubmitting(true);
     try {
-      const data = await verifyInviteCode(token, code);
-
-      persistSession(data);
-      setPhase("done");
-      navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
-    } catch (error) {
-      if (isMatchArchivedError(error)) {
+      const data = await signup({
+        email: trimmedEmail,
+        password: signUpPassword,
+        name: trimmedName,
+        phone: trimmedPhone || undefined,
+      });
+      const destination = await completeJoin(data, {
+        email: trimmedEmail,
+        name: trimmedName,
+        phone: trimmedPhone,
+      });
+      navigateAfterJoin(destination);
+    } catch (err) {
+      if (isMatchArchivedError(err)) {
         setArchivedNotice(true);
         setError("This match has been archived. Invites are read-only.");
+      } else if (isAcceptError(err)) {
+        setError(mapAcceptError(err));
       } else {
-        setError("Invalid or expired code. Try again.");
+        setError(mapSignUpError(err));
       }
+    } finally {
+      setAuthSubmitting(false);
     }
-  };
-
-  useEffect(() => {
-    if (!preview || !codeFromQuery) return;
-    if (inviteeRequiresAccountClaim) return; // signup flow continues unchanged
-
-    const attemptKey = `${token}:${codeFromQuery}`;
-    if (autoVerifyAttemptRef.current === attemptKey) return;
-    autoVerifyAttemptRef.current = attemptKey;
-
-    let alive = true;
-    setError("");
-    setCode(codeFromQuery);
-
-    (async () => {
-      try {
-        const data = await verifyInviteCode(token, codeFromQuery);
-        if (!alive) return;
-        persistSession(data);
-        setPhase("done");
-        navigate(data.redirect || `/matches/${data.matchId}`, { replace: true });
-      } catch (err) {
-        if (!alive) return;
-        if (isMatchArchivedError(err)) {
-          setArchivedNotice(true);
-          setError("This match has been archived. Invites are read-only.");
-          setCode("");
-          setPhase("preview");
-          setShowPicker(false);
-        } else {
-          const message = mapAutoVerifyError(err);
-          setError(message);
-          setCode("");
-          setPhase("otp");
-          setShowPicker(false);
-        }
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [
-    codeFromQuery,
-    inviteeRequiresAccountClaim,
-    navigate,
-    persistSession,
-    preview,
-    token,
-  ]);
-
-  const resend = async () => {
-    if (!canResend) return;
-    await begin();
   };
 
   const handleClaimSubmit = async (event) => {
@@ -498,15 +541,9 @@ export default function InvitationPage() {
   const inviterFirstName = inviterName.split(" ").filter(Boolean)[0] || "";
   const inviterInitials = getInitials(inviterName || "Matchplay");
 
-  const availableChannels = preview?.availableChannels || [];
   const maskedIdentifier = preview?.maskedIdentifier;
-  const activeChannel = lastChannel || selectedChannel;
-  const activeChannelMeta = getChannelMeta(activeChannel);
   const isInviteeClaim = inviteeRequiresAccountClaim;
   const identifierDisplay = maskedIdentifier || phone || email;
-  const channelLabels = availableChannels.map(
-    (ch) => getChannelMeta(ch).label,
-  );
 
   const infoItems = [];
   if (startDate) {
@@ -569,14 +606,6 @@ export default function InvitationPage() {
               <dt className="font-semibold text-emerald-900/80">Sent to</dt>
               <dd className="text-right text-emerald-900">
                 {identifierDisplay}
-              </dd>
-            </div>
-          )}
-          {channelLabels.length > 0 && (
-            <div className="flex items-center justify-between gap-3">
-              <dt className="font-semibold text-emerald-900/80">Delivery</dt>
-              <dd className="text-right text-emerald-900">
-                {channelLabels.join(", ")}
               </dd>
             </div>
           )}
@@ -668,152 +697,175 @@ export default function InvitationPage() {
     </form>
   );
 
-  const channelPicker = showPicker ? (
-    <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-5 shadow-inner backdrop-blur">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-800/80">
-        <MessageCircle className="h-4 w-4" />
-        Choose where to receive your code
-      </div>
-      <div className="space-y-3">
-        {availableChannels.map((ch) => {
-          const meta = getChannelMeta(ch);
-          const ChannelIcon = meta.icon;
-          return (
-            <label
-              key={ch}
-              className={`flex items-center gap-3 rounded-2xl border px-3 py-3 transition-all ${
-                selectedChannel === ch
-                  ? "border-amber-400 bg-white shadow-sm shadow-amber-200/50"
-                  : "border-transparent bg-white/70 hover:border-amber-200"
-              }`}
-            >
-              <input
-                type="radio"
-                name="channel"
-                value={ch}
-                checked={selectedChannel === ch}
-                onChange={() => setSelectedChannel(ch)}
-                className="h-4 w-4 text-amber-600 focus:ring-amber-500"
-              />
-              <div
-                className={`flex h-11 w-11 items-center justify-center rounded-2xl ${meta.accent}`}
-              >
-                <ChannelIcon className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-amber-900">
-                  {meta.label}
-                </p>
-                {maskedIdentifier && (
-                  <p className="text-xs text-amber-700/80">
-                    Send to {maskedIdentifier}
-                  </p>
-                )}
-              </div>
-            </label>
-          );
-        })}
-      </div>
-      {preview?.identifierRequired && (
-        <label className="block text-sm font-semibold text-amber-900/90">
-          <span className="mb-1 block text-xs uppercase tracking-wide text-amber-700/80">
-            Enter your {prettyRequirement(preview?.requires)}
-          </span>
-          <input
-            className="w-full rounded-xl border border-amber-200 bg-white/90 px-3 py-2 text-amber-900 placeholder:text-amber-400 focus:border-amber-400 focus:outline-none focus:ring focus:ring-amber-200"
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            placeholder={placeholderFor(preview?.requires)}
-          />
-        </label>
-      )}
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <button
-          onClick={begin}
-          disabled={isArchivedMatch}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 font-semibold text-white shadow-lg shadow-amber-200 transition-transform hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
-        >
-          Send access code
-        </button>
-        <button
-          onClick={() => setShowPicker(false)}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white/70 px-4 py-2.5 font-semibold text-amber-700 transition-colors hover:bg-white"
-        >
-          Cancel
-        </button>
-      </div>
-      {error && <ErrorText>{error}</ErrorText>}
-    </div>
-  ) : null;
-
-  const secondsUntilResend = resendAt
-    ? Math.max(
-        0,
-        Math.ceil((new Date(resendAt).getTime() - now) / 1000),
-      )
-    : 0;
-
-  const otpSection = (
+  const authSection = (
     <div className="space-y-5 rounded-[28px] border border-slate-100 bg-white/95 p-6 shadow-xl">
-      <div className="flex items-start gap-3">
-        <div
-          className={`flex h-12 w-12 items-center justify-center rounded-2xl ${activeChannelMeta.accent}`}
-        >
-          <activeChannelMeta.icon className="h-5 w-5" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+            {authMode === "signIn" ? (
+              <LogIn className="h-5 w-5" />
+            ) : (
+              <UserPlus className="h-5 w-5" />
+            )}
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-slate-900">
+              {authMode === "signIn"
+                ? "Sign in to join this match"
+                : "Create your Matchplay account"}
+            </p>
+            <p className="text-sm text-slate-500">
+              {authMode === "signIn"
+                ? "Enter your account details to secure your spot."
+                : "We'll set up your profile so you can lock in this invite."}
+            </p>
+          </div>
         </div>
-        <div className="flex-1 space-y-1">
-          <p className="text-sm font-semibold text-slate-900">
-            Check your {activeChannelMeta.label.toLowerCase()}
-          </p>
-          <p className="text-sm text-slate-500">
-            We sent a six-digit code
-            {maskedIdentifier ? ` to ${maskedIdentifier}` : ""}. Enter it
-            below to join the match.
-          </p>
-        </div>
-      </div>
-      <label className="block">
-        <span className="sr-only">Verification code</span>
-        <input
-          className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-4 text-center text-2xl font-semibold tracking-[0.65em] text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-200"
-          inputMode="numeric"
-          maxLength={6}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="••••••"
-        />
-      </label>
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <PrimaryButton
-          onClick={verify}
-          disabled={isArchivedMatch}
-          className="w-full sm:w-auto"
-        >
-          Verify &amp; Join
-        </PrimaryButton>
         <button
-          onClick={resend}
-          disabled={!canResend || isArchivedMatch}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white sm:w-auto"
-          aria-disabled={!canResend || isArchivedMatch}
-        >
-          {canResend && !isArchivedMatch
-            ? "Resend code"
-            : !isArchivedMatch
-            ? `Resend in ${secondsUntilResend}s`
-            : "Resend unavailable"}
-        </button>
-        <button
+          type="button"
           onClick={() => {
             setPhase("preview");
-            setShowPicker(true);
             setError("");
           }}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-transparent bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-200 sm:w-auto"
+          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100"
         >
-          Change channel
+          <ArrowLeft className="h-3.5 w-3.5" /> Back
         </button>
       </div>
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setAuthMode("signIn");
+            setError("");
+          }}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+            authMode === "signIn"
+              ? "bg-white text-emerald-600 shadow"
+              : "text-slate-500"
+          }`}
+        >
+          <LogIn className="h-4 w-4" />
+          Sign in
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAuthMode("signUp");
+            setError("");
+          }}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+            authMode === "signUp"
+              ? "bg-white text-emerald-600 shadow"
+              : "text-slate-500"
+          }`}
+        >
+          <UserPlus className="h-4 w-4" />
+          Sign up
+        </button>
+      </div>
+      {authMode === "signIn" ? (
+        <form onSubmit={handleSignInSubmit} className="space-y-4">
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">
+              Email
+            </span>
+            <input
+              type="email"
+              value={signInEmail}
+              onChange={(event) => setSignInEmail(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">
+              Password
+            </span>
+            <input
+              type="password"
+              value={signInPassword}
+              onChange={(event) => setSignInPassword(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+              placeholder="Enter your password"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <PrimaryButton
+            type="submit"
+            disabled={authSubmitting || isArchivedMatch}
+          >
+            {authSubmitting ? "Joining match..." : "Sign in & Join"}
+          </PrimaryButton>
+        </form>
+      ) : (
+        <form onSubmit={handleSignUpSubmit} className="space-y-4">
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">
+              Full name (optional)
+            </span>
+            <input
+              value={signUpName}
+              onChange={(event) => setSignUpName(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+              placeholder="Your name"
+              autoComplete="name"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">
+              Email
+            </span>
+            <input
+              type="email"
+              value={signUpEmail}
+              onChange={(event) => setSignUpEmail(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">
+              Create password
+            </span>
+            <input
+              type="password"
+              value={signUpPassword}
+              onChange={(event) => setSignUpPassword(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+              placeholder="Min. 8 characters"
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">
+              Mobile number (optional)
+            </span>
+            <input
+              value={signUpPhone}
+              onChange={(event) => setSignUpPhone(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+              placeholder="(555) 123-4567"
+              autoComplete="tel"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              We use this for match reminders and schedule updates.
+            </p>
+          </label>
+          <PrimaryButton
+            type="submit"
+            disabled={authSubmitting || isArchivedMatch}
+          >
+            {authSubmitting ? "Creating account..." : "Sign up & Join"}
+          </PrimaryButton>
+        </form>
+      )}
       {error && <ErrorText>{error}</ErrorText>}
     </div>
   );
@@ -958,28 +1010,24 @@ export default function InvitationPage() {
             <div className="mt-6 space-y-4">
               {isInviteeClaim ? (
                 claimSection
-              ) : phase === "otp" ? (
-                otpSection
+              ) : phase === "auth" ? (
+                authSection
               ) : (
                 <>
                   <PrimaryButton
                     onClick={() => {
-                      const channels = preview?.availableChannels || [];
-                      if (channels.length > 1 || preview?.identifierRequired) {
-                        setShowPicker((v) => !v);
-                      } else {
-                        setShowPicker(false);
-                        setSelectedChannel(channels[0] || selectedChannel);
-                        begin();
-                      }
+                      setPhase("auth");
+                      setAuthMode("signIn");
+                      setError("");
                     }}
                     disabled={isArchivedMatch}
                   >
                     Join Match &amp; Play
                     <ArrowRight className="h-4 w-4" />
                   </PrimaryButton>
-                  {channelPicker}
-                  {!showPicker && error && <ErrorText>{error}</ErrorText>}
+                  <p className="text-xs text-slate-500">
+                    You'll be asked to sign in or create a free account to claim your spot.
+                  </p>
                 </>
               )}
             </div>
@@ -1046,54 +1094,87 @@ function StatusCard({ emoji, title, message }) {
 }
 
 // Helpers
-function mapBeginError(code) {
-  switch (code) {
-    case "invalid_channel":
-      return "Please choose a valid delivery channel.";
-    case "identifier_required":
-    case "identifier_missing":
-      return "Please enter the required phone or email.";
-    case "expired":
-      return "This invite has expired.";
-    case "invalid_status":
-      return "This invite cannot be used right now.";
-    case "not_found":
-      return "Invite not found.";
-    case "bad_request":
-      return "Couldn't send code. Check details and try again.";
-    default:
-      return "Couldn't send code. Please try again.";
-  }
+function isAcceptError(error) {
+  if (!error) return false;
+  if (isMatchArchivedError(error)) return true;
+  const status = error.status ?? error.response?.status;
+  if (status && [404, 409, 410, 423].includes(status)) return true;
+  const code = (error.data?.error || error.message || "")
+    .toString()
+    .toLowerCase();
+  if (!code) return false;
+  return code.includes("invite") || code.includes("match");
 }
 
-function mapAutoVerifyError(error) {
-  if (!error) {
-    return "We couldn't verify this link. Request a new code below.";
+function mapSignInError(error) {
+  if (!error) return "We couldn't sign you in. Try again.";
+  const status = error.status ?? error.response?.status;
+  if (status === 401 || status === 400) {
+    return "Incorrect email or password. Try again.";
   }
+  if (status === 422) {
+    return (
+      error.data?.message ||
+      "Please double-check your email and password before trying again."
+    );
+  }
+  if (status && status >= 500) {
+    return "We're having trouble signing you in. Try again later.";
+  }
+  if (error.data?.message) return error.data.message;
+  if (error.message && error.message !== "Error") return error.message;
+  return "We couldn't sign you in. Try again.";
+}
 
-  const message =
-    (typeof error === "string" && error) ||
-    error?.message ||
-    error?.data?.message ||
-    error?.data?.error ||
-    "";
-  const normalized = message.toString().toLowerCase();
+function mapSignUpError(error) {
+  if (!error) return "We couldn't create your account. Try again.";
+  const status = error.status ?? error.response?.status;
+  const normalized = (error.data?.error || error.message || "")
+    .toString()
+    .toLowerCase();
 
-  if (normalized.includes("expired")) {
-    return "This login link has expired. Request a new code below.";
+  if (status === 409 || normalized.includes("email_in_use")) {
+    return "That email is already in use. Try signing in instead.";
   }
-  if (normalized.includes("invalid")) {
-    return "This login link is invalid. Request a new code below.";
+  if (status === 422 || normalized.includes("validation")) {
+    return (
+      error.data?.message ||
+      "Please double-check your details and try again."
+    );
   }
-  if (normalized.includes("not_found")) {
-    return "This login link is no longer valid. Request a new code below.";
+  if (status && status >= 500) {
+    return "We're having trouble creating your account. Try again later.";
   }
+  if (error.data?.message) return error.data.message;
+  if (error.message && error.message !== "Error") return error.message;
+  return "We couldn't create your account. Try again.";
+}
 
-  if (error?.status && error.status >= 500) {
-    return "We're having trouble verifying this link. Request a new code below.";
+function mapAcceptError(error) {
+  if (!error) return "We couldn't add you to this match. Try again later.";
+  if (isMatchArchivedError(error)) {
+    return "This match has been archived. Invites are read-only.";
   }
+  const status = error.status ?? error.response?.status;
+  const code = (error.data?.error || error.message || "")
+    .toString()
+    .toLowerCase();
 
-  return "We couldn't verify this link. Request a new code below.";
+  if (status === 404 || code.includes("not_found")) {
+    return "This invite is no longer available. Ask the host to send a new link.";
+  }
+  if (status === 409 || code.includes("full")) {
+    return "This match is already full or unavailable.";
+  }
+  if (code.includes("revoked")) {
+    return "The host revoked this invite. Ask them for a new link.";
+  }
+  if (status && status >= 500) {
+    return "We're having trouble adding you to this match. Try again later.";
+  }
+  if (error.data?.message) return error.data.message;
+  if (error.message && error.message !== "Error") return error.message;
+  return "We couldn't add you to this match. Try again later.";
 }
 
 function mapClaimError(error) {
@@ -1124,18 +1205,6 @@ function mapClaimError(error) {
     default:
       return "We couldn't complete your signup. Check your details and try again.";
   }
-}
-
-function prettyRequirement(req) {
-  if (req === "phone") return "phone";
-  if (req === "email") return "email";
-  return "identifier";
-}
-
-function placeholderFor(req) {
-  if (req === "phone") return "+1 555 555 5555";
-  if (req === "email") return "you@example.com";
-  return "Enter identifier";
 }
 
 function formatInviteDate(date) {
@@ -1211,28 +1280,3 @@ function participantDisplayName(participant) {
   );
 }
 
-const CHANNEL_META = {
-  sms: {
-    label: "Text message",
-    accent: "bg-emerald-100 text-emerald-600",
-    icon: MessageCircle,
-  },
-  email: {
-    label: "Email",
-    accent: "bg-sky-100 text-sky-600",
-    icon: Mail,
-  },
-  whatsapp: {
-    label: "WhatsApp",
-    accent: "bg-emerald-100 text-emerald-600",
-    icon: MessageCircle,
-  },
-};
-
-function getChannelMeta(channel) {
-  return CHANNEL_META[channel] || {
-    label: "Message",
-    accent: "bg-slate-100 text-slate-600",
-    icon: Send,
-  };
-}
