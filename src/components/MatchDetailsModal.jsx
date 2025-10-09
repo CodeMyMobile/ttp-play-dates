@@ -81,6 +81,30 @@ const distanceLabel = (distance) => {
   return `${display} mile${plural} away`;
 };
 
+const SKILL_LEVEL_KEYS = [
+  "skill_level",
+  "skillLevel",
+  "suggested_skill_level",
+  "suggestedSkillLevel",
+  "level",
+  "match_level",
+  "matchLevel",
+];
+
+const SKILL_LEVEL_MIN_KEYS = [
+  "skill_level_min",
+  "skillLevelMin",
+  "min_skill_level",
+  "minSkillLevel",
+];
+
+const SKILL_LEVEL_MAX_KEYS = [
+  "skill_level_max",
+  "skillLevelMax",
+  "max_skill_level",
+  "maxSkillLevel",
+];
+
 const skillLevelString = (value) => {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value.toString() : "";
@@ -111,35 +135,59 @@ const formatSkillLevelNumeric = (value) => {
   return normalized.toFixed(1);
 };
 
+const formatSkillLevelRange = (base) => {
+  if (!Number.isFinite(base)) return "";
+  const start = formatSkillLevelNumeric(base);
+  const end = formatSkillLevelNumeric(base + 0.5);
+  if (!start || !end) return "";
+  return `${start}-${end}`;
+};
+
+const firstValueFromKeys = (subject, keys = []) => {
+  if (!subject || typeof subject !== "object") return undefined;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(subject, key)) {
+      return subject[key];
+    }
+  }
+  return undefined;
+};
+
 const getSkillLevelDisplay = (match) => {
   if (!match) return "";
 
-  const directLevels = [match.skill_level, match.skillLevel];
-  for (const level of directLevels) {
-    const numeric = skillLevelNumeric(level);
-    const display = skillLevelString(level);
+  for (const key of SKILL_LEVEL_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(match, key)) continue;
+    const raw = match[key];
+    const numeric = skillLevelNumeric(raw);
     if (numeric !== null) {
-      const upperBound = numeric + 0.5;
-      return `${formatSkillLevelNumeric(numeric)} - ${formatSkillLevelNumeric(upperBound)}`;
+      const range = formatSkillLevelRange(numeric);
+      if (range) return range;
     }
+    const display = skillLevelString(raw);
     if (display) return display;
   }
 
-  const minRaw = match.skill_level_min ?? match.skillLevelMin;
-  const maxRaw = match.skill_level_max ?? match.skillLevelMax;
-  const minDisplay = skillLevelString(minRaw);
-  const maxDisplay = skillLevelString(maxRaw);
+  const minRaw = firstValueFromKeys(match, SKILL_LEVEL_MIN_KEYS);
+  const maxRaw = firstValueFromKeys(match, SKILL_LEVEL_MAX_KEYS);
   const minNumeric = skillLevelNumeric(minRaw);
   const maxNumeric = skillLevelNumeric(maxRaw);
+  const minDisplay = skillLevelString(minRaw);
+  const maxDisplay = skillLevelString(maxRaw);
 
-  if (minDisplay && maxDisplay && minNumeric !== null && maxNumeric !== null) {
-    return `${formatSkillLevelNumeric(minNumeric)} - ${formatSkillLevelNumeric(maxNumeric)}`;
+  if (minNumeric !== null) {
+    const range = formatSkillLevelRange(minNumeric);
+    if (range) return range;
   }
-  if (minDisplay && minNumeric !== null) {
-    return `${formatSkillLevelNumeric(minNumeric)}+`;
+
+  if (maxNumeric !== null) {
+    const base = maxNumeric - 0.5;
+    const range = formatSkillLevelRange(base);
+    if (range) return range;
   }
-  if (maxDisplay && maxNumeric !== null) {
-    return `Up to ${formatSkillLevelNumeric(maxNumeric)}`;
+
+  if (minDisplay && maxDisplay) {
+    return `${minDisplay}-${maxDisplay}`;
   }
   return minDisplay || maxDisplay || "";
 };

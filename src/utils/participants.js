@@ -30,20 +30,41 @@ const normalizeIdentityValue = (value) => {
   return null;
 };
 
-const buildIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
-    const identity = normalizeIdentityValue(item[key]);
-    if (identity !== null) {
-      return `${key}:${identity}`;
-    }
+const toIdentityToken = (value) => {
+  if (value === null || value === undefined) return null;
+  const type = typeof value;
+  if (type === "number" && Number.isFinite(value)) {
+    return `number:${value}`;
+  }
+  if (type === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    return `string:${normalized.toLowerCase()}`;
+  }
+  if (type === "bigint") {
+    return `bigint:${value.toString()}`;
   }
   return null;
 };
 
+const buildIdentityCandidates = (item, keys = DEFAULT_IDENTITY_KEYS) => {
+  if (!item || typeof item !== "object") return [];
+  const tokens = [];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
+    const normalized = normalizeIdentityValue(item[key]);
+    const token = toIdentityToken(normalized);
+    if (!token) continue;
+    if (!tokens.includes(token)) {
+      tokens.push(token);
+    }
+  }
+  return tokens;
+};
+
 const hasIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
   if (!item || typeof item !== "object") return false;
-  return buildIdentity(item, keys) !== null;
+  return buildIdentityCandidates(item, keys).length > 0;
 };
 
 export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
@@ -54,10 +75,10 @@ export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
   const deduped = [];
   for (const item of items) {
     if (!item || typeof item !== "object") continue;
-    const identity = buildIdentity(item, keys);
-    if (!identity) continue;
-    if (seen.has(identity)) continue;
-    seen.add(identity);
+    const identities = buildIdentityCandidates(item, keys);
+    if (identities.length === 0) continue;
+    if (identities.some((identity) => seen.has(identity))) continue;
+    identities.forEach((identity) => seen.add(identity));
     deduped.push(item);
   }
   return deduped;
