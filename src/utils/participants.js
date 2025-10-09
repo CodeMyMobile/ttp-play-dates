@@ -1,4 +1,10 @@
-const DEFAULT_IDENTITY_KEYS = ["player_id", "invitee_id", "id"];
+const DEFAULT_IDENTITY_KEYS = [
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+];
 
 const normalizeIdentityValue = (value) => {
   if (value === null || value === undefined) {
@@ -57,9 +63,17 @@ export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
   return deduped;
 };
 
+const PARTICIPANT_IDENTITY_KEYS = [
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+];
+
 export const uniqueParticipants = (participants = []) => {
   if (!Array.isArray(participants)) return [];
-  const identityKeys = ["player_id", "invitee_id", "id"];
+  const identityKeys = PARTICIPANT_IDENTITY_KEYS;
   return dedupeByIdentity(
     participants.filter((participant) => hasIdentity(participant, identityKeys)),
     identityKeys,
@@ -112,10 +126,15 @@ export const uniqueActiveParticipants = (participants = []) =>
 export const countUniqueActiveParticipants = (participants = []) =>
   uniqueActiveParticipants(participants).length;
 
-export const uniqueMatchOccupants = (
-  participants = [],
-  invitees = [],
-) => {
+const MATCH_OCCUPANT_IDENTITY_KEYS = [
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+];
+
+export const uniqueMatchOccupants = (participants = [], invitees = []) => {
   const activeParticipants = uniqueActiveParticipants(participants);
   const acceptedInvitees = uniqueAcceptedInvitees(invitees);
 
@@ -129,16 +148,24 @@ export const uniqueMatchOccupants = (
 
   return dedupeByIdentity(
     [...activeParticipants, ...acceptedInvitees],
-    ["player_id", "invitee_id", "id"],
+    MATCH_OCCUPANT_IDENTITY_KEYS,
   );
 };
 
 export const countUniqueMatchOccupants = (participants = [], invitees = []) =>
   uniqueMatchOccupants(participants, invitees).length;
 
+const INVITEE_IDENTITY_KEYS = [
+  "invitee_id",
+  "inviteeId",
+  "player_id",
+  "playerId",
+  "id",
+];
+
 export const uniqueInvitees = (invitees = []) => {
   if (!Array.isArray(invitees)) return [];
-  const identityKeys = ["invitee_id", "player_id", "id"];
+  const identityKeys = INVITEE_IDENTITY_KEYS;
   return dedupeByIdentity(
     invitees.filter((invite) => hasIdentity(invite, identityKeys)),
     identityKeys,
@@ -232,7 +259,7 @@ const isInviteActive = (invite) => {
 
 export const uniqueAcceptedInvitees = (invitees = []) => {
   if (!Array.isArray(invitees) || invitees.length === 0) return [];
-  const identityKeys = ["invitee_id", "player_id", "id"];
+  const identityKeys = INVITEE_IDENTITY_KEYS;
   return dedupeByIdentity(
     invitees.filter(
       (invite) => hasIdentity(invite, identityKeys) && isInviteActive(invite),

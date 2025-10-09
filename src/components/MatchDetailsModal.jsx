@@ -105,12 +105,23 @@ const skillLevelNumeric = (value) => {
   return null;
 };
 
+const formatSkillLevelNumeric = (value) => {
+  if (!Number.isFinite(value)) return "";
+  const normalized = Math.round(value * 10) / 10;
+  return normalized.toFixed(1);
+};
+
 const getSkillLevelDisplay = (match) => {
   if (!match) return "";
 
   const directLevels = [match.skill_level, match.skillLevel];
   for (const level of directLevels) {
+    const numeric = skillLevelNumeric(level);
     const display = skillLevelString(level);
+    if (numeric !== null) {
+      const upperBound = numeric + 0.5;
+      return `${formatSkillLevelNumeric(numeric)} - ${formatSkillLevelNumeric(upperBound)}`;
+    }
     if (display) return display;
   }
 
@@ -122,13 +133,13 @@ const getSkillLevelDisplay = (match) => {
   const maxNumeric = skillLevelNumeric(maxRaw);
 
   if (minDisplay && maxDisplay && minNumeric !== null && maxNumeric !== null) {
-    return `${minDisplay} - ${maxDisplay}`;
+    return `${formatSkillLevelNumeric(minNumeric)} - ${formatSkillLevelNumeric(maxNumeric)}`;
   }
   if (minDisplay && minNumeric !== null) {
-    return `${minDisplay}+`;
+    return `${formatSkillLevelNumeric(minNumeric)}+`;
   }
   if (maxDisplay && maxNumeric !== null) {
-    return `Up to ${maxDisplay}`;
+    return `Up to ${formatSkillLevelNumeric(maxNumeric)}`;
   }
   return minDisplay || maxDisplay || "";
 };
@@ -761,6 +772,24 @@ const MatchDetailsModal = ({
     [match?.distance, match?.distanceMiles, match?.distance_miles],
   );
 
+  const locationLabel = useMemo(() => {
+    const label =
+      match?.location_text || match?.location || match?.locationText || "";
+    return typeof label === "string" ? label.trim() : "";
+  }, [match?.location, match?.locationText, match?.location_text]);
+
+  const locationHref = useMemo(() => {
+    const directUrl = match?.map_url || match?.mapUrl;
+    if (directUrl) {
+      return directUrl;
+    }
+    if (!locationLabel) {
+      return "";
+    }
+    const encoded = encodeURIComponent(locationLabel);
+    return `https://www.google.com/maps/search/?api=1&query=${encoded}`;
+  }, [locationLabel, match?.mapUrl, match?.map_url]);
+
   const playersList = useMemo(() => {
     const list = committedParticipants.map((participant) => {
       const profile = participant.profile || {};
@@ -1237,19 +1266,19 @@ const MatchDetailsModal = ({
               </div>
               <div className="flex-1">
                 <p className="text-sm font-black text-gray-900">Location</p>
-                {match.location_text || match.location ? (
+                {locationLabel ? (
                   <p className="text-sm font-semibold text-gray-700">
-                    {match.map_url || match.mapUrl ? (
+                    {locationHref ? (
                       <a
-                        href={match.map_url || match.mapUrl}
+                        href={locationHref}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-emerald-600 underline-offset-2 hover:underline"
                       >
-                        {match.location_text || match.location}
+                        {locationLabel}
                       </a>
                     ) : (
-                      match.location_text || match.location
+                      locationLabel
                     )}
                   </p>
                 ) : (
