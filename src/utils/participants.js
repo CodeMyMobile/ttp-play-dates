@@ -119,6 +119,10 @@ const isParticipantActive = (participant) => {
     return false;
   }
 
+  if (!hasAffirmativeStatus(participant)) {
+    return false;
+  }
+
   if (
     hasAnyValue(participant, [
       "left_at",
@@ -212,19 +216,93 @@ const hasAnyValue = (item, keys = []) => {
   });
 };
 
+const INACTIVE_STATUS_VALUES = new Set([
+  "left",
+  "removed",
+  "cancelled",
+  "canceled",
+  "declined",
+  "rejected",
+  "withdrawn",
+  "expired",
+  "pending",
+  "invited",
+  "invite",
+  "request",
+  "requested",
+  "requesting",
+  "waitlisted",
+  "waiting",
+  "tentative",
+]);
+
 const isInactiveStatus = (value) => {
   if (!value) return false;
   const normalized = value.toString().trim().toLowerCase();
-  return [
-    "left",
-    "removed",
-    "cancelled",
-    "canceled",
-    "declined",
-    "rejected",
-    "withdrawn",
-    "expired",
-  ].includes(normalized);
+  return INACTIVE_STATUS_VALUES.has(normalized);
+};
+
+const ACTIVE_STATUS_VALUES = new Set([
+  "accepted",
+  "confirmed",
+  "joined",
+  "active",
+  "attending",
+  "yes",
+  "going",
+  "participating",
+  "participant",
+  "registered",
+  "playing",
+  "host",
+  "owner",
+  "leader",
+  "captain",
+]);
+
+const collectStatusValues = (participant) => {
+  if (!participant || typeof participant !== "object") {
+    return [];
+  }
+  const statusKeys = [
+    "status",
+    "participant_status",
+    "participantStatus",
+    "attendance_status",
+    "attendanceStatus",
+    "response",
+    "rsvp_status",
+    "rsvpStatus",
+    "state",
+  ];
+
+  return statusKeys
+    .flatMap((key) => {
+      if (!Object.prototype.hasOwnProperty.call(participant, key)) return [];
+      const value = participant[key];
+      if (value === undefined || value === null) return [];
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) =>
+            entry && entry.toString && entry.toString().trim().toLowerCase(),
+          )
+          .filter((entry) => entry);
+      }
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        const normalized = value.toString().trim().toLowerCase();
+        return normalized ? [normalized] : [];
+      }
+      return [];
+    })
+    .filter((entry, index, self) => self.indexOf(entry) === index);
+};
+
+const hasAffirmativeStatus = (participant) => {
+  const statuses = collectStatusValues(participant);
+  if (statuses.length === 0) {
+    return true;
+  }
+  return statuses.some((status) => ACTIVE_STATUS_VALUES.has(status));
 };
 
 const isInviteActive = (invite) => {
