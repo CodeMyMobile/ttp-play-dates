@@ -1,4 +1,10 @@
-const DEFAULT_IDENTITY_KEYS = ["player_id", "invitee_id", "id"];
+const DEFAULT_IDENTITY_KEYS = [
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+];
 
 const normalizeIdentityValue = (value) => {
   if (value === null || value === undefined) {
@@ -24,20 +30,41 @@ const normalizeIdentityValue = (value) => {
   return null;
 };
 
-const buildIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
-    const identity = normalizeIdentityValue(item[key]);
-    if (identity !== null) {
-      return `${key}:${identity}`;
-    }
+const toIdentityToken = (value) => {
+  if (value === null || value === undefined) return null;
+  const type = typeof value;
+  if (type === "number" && Number.isFinite(value)) {
+    return `number:${value}`;
+  }
+  if (type === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    return `string:${normalized.toLowerCase()}`;
+  }
+  if (type === "bigint") {
+    return `bigint:${value.toString()}`;
   }
   return null;
 };
 
+const buildIdentityCandidates = (item, keys = DEFAULT_IDENTITY_KEYS) => {
+  if (!item || typeof item !== "object") return [];
+  const tokens = [];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
+    const normalized = normalizeIdentityValue(item[key]);
+    const token = toIdentityToken(normalized);
+    if (!token) continue;
+    if (!tokens.includes(token)) {
+      tokens.push(token);
+    }
+  }
+  return tokens;
+};
+
 const hasIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
   if (!item || typeof item !== "object") return false;
-  return buildIdentity(item, keys) !== null;
+  return buildIdentityCandidates(item, keys).length > 0;
 };
 
 export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
@@ -48,18 +75,26 @@ export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
   const deduped = [];
   for (const item of items) {
     if (!item || typeof item !== "object") continue;
-    const identity = buildIdentity(item, keys);
-    if (!identity) continue;
-    if (seen.has(identity)) continue;
-    seen.add(identity);
+    const identities = buildIdentityCandidates(item, keys);
+    if (identities.length === 0) continue;
+    if (identities.some((identity) => seen.has(identity))) continue;
+    identities.forEach((identity) => seen.add(identity));
     deduped.push(item);
   }
   return deduped;
 };
 
+const PARTICIPANT_IDENTITY_KEYS = [
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+];
+
 export const uniqueParticipants = (participants = []) => {
   if (!Array.isArray(participants)) return [];
-  const identityKeys = ["player_id", "invitee_id", "id"];
+  const identityKeys = PARTICIPANT_IDENTITY_KEYS;
   return dedupeByIdentity(
     participants.filter((participant) => hasIdentity(participant, identityKeys)),
     identityKeys,
@@ -81,6 +116,10 @@ const isParticipantActive = (participant) => {
     participant.statusReason,
   ];
   if (statusCandidates.some((value) => isInactiveStatus(value))) {
+    return false;
+  }
+
+  if (!hasAffirmativeStatus(participant)) {
     return false;
   }
 
@@ -112,10 +151,15 @@ export const uniqueActiveParticipants = (participants = []) =>
 export const countUniqueActiveParticipants = (participants = []) =>
   uniqueActiveParticipants(participants).length;
 
-export const uniqueMatchOccupants = (
-  participants = [],
-  invitees = [],
-) => {
+const MATCH_OCCUPANT_IDENTITY_KEYS = [
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+];
+
+export const uniqueMatchOccupants = (participants = [], invitees = []) => {
   const activeParticipants = uniqueActiveParticipants(participants);
   const acceptedInvitees = uniqueAcceptedInvitees(invitees);
 
@@ -129,16 +173,24 @@ export const uniqueMatchOccupants = (
 
   return dedupeByIdentity(
     [...activeParticipants, ...acceptedInvitees],
-    ["player_id", "invitee_id", "id"],
+    MATCH_OCCUPANT_IDENTITY_KEYS,
   );
 };
 
 export const countUniqueMatchOccupants = (participants = [], invitees = []) =>
   uniqueMatchOccupants(participants, invitees).length;
 
+const INVITEE_IDENTITY_KEYS = [
+  "invitee_id",
+  "inviteeId",
+  "player_id",
+  "playerId",
+  "id",
+];
+
 export const uniqueInvitees = (invitees = []) => {
   if (!Array.isArray(invitees)) return [];
-  const identityKeys = ["invitee_id", "player_id", "id"];
+  const identityKeys = INVITEE_IDENTITY_KEYS;
   return dedupeByIdentity(
     invitees.filter((invite) => hasIdentity(invite, identityKeys)),
     identityKeys,
@@ -164,19 +216,93 @@ const hasAnyValue = (item, keys = []) => {
   });
 };
 
+const INACTIVE_STATUS_VALUES = new Set([
+  "left",
+  "removed",
+  "cancelled",
+  "canceled",
+  "declined",
+  "rejected",
+  "withdrawn",
+  "expired",
+  "pending",
+  "invited",
+  "invite",
+  "request",
+  "requested",
+  "requesting",
+  "waitlisted",
+  "waiting",
+  "tentative",
+]);
+
 const isInactiveStatus = (value) => {
   if (!value) return false;
   const normalized = value.toString().trim().toLowerCase();
-  return [
-    "left",
-    "removed",
-    "cancelled",
-    "canceled",
-    "declined",
-    "rejected",
-    "withdrawn",
-    "expired",
-  ].includes(normalized);
+  return INACTIVE_STATUS_VALUES.has(normalized);
+};
+
+const ACTIVE_STATUS_VALUES = new Set([
+  "accepted",
+  "confirmed",
+  "joined",
+  "active",
+  "attending",
+  "yes",
+  "going",
+  "participating",
+  "participant",
+  "registered",
+  "playing",
+  "host",
+  "owner",
+  "leader",
+  "captain",
+]);
+
+const collectStatusValues = (participant) => {
+  if (!participant || typeof participant !== "object") {
+    return [];
+  }
+  const statusKeys = [
+    "status",
+    "participant_status",
+    "participantStatus",
+    "attendance_status",
+    "attendanceStatus",
+    "response",
+    "rsvp_status",
+    "rsvpStatus",
+    "state",
+  ];
+
+  return statusKeys
+    .flatMap((key) => {
+      if (!Object.prototype.hasOwnProperty.call(participant, key)) return [];
+      const value = participant[key];
+      if (value === undefined || value === null) return [];
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) =>
+            entry && entry.toString && entry.toString().trim().toLowerCase(),
+          )
+          .filter((entry) => entry);
+      }
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        const normalized = value.toString().trim().toLowerCase();
+        return normalized ? [normalized] : [];
+      }
+      return [];
+    })
+    .filter((entry, index, self) => self.indexOf(entry) === index);
+};
+
+const hasAffirmativeStatus = (participant) => {
+  const statuses = collectStatusValues(participant);
+  if (statuses.length === 0) {
+    return true;
+  }
+  return statuses.some((status) => ACTIVE_STATUS_VALUES.has(status));
 };
 
 const isInviteActive = (invite) => {
@@ -232,7 +358,7 @@ const isInviteActive = (invite) => {
 
 export const uniqueAcceptedInvitees = (invitees = []) => {
   if (!Array.isArray(invitees) || invitees.length === 0) return [];
-  const identityKeys = ["invitee_id", "player_id", "id"];
+  const identityKeys = INVITEE_IDENTITY_KEYS;
   return dedupeByIdentity(
     invitees.filter(
       (invite) => hasIdentity(invite, identityKeys) && isInviteActive(invite),
