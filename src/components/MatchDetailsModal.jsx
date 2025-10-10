@@ -54,6 +54,7 @@ import {
   getMatchPrivacy,
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
+import { buildDateTimePayload } from "../utils/datetime";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -194,13 +195,6 @@ const toTimeInput = (value) => {
   const hours = `${date.getHours()}`.padStart(2, "0");
   const minutes = `${date.getMinutes()}`.padStart(2, "0");
   return `${hours}:${minutes}`;
-};
-
-const combineDateTime = (date, time) => {
-  if (!date || !time) return null;
-  const timestamp = new Date(`${date}T${time}`);
-  if (Number.isNaN(timestamp.getTime())) return null;
-  return timestamp.toISOString();
 };
 
 const buildInitialEditForm = (match) => {
@@ -645,7 +639,8 @@ const MatchDetailsModal = ({
       setEditError("Date, time, and location are required.");
       return;
     }
-    const isoDate = combineDateTime(editForm.date, editForm.time);
+    const dateTimeInfo = buildDateTimePayload(editForm.date, editForm.time);
+    const isoDate = dateTimeInfo?.isoString;
     if (!isoDate) {
       setEditError("Please provide a valid date and time.");
       return;
@@ -677,6 +672,9 @@ const MatchDetailsModal = ({
 
     const payload = buildMatchUpdatePayload({
       startDateTime: isoDate,
+      startDateTimeLocal: dateTimeInfo?.localDateTime || null,
+      startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
+      startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,
       matchFormat,
       previousMatchFormat: originalEditForm.matchFormat,
@@ -708,6 +706,25 @@ const MatchDetailsModal = ({
             ...(prev.match || {}),
             start_date_time: isoDate,
             startDateTime: isoDate,
+            ...(dateTimeInfo?.localDateTime
+              ? {
+                  start_date_time_local: dateTimeInfo.localDateTime,
+                  startDateTimeLocal: dateTimeInfo.localDateTime,
+                }
+              : {}),
+            ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
+              ? {
+                  start_date_time_offset_minutes:
+                    dateTimeInfo.timezoneOffsetMinutes,
+                  startDateTimeOffsetMinutes: dateTimeInfo.timezoneOffsetMinutes,
+                }
+              : {}),
+            ...(dateTimeInfo?.timezoneName
+              ? {
+                  start_date_time_timezone: dateTimeInfo.timezoneName,
+                  startDateTimeTimezone: dateTimeInfo.timezoneName,
+                }
+              : {}),
             location_text: trimmedLocation,
             locationText: trimmedLocation,
             location: trimmedLocation,

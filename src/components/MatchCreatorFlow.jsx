@@ -36,6 +36,7 @@ import {
   MATCH_FORMAT_OPTIONS,
   SKILL_LEVEL_OPTIONS,
 } from "../utils/matchOptions";
+import { buildDateTimePayload } from "../utils/datetime";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -46,16 +47,6 @@ const formatLocalDate = (date) =>
   `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
 const formatLocalTime = (date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-
-const formatWithOffset = (date) => {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
-  const offsetMinutes = date.getTimezoneOffset();
-  const sign = offsetMinutes > 0 ? "-" : "+";
-  const absMinutes = Math.abs(offsetMinutes);
-  const offsetHours = pad(Math.floor(absMinutes / 60));
-  const offsetMins = pad(absMinutes % 60);
-  return `${formatLocalDate(date)}T${formatLocalTime(date)}:${pad(date.getSeconds())}${sign}${offsetHours}:${offsetMins}`;
-};
 
 const defaultDateInfo = () => {
   const base = new Date();
@@ -318,30 +309,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     return invitedCount < MAX_PRIVATE_INVITES;
   }, [invitedCount, matchData.type]);
 
-  const combineDateTime = useCallback(() => {
-    if (!matchData.date || !matchData.startTime) return null;
+  const startDateTimeInfo = useMemo(
+    () => buildDateTimePayload(matchData.date, matchData.startTime),
+    [matchData.date, matchData.startTime],
+  );
 
-    const [yearStr, monthStr, dayStr] = matchData.date.split("-");
-    const [hourStr, minuteStr] = matchData.startTime.split(":");
-
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    const day = Number(dayStr);
-    const hour = Number(hourStr);
-    const minute = Number(minuteStr);
-
-    if (
-      [year, month, day, hour, minute].some(
-        (value) => !Number.isFinite(value),
-      )
-    ) {
-      return null;
-    }
-
-    const date = new Date(year, month - 1, day, hour, minute, 0, 0);
-    if (Number.isNaN(date.getTime())) return null;
-    return formatWithOffset(date);
-  }, [matchData.date, matchData.startTime]);
+  const combineDateTime = useCallback(
+    () => startDateTimeInfo?.isoString || null,
+    [startDateTimeInfo],
+  );
 
   const handleTimeChange = useCallback(
     (value) => {
@@ -431,7 +407,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1));
   const handlePublish = async () => {
     if (creating) return;
-    const isoStart = combineDateTime();
+    const startInfo = startDateTimeInfo;
+    const isoStart = startInfo?.isoString;
     if (!isoStart) {
       showToast("Invalid start time", "error");
       return;
@@ -441,6 +418,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       status: "upcoming",
       match_type: matchData.type === "private" ? "private" : "open",
       start_date_time: isoStart,
+      ...(startInfo?.localDateTime
+        ? { start_date_time_local: startInfo.localDateTime }
+        : {}),
+      ...(Number.isFinite(startInfo?.timezoneOffsetMinutes)
+        ? { start_date_time_offset_minutes: startInfo.timezoneOffsetMinutes }
+        : {}),
+      ...(startInfo?.timezoneName
+        ? { start_date_time_timezone: startInfo.timezoneName }
+        : {}),
       location_text: matchData.location,
       latitude: matchData.latitude ?? undefined,
       longitude: matchData.longitude ?? undefined,
