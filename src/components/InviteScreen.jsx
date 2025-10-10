@@ -20,6 +20,7 @@ import {
 } from "../services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
 import { idsMatch, uniqueActiveParticipants } from "../utils/participants";
+import { formatPhoneDisplay, normalizePhoneValue } from "../services/phone";
 
 const InviteScreen = ({
   matchId,
@@ -28,6 +29,8 @@ const InviteScreen = ({
   setMatchData,
   selectedPlayers,
   setSelectedPlayers,
+  manualContacts,
+  setManualContacts,
   existingPlayerIds,
   setExistingPlayerIds,
   onToast,
@@ -47,14 +50,70 @@ const InviteScreen = ({
   const [participantsError, setParticipantsError] = useState("");
   const [hostId, setHostId] = useState(null);
   const [isArchived, setIsArchived] = useState(false);
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactError, setContactError] = useState("");
 
-  // Local state for manual phone invites (isolated from search input)
-  const totalSelectedInvitees = useMemo(
-    () => selectedPlayers.size,
-    [selectedPlayers]
+  const manualContactMap = useMemo(
+    () => (manualContacts instanceof Map ? manualContacts : new Map()),
+    [manualContacts]
   );
 
+  const manualContactEntries = useMemo(
+    () => Array.from(manualContactMap.values()),
+    [manualContactMap]
+  );
+
+  const isPrivateMatch =
+    matchData?.type === "private" ||
+    matchData?.type === "closed" ||
+    matchData?.privacy === "private";
+
+  const totalSelectedInvitees = useMemo(
+    () => selectedPlayers.size + manualContactMap.size,
+    [manualContactMap, selectedPlayers]
+  );
+
+  const resetContactForm = () => {
+    setContactName("");
+    setContactPhone("");
+    setContactError("");
+  };
+
+  const handleAddManualContact = () => {
+    setContactError("");
+    const normalized = normalizePhoneValue(contactPhone);
+    if (!normalized) {
+      setContactError("Enter a valid phone number with country code or 10 digits.");
+      return;
+    }
+    if (manualContactMap.has(normalized)) {
+      setContactError("That phone number is already selected.");
+      return;
+    }
+    const name = contactName.trim();
+    setManualContacts?.((prev = new Map()) => {
+      const next = new Map(prev);
+      next.set(normalized, {
+        key: normalized,
+        phone: normalized,
+        name,
+      });
+      return next;
+    });
+    resetContactForm();
+  };
+
+  const handleRemoveManualContact = (key) => {
+    setManualContacts?.((prev = new Map()) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
   const copyLink = () => {
+    if (isPrivateMatch) return;
     if (!shareLink) return;
     navigator.clipboard.writeText(shareLink);
     setCopiedLink(true);
@@ -62,7 +121,10 @@ const InviteScreen = ({
   };
 
   useEffect(() => {
-    if (!matchId) return;
+    if (!matchId || isPrivateMatch) {
+      setShareLink("");
+      return;
+    }
     getShareLink(matchId)
       .then(({ shareUrl }) => setShareLink(shareUrl))
       .catch((error) =>
@@ -71,7 +133,11 @@ const InviteScreen = ({
           "error"
         )
       );
-  }, [matchId, onToast]);
+  }, [isPrivateMatch, matchId, onToast]);
+
+  useEffect(() => {
+    resetContactForm();
+  }, [matchId]);
 
   // Load current participants for the match being invited
   useEffect(() => {
@@ -270,6 +336,12 @@ const InviteScreen = ({
             Need {matchData.playerCount - matchData.occupied} more{" "}
             {matchData.playerCount - matchData.occupied === 1 ? "player" : "players"}
           </p>
+          {isPrivateMatch && (
+            <div className="mb-4 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+              <span className="font-black">PRIVATE MATCH</span>
+              Invite specific players directly—no open listing.
+            </div>
+          )}
           {isArchived && (
             <div className="mb-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
               <span className="font-black">ARCHIVED</span>
@@ -353,64 +425,120 @@ const InviteScreen = ({
             />
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">Share Link</h3>
-            <div className="flex gap-3 mb-4">
-              <input
-                type="text"
-                value={shareLink}
-                readOnly
-                className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-600"
-              />
-              <button
-                onClick={copyLink}
-                disabled={!shareLink}
-                className={`px-5 py-3 rounded-xl font-black transition-all ${
-                  copiedLink
-                    ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
-                    : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
-                }`}
-              >
-                {copiedLink ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-              </button>
-            </div>
+          {!isPrivateMatch && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">Share Link</h3>
+              <div className="flex gap-3 mb-4">
+                <input
+                  type="text"
+                  value={shareLink}
+                  readOnly
+                  className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-600"
+                />
+                <button
+                  onClick={copyLink}
+                  disabled={!shareLink}
+                  className={`px-5 py-3 rounded-xl font-black transition-all ${
+                    copiedLink
+                      ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
+                      : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
+                  }`}
+                >
+                  {copiedLink ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                </button>
+              </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                onClick={openWhatsApp}
-                disabled={!shareLink}
-                className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                  shareLink
-                    ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
-                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                }`}
-              >
-                WHATSAPP
-              </button>
-              <button
-                onClick={openSMS}
-                disabled={!shareLink}
-                className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                  shareLink
-                    ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
-                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                }`}
-              >
-                SMS
-              </button>
-              <button
-                onClick={openEmail}
-                disabled={!shareLink}
-                className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                  shareLink
-                    ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
-                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                }`}
-              >
-                EMAIL
-              </button>
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  onClick={openWhatsApp}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  WHATSAPP
+                </button>
+                <button
+                  onClick={openSMS}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  SMS
+                </button>
+                <button
+                  onClick={openEmail}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  EMAIL
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+
+          {isPrivateMatch && (
+            <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-6">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Invite by phone number</h3>
+                  <p className="text-sm text-gray-600">
+                    We'll text your contact a magic link so they can RSVP instantly.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => {
+                    setContactName(e.target.value);
+                    setContactError("");
+                  }}
+                  placeholder="Full name (optional)"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
+                />
+                <input
+                  type="tel"
+                  value={contactPhone}
+                  onChange={(e) => {
+                    setContactPhone(e.target.value);
+                    setContactError("");
+                  }}
+                  placeholder="+15551234567"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
+                />
+              </div>
+              {contactError && (
+                <p className="text-xs font-semibold text-red-600 mb-3">{contactError}</p>
+              )}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-xs text-gray-500">
+                  Contacts without accounts will receive an SMS invite and magic link.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAddManualContact}
+                  disabled={!contactPhone.trim()}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                >
+                  <Phone className="w-4 h-4" /> Add contact
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
             <div className="flex justify-between items-center mb-5">
@@ -482,14 +610,18 @@ const InviteScreen = ({
             )}
           </div>
 
-          {selectedPlayers.size > 0 && (
+          {totalSelectedInvitees > 0 && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
                   Selected ({totalSelectedInvitees})
                 </h3>
                 <button
-                  onClick={() => setSelectedPlayers(new Map())}
+                  onClick={() => {
+                    setSelectedPlayers(new Map());
+                    setManualContacts?.(new Map());
+                    resetContactForm();
+                  }}
                   className="text-sm text-gray-500 hover:text-gray-700 font-bold"
                 >
                   Clear all
@@ -528,6 +660,23 @@ const InviteScreen = ({
                       )}
                     </span>
                   ))}
+                {manualContactEntries.map((contact) => (
+                  <span
+                    key={contact.key}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-sm font-bold text-blue-700"
+                  >
+                    {contact.name || formatPhoneDisplay(contact.phone)}
+                    <span className="ml-1 text-xs text-blue-500">SMS</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveManualContact(contact.key)}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                      aria-label={`Remove ${contact.name || contact.phone}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
               </div>
             </div>
           )}
@@ -536,15 +685,19 @@ const InviteScreen = ({
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
           <div className="max-w-2xl mx-auto flex gap-3">
             <button
-              onClick={() => onDone?.("cancel")}
+              onClick={() => {
+                setManualContacts?.(new Map());
+                resetContactForm();
+                onDone?.("cancel");
+              }}
               className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
             >
               SAVE FOR LATER
             </button>
             <button
               onClick={async () => {
-                if (selectedPlayers.size === 0) {
-                  onToast("Please select at least one player", "error");
+                if (totalSelectedInvitees === 0) {
+                  onToast("Please select at least one invitee", "error");
                   return;
                 }
                 if (!matchId) {
@@ -561,21 +714,29 @@ const InviteScreen = ({
                     .filter(
                       (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id)
                     );
-                  if (newIds.length === 0) {
+                  const phoneNumbers = manualContactEntries.map((contact) =>
+                    contact.name
+                      ? { phone: contact.phone, fullName: contact.name }
+                      : contact.phone
+                  );
+                  if (newIds.length === 0 && phoneNumbers.length === 0) {
                     onToast("No new players selected", "error");
                     return;
                   }
                   await updateMatch(matchId, { status: "upcoming" });
                   const response = await sendInvites(matchId, {
                     playerIds: newIds,
-                    phoneNumbers: [],
+                    phoneNumbers,
                   });
+                  const totalSent = newIds.length + phoneNumbers.length;
                   const message = response?.message
                     ? response.message
-                    : `Invites sent to ${newIds.length} ${
-                        newIds.length === 1 ? "player" : "players"
+                    : `Invites sent to ${totalSent} ${
+                        totalSent === 1 ? "player" : "players"
                       }! 🎾`;
                   onToast(message);
+                  setManualContacts?.(new Map());
+                  resetContactForm();
                   onDone?.("sent");
                 } catch (err) {
                   if (isMatchArchivedError(err)) {
