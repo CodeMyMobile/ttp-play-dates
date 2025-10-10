@@ -92,11 +92,12 @@ const useQueryClient = () => {
 const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
   const client = useQueryClient();
   const key = useMemo(() => hashKey(queryKey), [queryKey]);
+  const stableQueryKey = useMemo(() => queryKey, [key]);
   const queryFnRef = useRef(queryFn);
   queryFnRef.current = queryFn;
 
   const getInitialState = useCallback(() => {
-    const cached = client.getQueryData(queryKey);
+    const cached = client.getQueryData(stableQueryKey);
     if (cached !== undefined) {
       return { status: "success", data: cached, error: null };
     }
@@ -105,7 +106,7 @@ const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
       data: cached,
       error: null,
     };
-  }, [client, queryKey, enabled]);
+  }, [client, stableQueryKey, enabled]);
 
   const [state, setState] = useState(getInitialState);
 
@@ -121,7 +122,7 @@ const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
       attempts += 1;
       try {
         const result = await queryFnRef.current();
-        client.setQueryData(queryKey, result);
+        client.setQueryData(stableQueryKey, result);
         setState({ status: "success", data: result, error: null });
         return result;
       } catch (error) {
@@ -133,7 +134,7 @@ const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
       }
     };
     return run();
-  }, [client, queryKey, enabled, retry]);
+  }, [client, stableQueryKey, enabled, retry]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -143,7 +144,7 @@ const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
         /* handled in state */
       });
     }
-    const unsubscribe = client.subscribe(queryKey, (value) => {
+    const unsubscribe = client.subscribe(stableQueryKey, (value) => {
       if (cancelled) return;
       if (value === INVALIDATE) {
         execute().catch(() => {
@@ -157,7 +158,7 @@ const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [client, execute, key, queryKey, enabled, state.status]);
+  }, [client, execute, key, stableQueryKey, enabled, state.status]);
 
   const refetch = useCallback(() => execute(), [execute]);
 
