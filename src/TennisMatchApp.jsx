@@ -2103,9 +2103,9 @@ const TennisMatchApp = () => {
         ? buildDateTimeInfoFromDate(parsedDate)
         : null;
       const zonedDateTime = dateTimeInfo?.isoString || null;
-      const localDateTime =
-        dateTimeInfo?.localDateTime || zonedDateTime || parsedIsoUtc || null;
-      const normalizedDateTime = zonedDateTime || localDateTime || parsedIsoUtc;
+      const localDateTime = dateTimeInfo?.localDateTime || null;
+      const isoForApi = zonedDateTime || parsedIsoUtc || matchData.dateTime || null;
+      const normalizedDateTime = zonedDateTime || parsedIsoUtc || null;
 
       const privacy = matchData.type === "closed" ? "private" : "open";
       const skillLevelValue =
@@ -2116,10 +2116,9 @@ const TennisMatchApp = () => {
       const basePayload = {
         status,
         match_type: privacy,
-        start_date_time:
-          localDateTime || parsedIsoUtc || matchData.dateTime || null,
-        ...(dateTimeInfo?.localDateTime
-          ? { start_date_time_local: dateTimeInfo.localDateTime }
+        start_date_time: isoForApi,
+        ...(localDateTime
+          ? { start_date_time_local: localDateTime }
           : {}),
         ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
           ? {
@@ -4400,21 +4399,21 @@ const TennisMatchApp = () => {
         const parsedStart = new Date(matchToEdit.dateTime);
         const dateTimeInfo = buildDateTimeInfoFromDate(parsedStart);
         const startDateTime =
-          dateTimeInfo?.localDateTime ||
           dateTimeInfo?.isoString ||
           (!Number.isNaN(parsedStart.getTime())
             ? parsedStart.toISOString()
             : null) ||
           matchToEdit.dateTime ||
           null;
+        const localDateTime = dateTimeInfo?.localDateTime || null;
         const updatePayload = {
           start_date_time: startDateTime,
           location_text: matchToEdit.location,
           latitude: matchToEdit.latitude,
           longitude: matchToEdit.longitude,
           notes: matchToEdit.notes,
-          ...(dateTimeInfo?.localDateTime
-            ? { start_date_time_local: dateTimeInfo.localDateTime }
+          ...(localDateTime
+            ? { start_date_time_local: localDateTime }
             : {}),
           ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
             ? {

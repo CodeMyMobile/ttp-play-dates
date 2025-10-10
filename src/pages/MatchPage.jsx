@@ -312,12 +312,12 @@ export default function MatchPage() {
       return;
     }
     const dateTimeInfo = buildDateTimePayload(formState.date, formState.time);
-    const localDateTime =
-      dateTimeInfo?.localDateTime || dateTimeInfo?.isoString || null;
-    if (!localDateTime) {
+    const isoDateTime = dateTimeInfo?.isoString || null;
+    if (!isoDateTime) {
       setFormError("Please provide a valid date and time.");
       return;
     }
+    const localDateTime = dateTimeInfo?.localDateTime || null;
     if (scheduleChanged) {
       const confirmed = window.confirm(
         "Changing the schedule will notify participants. Continue?",
@@ -342,8 +342,8 @@ export default function MatchPage() {
     const longitude = parseCoordinate(formState.longitude);
 
     const payload = buildMatchUpdatePayload({
-      startDateTime: localDateTime,
-      startDateTimeLocal: dateTimeInfo?.localDateTime || null,
+      startDateTime: isoDateTime,
+      startDateTimeLocal: localDateTime,
       startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
       startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,

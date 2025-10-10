@@ -18,8 +18,11 @@ const buildMatchUpdatePayload = ({
   previousLatitude,
   previousLongitude,
 }) => {
+  const trimmedStart =
+    typeof startDateTime === "string" ? startDateTime.trim() : "";
+
   const payload = {
-    start_date_time: startDateTime,
+    ...(trimmedStart ? { start_date_time: trimmedStart } : {}),
     location_text: locationText,
   };
 

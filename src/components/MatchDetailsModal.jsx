@@ -640,12 +640,12 @@ const MatchDetailsModal = ({
       return;
     }
     const dateTimeInfo = buildDateTimePayload(editForm.date, editForm.time);
-    const localDateTime =
-      dateTimeInfo?.localDateTime || dateTimeInfo?.isoString || null;
-    if (!localDateTime) {
+    const isoDateTime = dateTimeInfo?.isoString || null;
+    if (!isoDateTime) {
       setEditError("Please provide a valid date and time.");
       return;
     }
+    const localDateTime = dateTimeInfo?.localDateTime || null;
     if (scheduleChanged) {
       const confirmed = window.confirm(
         "Changing the schedule will notify players. Continue?",
@@ -672,8 +672,8 @@ const MatchDetailsModal = ({
     const skillLevel = isOpenMatch ? level : "";
 
     const payload = buildMatchUpdatePayload({
-      startDateTime: localDateTime,
-      startDateTimeLocal: dateTimeInfo?.localDateTime || null,
+      startDateTime: isoDateTime,
+      startDateTimeLocal: localDateTime,
       startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
       startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,
@@ -705,12 +705,12 @@ const MatchDetailsModal = ({
           if (!prev) return prev;
           const nextMatch = {
             ...(prev.match || {}),
-            start_date_time: localDateTime,
-            startDateTime: localDateTime,
-            ...(dateTimeInfo?.localDateTime
+            start_date_time: isoDateTime,
+            startDateTime: isoDateTime,
+            ...(localDateTime
               ? {
-                  start_date_time_local: dateTimeInfo.localDateTime,
-                  startDateTimeLocal: dateTimeInfo.localDateTime,
+                  start_date_time_local: localDateTime,
+                  startDateTimeLocal: localDateTime,
                 }
               : {}),
             ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)

@@ -408,9 +408,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const handlePublish = async () => {
     if (creating) return;
     const startInfo = startDateTimeInfo;
-    const localStart =
-      startInfo?.localDateTime || startInfo?.isoString || null;
-    if (!localStart) {
+    const isoStart = startInfo?.isoString || null;
+    if (!isoStart) {
       showToast("Invalid start time", "error");
       return;
     }
@@ -418,7 +417,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     const payload = {
       status: "upcoming",
       match_type: matchData.type === "private" ? "private" : "open",
-      start_date_time: localStart,
+      start_date_time: isoStart,
       ...(startInfo?.localDateTime
         ? { start_date_time_local: startInfo.localDateTime }
         : {}),
