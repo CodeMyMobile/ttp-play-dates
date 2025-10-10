@@ -496,10 +496,25 @@ const TennisMatchApp = () => {
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
         const acceptedInvitees = uniqueAcceptedInvitees(m.invitees);
-        const occupied = countUniqueMatchOccupants(
+
+        const capacityInfo =
+          m && typeof m.capacity === "object" ? m.capacity : null;
+        const confirmedFromCapacity = Number(
+          capacityInfo?.confirmed ?? capacityInfo?.players,
+        );
+        const limitFromCapacity = Number(
+          capacityInfo?.limit ?? capacityInfo?.max ?? capacityInfo?.capacity,
+        );
+        const openFromCapacity = Number(capacityInfo?.open);
+
+        const fallbackOccupied = countUniqueMatchOccupants(
           m.participants,
           m.invitees,
         );
+        const occupied =
+          Number.isFinite(confirmedFromCapacity) && confirmedFromCapacity >= 0
+            ? confirmedFromCapacity
+            : fallbackOccupied;
 
         const matchId = m.match_id || m.id;
         const isHost = m.host_id === currentUser?.id;
@@ -576,6 +591,9 @@ const TennisMatchApp = () => {
           invitees: m.invitees || [],
           participants: m.participants || [],
           playerLimit: (() => {
+            if (Number.isFinite(limitFromCapacity) && limitFromCapacity > 0) {
+              return limitFromCapacity;
+            }
             const raw = m.player_limit;
             const numeric =
               typeof raw === "string" ? Number.parseInt(raw, 10) : raw;
@@ -583,14 +601,19 @@ const TennisMatchApp = () => {
           })(),
           occupied,
           spotsAvailable: (() => {
-            const limit =
-              typeof m.player_limit === "number"
-                ? m.player_limit
-                : Number.parseInt(m.player_limit, 10);
+            if (Number.isFinite(openFromCapacity)) {
+              return Math.max(openFromCapacity, 0);
+            }
+            const limit = Number.isFinite(limitFromCapacity)
+              ? limitFromCapacity
+              : typeof m.player_limit === "number"
+              ? m.player_limit
+              : Number.parseInt(m.player_limit, 10);
             return Number.isFinite(limit)
               ? Math.max(limit - occupied, 0)
               : null;
           })(),
+          capacity: capacityInfo,
         };
       });
       if (activeFilter === "draft") {
@@ -736,10 +759,23 @@ const TennisMatchApp = () => {
           : match.host_profile?.full_name ||
             match.host_name ||
             (computedHostId ? `Player ${computedHostId}` : "");
-        const occupied = countUniqueMatchOccupants(
+        const capacityInfo =
+          match && typeof match.capacity === "object" ? match.capacity : null;
+        const confirmedFromCapacity = Number(
+          capacityInfo?.confirmed ?? capacityInfo?.players,
+        );
+        const limitFromCapacity = Number(
+          capacityInfo?.limit ?? capacityInfo?.max ?? capacityInfo?.capacity,
+        );
+
+        const fallbackOccupied = countUniqueMatchOccupants(
           participantsSource,
           inviteesSource,
         );
+        const occupied =
+          Number.isFinite(confirmedFromCapacity) && confirmedFromCapacity >= 0
+            ? confirmedFromCapacity
+            : fallbackOccupied;
 
         validParticipants.forEach((p) => {
           const pid = Number(p.player_id);
@@ -769,17 +805,31 @@ const TennisMatchApp = () => {
         setManualContacts(new Map());
         setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
         lastInviteLoadRef.current = numericMatchId;
-        setMatchData((prev) => ({
-          ...prev,
-          type:
-            match.match_type === "private" || match.match_type === "closed"
-              ? "closed"
-              : "open",
-          skillLevel:
-            match.skill_level_min || match.skill_level || prev.skillLevel || "",
-          format: match.match_format || prev.format || "",
-          playerCount: match.player_limit ?? prev.playerCount,
-          occupied,
+        setMatchData((prev) => {
+          const fallbackPlayerLimit = (() => {
+            const rawLimit = match.player_limit;
+            if (Number.isFinite(rawLimit)) return rawLimit;
+            if (typeof rawLimit === "string") {
+              const parsed = Number.parseInt(rawLimit, 10);
+              return Number.isFinite(parsed) ? parsed : null;
+            }
+            return null;
+          })();
+          const playerCount =
+            Number.isFinite(limitFromCapacity) && limitFromCapacity > 0
+              ? limitFromCapacity
+              : fallbackPlayerLimit ?? prev.playerCount;
+          return {
+            ...prev,
+            type:
+              match.match_type === "private" || match.match_type === "closed"
+                ? "closed"
+                : "open",
+            skillLevel:
+              match.skill_level_min || match.skill_level || prev.skillLevel || "",
+            format: match.match_format || prev.format || "",
+            playerCount,
+            occupied,
           dateTime: match.start_date_time || prev.dateTime,
           location: match.location_text || prev.location,
           latitude: match.latitude ?? prev.latitude,
@@ -792,7 +842,8 @@ const TennisMatchApp = () => {
           notes: match.notes || "",
           hostId: computedHostId ?? prev.hostId,
           hostName: computedHostName || prev.hostName || "",
-        }));
+          };
+        });
         setInviteMatchId((prev) =>
           prev === numericMatchId ? prev : numericMatchId,
         );

@@ -341,6 +341,11 @@ const MatchDetailsModal = ({
     [invitees],
   );
 
+  const capacityInfo = useMemo(() => {
+    if (!match?.capacity || typeof match.capacity !== "object") return null;
+    return match.capacity;
+  }, [match?.capacity]);
+
   const numericPlayerLimit = useMemo(() => {
     const candidate =
       match?.player_limit ??
@@ -351,12 +356,38 @@ const MatchDetailsModal = ({
     return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
   }, [match]);
 
-  const totalCommitted = countUniqueMatchOccupants(participants, invitees);
+  const fallbackCommitted = countUniqueMatchOccupants(participants, invitees);
 
-  const remainingSpots =
-    numericPlayerLimit === null
-      ? null
-      : Math.max(numericPlayerLimit - totalCommitted, 0);
+  const committedCount = useMemo(() => {
+    if (!capacityInfo) return fallbackCommitted;
+    const confirmed = Number(capacityInfo.confirmed);
+    if (Number.isFinite(confirmed) && confirmed >= 0) {
+      return confirmed;
+    }
+    return fallbackCommitted;
+  }, [capacityInfo, fallbackCommitted]);
+
+  const capacityLimit = useMemo(() => {
+    if (capacityInfo) {
+      const limit = Number(capacityInfo.limit ?? capacityInfo.max ?? capacityInfo.capacity);
+      if (Number.isFinite(limit) && limit > 0) {
+        return limit;
+      }
+    }
+    return numericPlayerLimit;
+  }, [capacityInfo, numericPlayerLimit]);
+
+  const remainingSpots = useMemo(() => {
+    if (capacityInfo && capacityInfo.open !== undefined && capacityInfo.open !== null) {
+      const open = Number(capacityInfo.open);
+      if (Number.isFinite(open)) {
+        return Math.max(open, 0);
+      }
+    }
+    if (capacityLimit === null) return null;
+    if (!Number.isFinite(capacityLimit)) return null;
+    return Math.max(capacityLimit - committedCount, 0);
+  }, [capacityInfo, capacityLimit, committedCount]);
 
   const isHost =
     currentUser?.id && match?.host_id
@@ -377,7 +408,13 @@ const MatchDetailsModal = ({
   const isUpcoming = match?.status === "upcoming";
   const isPrivate = matchPrivacy === "private";
   const isOpenMatch = !isPrivate;
-  const isFull = remainingSpots === 0;
+  const isFull = useMemo(() => {
+    if (capacityInfo && typeof capacityInfo.isFull === "boolean") {
+      return capacityInfo.isFull;
+    }
+    if (remainingSpots === null) return false;
+    return remainingSpots === 0;
+  }, [capacityInfo, remainingSpots]);
   const matchId = match?.id ?? null;
   const canManageInvites = Boolean(onManageInvites) && isHost && matchId;
 
@@ -1062,9 +1099,9 @@ const MatchDetailsModal = ({
           Suggested level: {suggestedSkillLevel}
         </span>
       )}
-      {Number.isFinite(numericPlayerLimit) && (
+      {Number.isFinite(capacityLimit) && (
         <span className="inline-flex items-center gap-2 rounded-full bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-600">
-          {totalCommitted}/{numericPlayerLimit} players
+          {committedCount}/{capacityLimit} players
         </span>
       )}
     </div>
@@ -1301,7 +1338,7 @@ const MatchDetailsModal = ({
               <Users className="h-4 w-4 text-emerald-500" />
               <p className="text-sm font-black text-gray-900">
                 Players
-                {Number.isFinite(numericPlayerLimit) && ` (${numericPlayerLimit} max)`}
+                {Number.isFinite(capacityLimit) && ` (${capacityLimit} max)`}
               </p>
             </div>
             {renderPlayers()}
