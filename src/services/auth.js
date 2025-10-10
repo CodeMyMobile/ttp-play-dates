@@ -2,7 +2,7 @@ import api, { unwrap } from "./api";
 
 const AUTH_BASE =
   import.meta.env.VITE_API_URL ||
-  "https://ttp-api.codemymobile.com/api";
+  "https://api.thetennisplan.com";
 
 export const login = async (email, password) => {
   const data = await unwrap(

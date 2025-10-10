@@ -1,4 +1,4 @@
-const baseEnvUrl = process.env.VITE_API_URL || "https://ttp-api.codemymobile.com/api";
+const baseEnvUrl = process.env.VITE_API_URL || "https://api.thetennisplan.com";
 const baseURL = baseEnvUrl.endsWith("/") ? baseEnvUrl.slice(0, -1) : baseEnvUrl;
 const endpoint = `${baseURL}/group_lessons`;
 
