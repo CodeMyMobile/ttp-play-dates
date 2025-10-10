@@ -861,19 +861,37 @@ const MatchDetailsModal = ({
         }
       }
     } catch (error) {
+      const errorCodeRaw =
+        error?.response?.data?.error ||
+        error?.data?.error ||
+        error?.message ||
+        "";
+      const errorCode = errorCodeRaw.toString().trim().toLowerCase();
+      const responseMessage = error?.response?.data?.message || "";
+      const normalizedMessage = responseMessage.toString().trim().toLowerCase();
+
       if (isMatchArchivedError(error)) {
         onToast?.("This match has been archived. You can't join.", "error");
+      } else if (
+        errorCode === "match_full" ||
+        errorCode === "full" ||
+        normalizedMessage.includes("full")
+      ) {
+        setStatus("full");
+        onToast?.(
+          "This match is already full. We'll let you know if a spot opens up.",
+          "error",
+        );
+      } else if (
+        errorCode === "already_joined" ||
+        normalizedMessage.includes("already joined")
+      ) {
+        setStatus("alreadyJoined");
+        onToast?.("You're already on the roster for this match.", "info");
       } else {
         const message =
-          error?.response?.data?.message ||
-          error?.message ||
-          "Failed to join match";
+          responseMessage || error?.message || "Failed to join match";
         onToast?.(message, "error");
-      }
-      if (error?.response?.data?.error === "match_full") {
-        setStatus("full");
-      } else if (error?.response?.data?.error === "already_joined") {
-        setStatus("alreadyJoined");
       }
     } finally {
       setJoining(false);
