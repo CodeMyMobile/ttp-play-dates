@@ -483,15 +483,19 @@ const MatchDetailsModal = ({
       setLeaving(false);
       return;
     }
-    if (status === "success") return;
+    if (status === "success" && isOpenMatch && !isHost) return;
     if (isJoined) {
-      setStatus("alreadyJoined");
+      if (isOpenMatch && !isHost) {
+        setStatus("success");
+      } else {
+        setStatus("alreadyJoined");
+      }
     } else if (isFull) {
       setStatus("full");
     } else {
       setStatus("details");
     }
-  }, [isOpen, isJoined, isFull, status]);
+  }, [isFull, isHost, isJoined, isOpen, isOpenMatch, status]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
