@@ -38,7 +38,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
-import { buildDateTimePayload } from "../utils/datetime";
+import { combineDateAndTimeToIso } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
@@ -82,6 +82,8 @@ const toTimeInput = (value) => {
   const minutes = `${date.getMinutes()}`.padStart(2, "0");
   return `${hours}:${minutes}`;
 };
+
+const combineDateTime = (date, time) => combineDateAndTimeToIso(date, time);
 
 const buildInitialForm = (match) => {
   if (!match) return { ...DEFAULT_FORM };

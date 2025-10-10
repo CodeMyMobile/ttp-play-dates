@@ -36,7 +36,7 @@ import {
   MATCH_FORMAT_OPTIONS,
   SKILL_LEVEL_OPTIONS,
 } from "../utils/matchOptions";
-import { buildDateTimePayload } from "../utils/datetime";
+import { combineDateAndTimeToIso } from "../utils/datetime";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -309,14 +309,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     return invitedCount < MAX_PRIVATE_INVITES;
   }, [invitedCount, matchData.type]);
 
-  const startDateTimeInfo = useMemo(
-    () => buildDateTimePayload(matchData.date, matchData.startTime),
-    [matchData.date, matchData.startTime],
-  );
-
   const combineDateTime = useCallback(
-    () => startDateTimeInfo?.isoString || null,
-    [startDateTimeInfo],
+    () => combineDateAndTimeToIso(matchData.date, matchData.startTime),
+    [matchData.date, matchData.startTime],
   );
 
   const handleTimeChange = useCallback(

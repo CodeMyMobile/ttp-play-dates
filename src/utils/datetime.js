@@ -21,7 +21,7 @@ const toIsoStringWithOffset = (date) => {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetMins}`;
 };
 
-const parseDateAndTime = (dateString, timeString) => {
+const combineDateAndTimeToIso = (dateString, timeString) => {
   if (!dateString || !timeString) return null;
 
   const [yearStr, monthStr, dayStr] = dateString.split("-");
@@ -46,69 +46,7 @@ const parseDateAndTime = (dateString, timeString) => {
     return null;
   }
 
-  return localDate;
-};
-
-const formatLocalDate = (date) =>
-  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-
-const formatLocalTime = (date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-
-const resolveTimezoneName = () => {
-  try {
-    const { timeZone } = Intl.DateTimeFormat().resolvedOptions();
-    return typeof timeZone === "string" && timeZone ? timeZone : null;
-  } catch {
-    return null;
-  }
-};
-
-const combineDateAndTimeToIso = (dateString, timeString) => {
-  const localDate = parseDateAndTime(dateString, timeString);
-  if (!localDate) {
-    return null;
-  }
-
   return toIsoStringWithOffset(localDate);
 };
 
-const buildDateTimeInfoFromDate = (date) => {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  const isoString = toIsoStringWithOffset(date);
-  if (!isoString) {
-    return null;
-  }
-
-  const seconds = pad(date.getSeconds());
-  const localDateTime = `${formatLocalDate(date)}T${formatLocalTime(date)}:${seconds}`;
-  const timezoneOffsetMinutes = Number.isFinite(date.getTimezoneOffset())
-    ? -date.getTimezoneOffset()
-    : null;
-  const timezoneName = resolveTimezoneName();
-
-  return {
-    isoString,
-    localDateTime,
-    timezoneOffsetMinutes,
-    timezoneName,
-  };
-};
-
-const buildDateTimePayload = (dateString, timeString) => {
-  const localDate = parseDateAndTime(dateString, timeString);
-  if (!localDate) {
-    return null;
-  }
-
-  return buildDateTimeInfoFromDate(localDate);
-};
-
-export {
-  buildDateTimeInfoFromDate,
-  buildDateTimePayload,
-  combineDateAndTimeToIso,
-  toIsoStringWithOffset,
-};
+export { combineDateAndTimeToIso, toIsoStringWithOffset };
