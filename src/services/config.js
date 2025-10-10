@@ -1,8 +1,3 @@
-const DEFAULT_API_HOST = "https://api.thetennisplan.com";
-const DEFAULT_API_PATH = "/api";
-const DEFAULT_API_BASE = `${DEFAULT_API_HOST}${DEFAULT_API_PATH}`;
-const LEGACY_HOSTNAMES = new Set(["ttp-api.codemymobile.com"]);
-
 const stripTrailingSlash = (value = "") => value.replace(/\/+$/, "");
 
 const ensureLeadingSlash = (value = "") => {
@@ -23,17 +18,36 @@ const parseUrl = (value) => {
   }
 };
 
+const combineOriginAndPath = (parsedUrl, fallbackPath = "") => {
+  if (!parsedUrl) return fallbackPath;
+  const origin = `${parsedUrl.protocol}//${parsedUrl.host}`;
+  const hasPath = parsedUrl.pathname && parsedUrl.pathname !== "/";
+  const path = hasPath ? parsedUrl.pathname : fallbackPath;
+  const normalizedPath = path ? ensureLeadingSlash(path) : "";
+  return stripTrailingSlash(`${origin}${normalizedPath}`);
+};
+
+const DEFAULT_API_HOST = "https://api.thetennisplan.com";
+const DEFAULT_API_BASE = stripTrailingSlash(DEFAULT_API_HOST);
+const LEGACY_HOST_DEFAULT_PATHS = new Map([
+  ["ttp-api.codemymobile.com", "/api"],
+]);
+
 const normalizeFromLegacyHost = (urlString) => {
   const parsed = parseUrl(urlString);
   if (!parsed) return urlString || DEFAULT_API_BASE;
 
-  if (!LEGACY_HOSTNAMES.has(parsed.hostname)) {
-    return stripTrailingSlash(parsed.href);
+  const defaultPath = LEGACY_HOST_DEFAULT_PATHS.get(parsed.hostname);
+  if (!defaultPath) {
+    return combineOriginAndPath(parsed);
   }
 
-  const path = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname : DEFAULT_API_PATH;
-  const normalizedPath = path === "/" ? DEFAULT_API_PATH : ensureLeadingSlash(path);
-  return `${DEFAULT_API_HOST}${stripTrailingSlash(normalizedPath)}`;
+  const hasPath = parsed.pathname && parsed.pathname !== "/";
+  const path = hasPath ? parsed.pathname : defaultPath;
+
+  return stripTrailingSlash(
+    `${DEFAULT_API_HOST}${ensureLeadingSlash(path)}`,
+  );
 };
 
 export const resolveApiBaseUrl = (overrides = {}) => {
