@@ -7,8 +7,9 @@ import MatchPage from "./pages/MatchPage.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import CreateMatchPage from "./pages/CreateMatchPage.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
+import MatchSuccessPreview from "./pages/MatchSuccessPreview.jsx";
 
-const router = createHashRouter([
+const routes = [
   // App home
   { path: "/", element: <TennisMatchApp /> },
   { path: "/invites", element: <TennisMatchApp /> },
@@ -29,7 +30,16 @@ const router = createHashRouter([
 
   // Fallback: redirect unknown routes to home
   { path: "*", element: <Navigate to="/" replace /> },
-]);
+];
+
+if (import.meta.env.DEV) {
+  routes.push({
+    path: "/__preview/match-success",
+    element: <MatchSuccessPreview />,
+  });
+}
+
+const router = createHashRouter(routes);
 
 const queryClient = createQueryClient();
 
