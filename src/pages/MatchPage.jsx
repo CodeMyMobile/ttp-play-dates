@@ -38,6 +38,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
+import { buildDateTimePayload } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
@@ -80,13 +81,6 @@ const toTimeInput = (value) => {
   const hours = `${date.getHours()}`.padStart(2, "0");
   const minutes = `${date.getMinutes()}`.padStart(2, "0");
   return `${hours}:${minutes}`;
-};
-
-const combineDateTime = (date, time) => {
-  if (!date || !time) return null;
-  const timestamp = new Date(`${date}T${time}`);
-  if (Number.isNaN(timestamp.getTime())) return null;
-  return timestamp.toISOString();
 };
 
 const buildInitialForm = (match) => {
@@ -317,8 +311,10 @@ export default function MatchPage() {
       setFormError("Date, time, and location are required.");
       return;
     }
-    const isoDate = combineDateTime(formState.date, formState.time);
-    if (!isoDate) {
+    const dateTimeInfo = buildDateTimePayload(formState.date, formState.time);
+    const localDateTime =
+      dateTimeInfo?.localDateTime || dateTimeInfo?.isoString || null;
+    if (!localDateTime) {
       setFormError("Please provide a valid date and time.");
       return;
     }
@@ -346,7 +342,10 @@ export default function MatchPage() {
     const longitude = parseCoordinate(formState.longitude);
 
     const payload = buildMatchUpdatePayload({
-      startDateTime: isoDate,
+      startDateTime: localDateTime,
+      startDateTimeLocal: dateTimeInfo?.localDateTime || null,
+      startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
+      startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,
       matchFormat,
       previousMatchFormat: originalForm.matchFormat,

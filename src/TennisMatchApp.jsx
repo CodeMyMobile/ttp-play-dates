@@ -75,6 +75,7 @@ import {
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
 } from "./utils/participants";
+import { buildDateTimeInfoFromDate } from "./utils/datetime";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -2088,13 +2089,23 @@ const TennisMatchApp = () => {
     );
 
     const buildMatchPayload = (status) => {
-      let isoDate;
+      let parsedDate = null;
+      let parsedIsoUtc;
       if (matchData.dateTime) {
         const parsed = new Date(matchData.dateTime);
         if (!Number.isNaN(parsed.getTime())) {
-          isoDate = parsed.toISOString();
+          parsedDate = parsed;
+          parsedIsoUtc = parsed.toISOString();
         }
       }
+
+      const dateTimeInfo = parsedDate
+        ? buildDateTimeInfoFromDate(parsedDate)
+        : null;
+      const zonedDateTime = dateTimeInfo?.isoString || null;
+      const localDateTime =
+        dateTimeInfo?.localDateTime || zonedDateTime || parsedIsoUtc || null;
+      const normalizedDateTime = zonedDateTime || localDateTime || parsedIsoUtc;
 
       const privacy = matchData.type === "closed" ? "private" : "open";
       const skillLevelValue =
@@ -2105,8 +2116,20 @@ const TennisMatchApp = () => {
       const basePayload = {
         status,
         match_type: privacy,
-        start_date_time: isoDate,
-        dateTime: isoDate,
+        start_date_time:
+          localDateTime || parsedIsoUtc || matchData.dateTime || null,
+        ...(dateTimeInfo?.localDateTime
+          ? { start_date_time_local: dateTimeInfo.localDateTime }
+          : {}),
+        ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
+          ? {
+              start_date_time_offset_minutes: dateTimeInfo.timezoneOffsetMinutes,
+            }
+          : {}),
+        ...(dateTimeInfo?.timezoneName
+          ? { start_date_time_timezone: dateTimeInfo.timezoneName }
+          : {}),
+        dateTime: normalizedDateTime || matchData.dateTime || null,
         location_text: matchData.location || undefined,
         location: matchData.location || undefined,
         latitude: matchData.latitude ?? undefined,
@@ -4374,13 +4397,36 @@ const TennisMatchApp = () => {
     const handleSave = async () => {
       if (!matchToEdit?.id) return;
       try {
-        await updateMatch(matchToEdit.id, {
-          start_date_time: new Date(matchToEdit.dateTime).toISOString(),
+        const parsedStart = new Date(matchToEdit.dateTime);
+        const dateTimeInfo = buildDateTimeInfoFromDate(parsedStart);
+        const startDateTime =
+          dateTimeInfo?.localDateTime ||
+          dateTimeInfo?.isoString ||
+          (!Number.isNaN(parsedStart.getTime())
+            ? parsedStart.toISOString()
+            : null) ||
+          matchToEdit.dateTime ||
+          null;
+        const updatePayload = {
+          start_date_time: startDateTime,
           location_text: matchToEdit.location,
           latitude: matchToEdit.latitude,
           longitude: matchToEdit.longitude,
           notes: matchToEdit.notes,
-        });
+          ...(dateTimeInfo?.localDateTime
+            ? { start_date_time_local: dateTimeInfo.localDateTime }
+            : {}),
+          ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
+            ? {
+                start_date_time_offset_minutes:
+                  dateTimeInfo.timezoneOffsetMinutes,
+              }
+            : {}),
+          ...(dateTimeInfo?.timezoneName
+            ? { start_date_time_timezone: dateTimeInfo.timezoneName }
+            : {}),
+        };
+        await updateMatch(matchToEdit.id, updatePayload);
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
