@@ -1071,19 +1071,19 @@ const TennisMatchApp = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
       {/* Hero Section with Action Button */}
       <div className="bg-gradient-to-br from-white via-green-50/20 to-emerald-50/30 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 py-10">
-          <div className="flex items-center gap-2 mb-3">
+        <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 sm:py-10">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
             <Activity className="w-5 h-5 text-green-600" />
             <span className="text-sm font-bold text-green-600 uppercase tracking-wide">
               Active Now
             </span>
           </div>
-          <h2 className="text-4xl font-black text-gray-900 mb-3">
+          <h2 className="text-3xl font-black text-gray-900 mb-3 sm:text-4xl">
             {currentUser
               ? `Welcome back, ${currentUser.name.split(" ")[0]}!`
               : "Find Your Next Match"}
           </h2>
-          <p className="text-lg font-medium text-gray-600 mb-8">
+          <p className="text-base font-medium text-gray-600 mb-8 sm:text-lg">
             {currentUser
               ? "You have 2 upcoming matches this week"
               : "Join 500+ players in North County"}
@@ -1098,7 +1098,7 @@ const TennisMatchApp = () => {
                 navigate("/create");
               }
             }}
-            className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+            className="group relative flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 px-6 py-3 font-black text-base text-white shadow-xl transition-all duration-300 hover:scale-105 hover:bg-pos-100 hover:shadow-2xl sm:w-auto sm:justify-start sm:px-8 sm:py-4 sm:text-lg"
           >
             <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
             <Sparkles className="w-6 h-6 relative" />
@@ -1110,7 +1110,7 @@ const TennisMatchApp = () => {
 
       {currentUser ? (
         <>
-          <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
+          <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6 sm:px-6 lg:px-8">
             <section className="bg-white/80 border border-gray-100 rounded-3xl shadow-sm p-5 space-y-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-3">
@@ -1133,7 +1133,7 @@ const TennisMatchApp = () => {
                       setShowLocationPicker((prev) => !prev);
                       setGeoError("");
                     }}
-                    className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold shadow hover:bg-gray-700 transition-colors"
+                    className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold shadow transition-colors hover:bg-gray-700 w-full sm:w-auto"
                   >
                     {showLocationPicker
                       ? "Hide location tools"
@@ -1216,7 +1216,7 @@ const TennisMatchApp = () => {
                       type="button"
                       onClick={detectCurrentLocation}
                       disabled={isDetectingLocation}
-                      className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-sm border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       {isDetectingLocation ? "Detecting location..." : "Use my current location"}
                     </button>
@@ -1230,7 +1230,7 @@ const TennisMatchApp = () => {
                             setShowLocationPicker(false);
                             setGeoError("");
                           }}
-                          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm hover:bg-gray-200 transition-colors"
+                          className="w-full rounded-xl bg-gray-100 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-200 sm:w-auto"
                         >
                           Clear location
                         </button>
@@ -1242,7 +1242,7 @@ const TennisMatchApp = () => {
                           setGeoError("");
                           setLocationSearchTerm(locationFilter?.label || "");
                         }}
-                        className="px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-sm hover:bg-gray-700 transition-colors"
+                        className="w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-gray-700 sm:w-auto"
                       >
                         Close
                       </button>
@@ -1282,7 +1282,7 @@ const TennisMatchApp = () => {
                   </div>
                   <button
                     onClick={goToInvites}
-                    className="px-4 py-2 rounded-xl bg-white text-amber-600 font-bold text-sm shadow hover:bg-amber-50 transition-colors"
+                    className="w-full rounded-xl bg-white px-4 py-2 text-sm font-bold text-amber-600 shadow transition-colors hover:bg-amber-50 sm:w-auto"
                   >
                     Review all
                   </button>
@@ -1596,7 +1596,7 @@ const TennisMatchApp = () => {
           isArchived ? "opacity-90" : "hover:shadow-2xl hover:scale-[1.02]"
         }`}
       >
-        <div className="flex justify-between items-start mb-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             {match.privacy === "open" && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 rounded-full text-xs font-black flex items-center gap-1.5">
@@ -2120,8 +2120,8 @@ const TennisMatchApp = () => {
     if (showPreview && matchData.type === "closed") {
       return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 pb-20">
-          <div className="max-w-2xl mx-auto p-6">
-            <h2 className="text-3xl font-black text-gray-900 mb-8">
+          <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6">
+            <h2 className="mb-8 text-2xl font-black text-gray-900 sm:text-3xl">
               Review Match Details
             </h2>
 
@@ -2170,7 +2170,7 @@ const TennisMatchApp = () => {
                     <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-1">
                       DETAILS
                     </h3>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                       <span className="font-black text-gray-900 text-lg">
                         {matchData.playerCount} players
                       </span>
@@ -2200,14 +2200,14 @@ const TennisMatchApp = () => {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 text-center mb-6 border border-blue-100">
-              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl">
-                <Users className="w-10 h-10 text-white" />
+            <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-6 text-center sm:p-8">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 shadow-xl sm:h-20 sm:w-20">
+                <Users className="h-8 w-8 text-white sm:h-10 sm:w-10" />
               </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-2">
+              <h3 className="mb-2 text-xl font-black text-gray-900 sm:text-2xl">
                 Ready to Invite Players
               </h3>
-              <p className="text-base font-semibold text-gray-600">
+              <p className="text-sm font-semibold text-gray-600 sm:text-base">
                 You'll need to invite {matchData.playerCount - 1}{" "}
                 {matchData.playerCount - 1 === 1 ? "player" : "players"} to join
                 this match
@@ -2215,13 +2215,13 @@ const TennisMatchApp = () => {
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-              <div className="max-w-2xl mx-auto flex gap-3">
+              <div className="mx-auto flex max-w-2xl flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => {
                     setShowPreview(false);
                     setCreateStep(2);
                   }}
-                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                  className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-6 py-3.5 font-black text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   BACK
                 </button>
@@ -2256,7 +2256,7 @@ const TennisMatchApp = () => {
                       await openInviteScreen(targetMatchId);
                     }
                   }}
-                  className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
+                  className="flex w-full flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3.5 font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
                 >
                   CONTINUE <ArrowRight className="w-5 h-5" />
                 </button>
@@ -2270,10 +2270,10 @@ const TennisMatchApp = () => {
     if (createStep === 1) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30 pb-20">
-          <div className="max-w-2xl mx-auto p-6">
+          <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6">
             <ProgressBar />
 
-            <h2 className="text-3xl font-black text-gray-900 mb-10">
+            <h2 className="mb-10 text-2xl font-black text-gray-900 sm:text-3xl">
               Create a Match
             </h2>
 
@@ -2282,7 +2282,7 @@ const TennisMatchApp = () => {
                 <label className="block text-sm font-black text-gray-700 mb-4 uppercase tracking-wider">
                   Match Type
                 </label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {[
                     {
                       id: "open",
@@ -2468,7 +2468,7 @@ const TennisMatchApp = () => {
                     setShowPreview(false);
                     setCreateStep(1);
                   }}
-                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                  className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-6 py-3.5 font-black text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   CANCEL
                 </button>
@@ -2497,17 +2497,17 @@ const TennisMatchApp = () => {
     if (createStep === 2) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30 pb-20">
-          <div className="max-w-2xl mx-auto p-6">
+          <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6">
             <ProgressBar />
 
-            <h2 className="text-3xl font-black text-gray-900 mb-10">
+            <h2 className="mb-10 text-2xl font-black text-gray-900 sm:text-3xl">
               Match Settings
             </h2>
 
             <div className="space-y-6">
               {matchData.type === "open" && (
                 <div>
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
                       NTRP Skill Level
                     </label>
@@ -2515,7 +2515,7 @@ const TennisMatchApp = () => {
                       REQUIRED
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {[
                       {
                         value: "2.5 - Beginner",
@@ -2625,10 +2625,10 @@ const TennisMatchApp = () => {
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-              <div className="max-w-2xl mx-auto flex gap-3">
+              <div className="mx-auto flex max-w-2xl flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => setCreateStep(1)}
-                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                  className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-6 py-3.5 font-black text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   BACK
                 </button>
@@ -2644,7 +2644,7 @@ const TennisMatchApp = () => {
                       setCreateStep(3);
                     }
                   }}
-                  className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
+                  className="flex w-full flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3.5 font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
                 >
                   NEXT <ArrowRight className="w-5 h-5" />
                 </button>
@@ -2658,10 +2658,10 @@ const TennisMatchApp = () => {
     if (createStep === 3) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30 pb-20">
-          <div className="max-w-2xl mx-auto p-6">
+          <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6">
             <ProgressBar />
 
-            <h2 className="text-3xl font-black text-gray-900 mb-10">
+            <h2 className="mb-10 text-2xl font-black text-gray-900 sm:text-3xl">
               Review & Publish
             </h2>
 
@@ -2670,13 +2670,13 @@ const TennisMatchApp = () => {
                 MATCH SUMMARY
               </h3>
               <div className="space-y-4">
-                <div className="flex items-center gap-3 text-gray-700">
+                <div className="flex flex-wrap items-center gap-3 text-gray-700">
                   <Calendar className="w-5 h-5 text-gray-400" />
                   <span className="font-bold text-base">
                     {formatDateTime(matchData.dateTime)}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-gray-700">
+                <div className="flex flex-wrap items-center gap-3 text-gray-700">
                   <MapPin className="w-5 h-5 text-gray-400" />
                   <span className="font-bold text-base">
                     <a
@@ -2689,13 +2689,13 @@ const TennisMatchApp = () => {
                     </a>
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-gray-700">
+                <div className="flex flex-wrap items-center gap-3 text-gray-700">
                   <Users className="w-5 h-5 text-gray-400" />
                   <span className="font-bold text-base">
                     {matchData.playerCount} players total
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-gray-700">
+                <div className="flex flex-wrap items-center gap-3 text-gray-700">
                   <Trophy className="w-5 h-5 text-gray-400" />
                   <span className="font-bold text-base">
                     {matchData.format} •{" "}
@@ -2708,29 +2708,29 @@ const TennisMatchApp = () => {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-10 text-center border border-green-200">
-              <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-5 shadow-xl">
-                <Zap className="w-10 h-10 text-white" />
+            <div className="rounded-2xl border border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 p-6 text-center sm:p-10">
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-emerald-600 shadow-xl sm:h-20 sm:w-20">
+                <Zap className="h-8 w-8 text-white sm:h-10 sm:w-10" />
               </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-3">
+              <h3 className="mb-3 text-xl font-black text-gray-900 sm:text-2xl">
                 Ready to Publish!
               </h3>
-              <p className="text-lg font-semibold text-gray-600">
+              <p className="text-base font-semibold text-gray-600 sm:text-lg">
                 Your match will be visible to all players in the area
               </p>
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-              <div className="max-w-2xl mx-auto flex gap-3">
+              <div className="mx-auto flex max-w-2xl flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => setCreateStep(2)}
-                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                  className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-6 py-3.5 font-black text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   BACK
                 </button>
                 <button
                   onClick={handlePublish}
-                  className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
+                  className="flex w-full flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3.5 font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
                 >
                   PUBLISH <Check className="w-6 h-6" />
                 </button>
@@ -2973,18 +2973,18 @@ const TennisMatchApp = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 pb-20">
-        <div className="max-w-2xl mx-auto p-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-6">
-            <h2 className="text-3xl font-black text-gray-900 mb-3">
+        <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6">
+          <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+            <h2 className="mb-3 text-2xl font-black text-gray-900 sm:text-3xl">
               Invite Players
             </h2>
-            <p className="text-lg font-semibold text-gray-600 mb-4">
+            <p className="mb-4 text-base font-semibold text-gray-600 sm:text-lg">
               Need {matchData.playerCount - matchData.occupied} more{" "}
               {matchData.playerCount - matchData.occupied === 1
                 ? "player"
                 : "players"}
             </p>
-            <div className="flex items-center gap-4 text-sm font-bold text-gray-500">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-gray-500 sm:gap-4">
               <span className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
                 {formatDateTime(matchData.dateTime)}
@@ -3064,11 +3064,11 @@ const TennisMatchApp = () => {
               />
             </div>
             {/* Quick Share */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+              <h3 className="mb-4 text-sm font-black uppercase tracking-wider text-gray-900">
                 Share Link
               </h3>
-              <div className="flex gap-3 mb-4">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row">
                 <input
                   type="text"
                   value={shareLink}
@@ -3092,7 +3092,7 @@ const TennisMatchApp = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <button
                   onClick={openWhatsApp}
                   disabled={!shareLink}
@@ -3130,13 +3130,13 @@ const TennisMatchApp = () => {
             </div>
 
             {/* Players list from backend */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-5">
-                <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-black uppercase tracking-wider text-gray-900">
                   Players
                 </h3>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {players.map((player) => {
                   const name = player.full_name;
                   return (
@@ -3191,7 +3191,7 @@ const TennisMatchApp = () => {
               </div>
 
               {pagination && (
-                <div className="flex items-center justify-between mt-4">
+                <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
@@ -3215,15 +3215,15 @@ const TennisMatchApp = () => {
 
           {/* Selected players display */}
           <form
-            className="bg-white rounded-2xl shadow-lg border border-blue-100 p-6 mb-6"
+            className="mb-6 rounded-2xl border border-blue-100 bg-white p-6 shadow-lg"
             onSubmit={(e) => {
               e.preventDefault();
               addManualContact();
             }}
           >
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Phone className="w-5 h-5" />
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <Phone className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
@@ -3275,8 +3275,8 @@ const TennisMatchApp = () => {
           </form>
 
           {totalSelectedInvitees > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <div className="flex justify-between items-center mb-3">
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
                     Selected ({totalSelectedInvitees})
                   </h3>
@@ -3350,7 +3350,7 @@ const TennisMatchApp = () => {
           </div>
 
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-              <div className="max-w-2xl mx-auto flex gap-3">
+              <div className="mx-auto flex max-w-2xl flex-col gap-3 sm:flex-row">
                 <button
                   onClick={async () => {
                     onToast("Match saved as draft!");
@@ -3366,7 +3366,7 @@ const TennisMatchApp = () => {
                     setInviteMatchId(null);
                     fetchMatches();
                   }}
-                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                  className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-6 py-3.5 font-black text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   SAVE FOR LATER
                 </button>
@@ -3445,7 +3445,7 @@ const TennisMatchApp = () => {
                       }
                     }
                 }}
-                className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
+                className="flex w-full flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3.5 font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
               >
                 <Send className="w-5 h-5" />
                 SEND INVITES
@@ -4209,11 +4209,11 @@ const TennisMatchApp = () => {
           ) : (
             <div>
               {participants.length ? (
-                <ul className="divide-y divide-gray-100 border rounded-xl">
+                <ul className="divide-y divide-gray-100 rounded-xl border">
                   {participants.map((p) => (
                     <li
                       key={p.id}
-                      className="flex items-center justify-between px-3 py-2 text-sm"
+                      className="flex flex-col gap-2 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
                     >
                       <span className="text-gray-800">
                         {p.profile?.full_name || `Player ${p.player_id}`}
@@ -4469,11 +4469,11 @@ const TennisMatchApp = () => {
                 {loadingParts ? (
                   <p className="text-sm text-gray-500">Loading participants…</p>
                 ) : participants.length ? (
-                  <ul className="divide-y divide-gray-100 border rounded-xl">
+                  <ul className="divide-y divide-gray-100 rounded-xl border">
                     {participants.map((p) => (
                       <li
                         key={p.id}
-                        className="flex items-center justify-between px-3 py-2 text-sm"
+                        className="flex flex-col gap-2 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
                       >
                         <span className="text-gray-800">
                           {p.profile?.full_name || `Player ${p.player_id}`}
@@ -4502,19 +4502,19 @@ const TennisMatchApp = () => {
             )}
           </div>
 
-          <div className="flex gap-3 mt-8">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
               onClick={() => {
                 setShowEditModal(false);
                 setEditMatch(null);
               }}
-              className="flex-1 px-4 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50"
+              className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-4 py-3 font-black text-gray-700 hover:bg-gray-50"
             >
               CANCEL
             </button>
             <button
               onClick={handleSave}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl shadow-lg"
+              className="flex w-full flex-1 items-center justify-center rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3 font-black text-white shadow-lg hover:shadow-xl"
             >
               SAVE CHANGES
             </button>

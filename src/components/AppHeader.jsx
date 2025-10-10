@@ -14,10 +14,10 @@ const AppHeader = ({
 }) => {
   return (
     <div className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/95">
-      <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
         {currentScreen === "browse" ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="w-11 h-11 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white text-2xl">🎾</span>
               </div>
@@ -26,7 +26,7 @@ const AppHeader = ({
               </h1>
             </div>
             {currentUser ? (
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-end">
                 <button
                   onClick={goToInvites}
                   className="relative p-2.5 hover:bg-gray-50 rounded-xl transition-colors"
@@ -63,30 +63,30 @@ const AppHeader = ({
             ) : (
               <button
                 onClick={onOpenSignIn}
-                className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:shadow-xl hover:scale-105 transition-all shadow-lg"
+                className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:shadow-xl hover:scale-105 transition-all shadow-lg w-full sm:w-auto"
               >
                 Sign In
               </button>
             )}
           </div>
         ) : currentScreen === "invites" ? (
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={goToBrowse}
-              className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
+              className="flex items-center justify-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors w-full sm:w-auto"
             >
               <ChevronLeft className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700 font-bold">Back</span>
             </button>
-            <h1 className="text-xl font-black text-gray-800">Invites</h1>
+            <h1 className="text-xl font-black text-gray-800 text-center sm:text-left">Invites</h1>
             {currentUser && (
-              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
+              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg mx-auto sm:mx-0">
                 {currentUser.avatar}
               </div>
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={() => {
                 if (showPreview) {
@@ -95,13 +95,13 @@ const AppHeader = ({
                   goToBrowse();
                 }
               }}
-              className="flex items-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors"
+              className="flex items-center justify-center gap-2 hover:bg-gray-50 px-3 py-2 rounded-xl transition-colors w-full sm:w-auto"
             >
               <ChevronLeft className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700 font-bold">Back</span>
             </button>
             {currentUser && (
-              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
+              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg mx-auto sm:mx-0">
                 {currentUser.avatar}
               </div>
             )}
