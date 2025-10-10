@@ -44,12 +44,20 @@ const LiveballSearchPage = () => {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["liveballs", { search: searchTerm, day: dayFilter }],
     queryFn: () => listLiveballs({ search: searchTerm, day: dayFilter }),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const sessions = useMemo(
     () => normalizeCollection(data, "liveballs"),
     [data],
   );
+
+  const liveballErrorMessage =
+    error?.response?.data?.message ||
+    error?.data?.message ||
+    error?.message ||
+    "We couldn't load liveball sessions right now.";
 
   const filters = [
     { label: "Any day", value: "" },
@@ -126,9 +134,7 @@ const LiveballSearchPage = () => {
           </div>
         ) : isError ? (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl px-6 py-5 font-semibold">
-            {error?.response?.data?.message ||
-              error?.message ||
-              "We couldn't load liveball sessions right now."}
+            {liveballErrorMessage}
           </div>
         ) : sessions.length ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

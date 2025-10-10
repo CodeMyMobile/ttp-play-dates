@@ -90,7 +90,8 @@ const GroupLessonsPage = () => {
   const {
     data: lessonsResponse,
     isLoading: lessonsLoading,
-    isError: lessonsError,
+    isError: lessonsHasError,
+    error: lessonsErrorData,
   } = useQuery({
     queryKey: [
       "group-lessons",
@@ -98,12 +99,20 @@ const GroupLessonsPage = () => {
     ],
     queryFn: () =>
       listGroupLessons({ search: lessonSearch, coachId: selectedCoachId }),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const lessons = useMemo(
     () => normalizeCollection(lessonsResponse, "groupLessons"),
     [lessonsResponse],
   );
+
+  const lessonsErrorMessage =
+    lessonsErrorData?.response?.data?.message ||
+    lessonsErrorData?.data?.message ||
+    lessonsErrorData?.message ||
+    "We couldn't load group lessons right now.";
 
   const {
     data: coachesResponse,
@@ -257,11 +266,9 @@ const GroupLessonsPage = () => {
             <Loader2 className="w-5 h-5 animate-spin" />
             Loading group lessons…
           </div>
-        ) : lessonsError ? (
+        ) : lessonsHasError ? (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl px-6 py-5 font-semibold">
-            {lessonsError?.response?.data?.message ||
-              lessonsError?.message ||
-              "We couldn't load group lessons right now."}
+            {lessonsErrorMessage}
           </div>
         ) : lessons.length ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

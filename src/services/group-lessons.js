@@ -45,15 +45,20 @@ const aliasParams = (params) => {
     add("q", params.search);
     add("keyword", params.search);
   }
+  if (params.keyword) {
+    add("search", params.keyword);
+  }
   if (params.coachId) {
     add("coach_id", params.coachId);
     add("instructor_id", params.coachId);
     add("pro_id", params.coachId);
+    add("coach", params.coachId);
   }
   if (params.level) {
     add("skill_level", params.level);
     add("skillLevel", params.level);
     add("levels", params.level);
+    add("level_filter", params.level);
   }
   if (params.latitude !== undefined) {
     add("lat", params.latitude);
@@ -64,13 +69,56 @@ const aliasParams = (params) => {
   }
   if (params.radius !== undefined) {
     add("distance", params.radius);
+    add("miles", params.radius);
   }
   if (params.day) {
     add("day_of_week", params.day);
     add("weekday", params.day);
+    add("dayOfWeek", params.day);
+  }
+  if (params.type) {
+    add("event_type", params.type);
+    add("eventType", params.type);
+    add("category", params.type);
+    add("categories", params.type);
+    add("lesson_type", params.type);
+    add("lessonType", params.type);
+    add("session_type", params.type);
+    add("sessionType", params.type);
+    add("program_type", params.type);
+    add("programType", params.type);
+    add("kind", params.type);
+    add("event_kind", params.type);
+    add("focus", params.type);
+    add("format", params.type);
   }
 
   return result;
+};
+
+const buildTypeFilters = (primary, fallback = []) => {
+  const filters = { type: primary };
+  const ensure = (key, value) => {
+    if (value === undefined || value === null || value === "") return;
+    if (!(key in filters)) {
+      filters[key] = value;
+    }
+  };
+  const list = Array.isArray(fallback) ? fallback : [fallback];
+  list.forEach((value) => {
+    ensure("lesson_type", value);
+    ensure("lessonType", value);
+    ensure("category", value);
+    ensure("categories", value);
+    ensure("program_type", value);
+    ensure("programType", value);
+    ensure("session_type", value);
+    ensure("sessionType", value);
+    ensure("kind", value);
+    ensure("focus", value);
+    ensure("format", value);
+  });
+  return filters;
 };
 
 const buildLocationParams = (location = {}) => {
@@ -186,27 +234,46 @@ const GROUP_LESSON_ENDPOINTS = [
   { path: "/group_lessons" },
   { path: "/group-lessons" },
   { path: "/groupLessons" },
+  { path: "/group_lessons/list" },
+  { path: "/group-lessons/list" },
+  { path: "/groupLessons/list" },
+  { path: "/events/group-lessons" },
+  { path: "/events/group_lessons" },
+  { path: "/events/groupLessons" },
+  { path: "/events/group" },
+  { path: "/lessons/group-lessons" },
+  { path: "/lessons/group_lessons" },
+  { path: "/lessons/group" },
+  { path: "/sessions/group-lessons" },
+  { path: "/sessions/group_lessons" },
+  { path: "/sessions/group" },
+  { path: "/programs/group-lessons" },
+  { path: "/programs/group_lessons" },
+  { path: "/programs/group" },
   {
     path: "/events",
-    mapParams: (params) => {
-      const { search, coachId, ...rest } = params;
-      return {
-        ...rest,
-        type: "group_lesson",
-        ...(search ? { keyword: search } : {}),
-      };
-    },
+    mapParams: (params) => ({
+      ...params,
+      include: params.include || "group_lessons",
+      listing: params.listing || "group",
+      ...buildTypeFilters("group_lesson", ["group", "group-lesson"]),
+    }),
     retryOn: [400, 422],
   },
   {
     path: "/lessons",
-    mapParams: (params) => {
-      const { coachId, ...rest } = params;
-      return {
-        ...rest,
-        type: "group",
-      };
-    },
+    mapParams: (params) => ({
+      ...params,
+      ...buildTypeFilters("group", ["group_lesson", "group-lesson"]),
+    }),
+    retryOn: [400, 422],
+  },
+  {
+    path: "/lessons",
+    mapParams: (params) => ({
+      ...params,
+      ...buildTypeFilters("group_lesson", ["group", "group-lesson"]),
+    }),
     retryOn: [400, 422],
   },
 ];
@@ -215,16 +282,36 @@ const LIVEBALL_ENDPOINTS = [
   { path: "/liveball_runs" },
   { path: "/liveballs" },
   { path: "/liveball-runs" },
+  { path: "/liveballRuns" },
+  { path: "/liveball_runs/list" },
+  { path: "/liveball-runs/list" },
+  { path: "/liveballs/list" },
+  { path: "/events/liveball" },
+  { path: "/events/liveball-runs" },
+  { path: "/events/liveball_runs" },
+  { path: "/events/live-ball" },
+  { path: "/lessons/liveball" },
+  { path: "/lessons/live-ball" },
+  { path: "/programs/liveball" },
+  { path: "/programs/live-ball" },
+  { path: "/sessions/liveball" },
+  { path: "/sessions/live-ball" },
   {
     path: "/events",
-    mapParams: (params) => {
-      const { search, coachId, ...rest } = params;
-      return {
-        ...rest,
-        type: "liveball",
-        ...(search ? { keyword: search } : {}),
-      };
-    },
+    mapParams: (params) => ({
+      ...params,
+      include: params.include || "liveball",
+      listing: params.listing || "liveball",
+      ...buildTypeFilters("liveball", ["live_ball", "live-ball"]),
+    }),
+    retryOn: [400, 422],
+  },
+  {
+    path: "/lessons",
+    mapParams: (params) => ({
+      ...params,
+      ...buildTypeFilters("liveball", ["live_ball", "live-ball"]),
+    }),
     retryOn: [400, 422],
   },
 ];
