@@ -75,6 +75,7 @@ import {
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
 } from "./utils/participants";
+import { buildDateTimeInfoFromDate } from "./utils/datetime";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -2088,12 +2089,21 @@ const TennisMatchApp = () => {
     );
 
     const buildMatchPayload = (status) => {
+      let parsedDate = null;
       let isoDate;
       if (matchData.dateTime) {
         const parsed = new Date(matchData.dateTime);
         if (!Number.isNaN(parsed.getTime())) {
+          parsedDate = parsed;
           isoDate = parsed.toISOString();
         }
+      }
+
+      const dateTimeInfo = parsedDate
+        ? buildDateTimeInfoFromDate(parsedDate)
+        : null;
+      if (dateTimeInfo?.isoString) {
+        isoDate = dateTimeInfo.isoString;
       }
 
       const privacy = matchData.type === "closed" ? "private" : "open";
@@ -2106,6 +2116,17 @@ const TennisMatchApp = () => {
         status,
         match_type: privacy,
         start_date_time: isoDate,
+        ...(dateTimeInfo?.localDateTime
+          ? { start_date_time_local: dateTimeInfo.localDateTime }
+          : {}),
+        ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
+          ? {
+              start_date_time_offset_minutes: dateTimeInfo.timezoneOffsetMinutes,
+            }
+          : {}),
+        ...(dateTimeInfo?.timezoneName
+          ? { start_date_time_timezone: dateTimeInfo.timezoneName }
+          : {}),
         dateTime: isoDate,
         location_text: matchData.location || undefined,
         location: matchData.location || undefined,

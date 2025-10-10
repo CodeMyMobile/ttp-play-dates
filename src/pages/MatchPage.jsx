@@ -38,7 +38,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
-import { combineDateAndTimeToIso } from "../utils/datetime";
+import { buildDateTimePayload } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
@@ -82,8 +82,6 @@ const toTimeInput = (value) => {
   const minutes = `${date.getMinutes()}`.padStart(2, "0");
   return `${hours}:${minutes}`;
 };
-
-const combineDateTime = (date, time) => combineDateAndTimeToIso(date, time);
 
 const buildInitialForm = (match) => {
   if (!match) return { ...DEFAULT_FORM };
@@ -313,7 +311,8 @@ export default function MatchPage() {
       setFormError("Date, time, and location are required.");
       return;
     }
-    const isoDate = combineDateTime(formState.date, formState.time);
+    const dateTimeInfo = buildDateTimePayload(formState.date, formState.time);
+    const isoDate = dateTimeInfo?.isoString;
     if (!isoDate) {
       setFormError("Please provide a valid date and time.");
       return;
@@ -343,6 +342,9 @@ export default function MatchPage() {
 
     const payload = buildMatchUpdatePayload({
       startDateTime: isoDate,
+      startDateTimeLocal: dateTimeInfo?.localDateTime || null,
+      startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
+      startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,
       matchFormat,
       previousMatchFormat: originalForm.matchFormat,

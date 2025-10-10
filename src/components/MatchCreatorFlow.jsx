@@ -36,7 +36,7 @@ import {
   MATCH_FORMAT_OPTIONS,
   SKILL_LEVEL_OPTIONS,
 } from "../utils/matchOptions";
-import { combineDateAndTimeToIso } from "../utils/datetime";
+import { buildDateTimePayload } from "../utils/datetime";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -309,9 +309,14 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     return invitedCount < MAX_PRIVATE_INVITES;
   }, [invitedCount, matchData.type]);
 
-  const combineDateTime = useCallback(
-    () => combineDateAndTimeToIso(matchData.date, matchData.startTime),
+  const startDateTimeInfo = useMemo(
+    () => buildDateTimePayload(matchData.date, matchData.startTime),
     [matchData.date, matchData.startTime],
+  );
+
+  const combineDateTime = useCallback(
+    () => startDateTimeInfo?.isoString || null,
+    [startDateTimeInfo],
   );
 
   const handleTimeChange = useCallback(
@@ -402,7 +407,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1));
   const handlePublish = async () => {
     if (creating) return;
-    const isoStart = combineDateTime();
+    const startInfo = startDateTimeInfo;
+    const isoStart = startInfo?.isoString;
     if (!isoStart) {
       showToast("Invalid start time", "error");
       return;
@@ -412,6 +418,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       status: "upcoming",
       match_type: matchData.type === "private" ? "private" : "open",
       start_date_time: isoStart,
+      ...(startInfo?.localDateTime
+        ? { start_date_time_local: startInfo.localDateTime }
+        : {}),
+      ...(Number.isFinite(startInfo?.timezoneOffsetMinutes)
+        ? { start_date_time_offset_minutes: startInfo.timezoneOffsetMinutes }
+        : {}),
+      ...(startInfo?.timezoneName
+        ? { start_date_time_timezone: startInfo.timezoneName }
+        : {}),
       location_text: matchData.location,
       latitude: matchData.latitude ?? undefined,
       longitude: matchData.longitude ?? undefined,
