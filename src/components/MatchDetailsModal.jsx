@@ -54,6 +54,7 @@ import {
   getMatchPrivacy,
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
+import { combineDateAndTimeToIso } from "../utils/datetime";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -196,12 +197,7 @@ const toTimeInput = (value) => {
   return `${hours}:${minutes}`;
 };
 
-const combineDateTime = (date, time) => {
-  if (!date || !time) return null;
-  const timestamp = new Date(`${date}T${time}`);
-  if (Number.isNaN(timestamp.getTime())) return null;
-  return timestamp.toISOString();
-};
+const combineDateTime = (date, time) => combineDateAndTimeToIso(date, time);
 
 const buildInitialEditForm = (match) => {
   if (!match) return { ...DEFAULT_EDIT_FORM };

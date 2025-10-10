@@ -38,6 +38,7 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
+import { combineDateAndTimeToIso } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
 
@@ -82,12 +83,7 @@ const toTimeInput = (value) => {
   return `${hours}:${minutes}`;
 };
 
-const combineDateTime = (date, time) => {
-  if (!date || !time) return null;
-  const timestamp = new Date(`${date}T${time}`);
-  if (Number.isNaN(timestamp.getTime())) return null;
-  return timestamp.toISOString();
-};
+const combineDateTime = (date, time) => combineDateAndTimeToIso(date, time);
 
 const buildInitialForm = (match) => {
   if (!match) return { ...DEFAULT_FORM };
