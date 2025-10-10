@@ -23,6 +23,7 @@ import {
 } from "./services/invites";
 import { login, signup, forgotPassword } from "./services/auth";
 import { updatePlayerPersonalDetails } from "./services/player";
+import { listGroupLessons } from "./services/group-lessons";
 import {
   Calendar,
   MapPin,
@@ -156,6 +157,63 @@ const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
   return Math.round(distance * 10) / 10;
 };
 
+const normalizeGroupLessons = (payload) => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.groupLessons)) return payload.groupLessons;
+  if (Array.isArray(payload.group_lessons)) return payload.group_lessons;
+  if (Array.isArray(payload.lessons)) return payload.lessons;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.items)) return payload.items;
+  if (Array.isArray(payload.results)) return payload.results;
+  return [];
+};
+
+const getLessonTitle = (lesson) =>
+  lesson?.title ||
+  lesson?.name ||
+  lesson?.program ||
+  lesson?.description ||
+  "Group lesson";
+
+const getLessonCoach = (lesson) =>
+  lesson?.coach?.name ||
+  lesson?.coach_name ||
+  lesson?.coachName ||
+  lesson?.instructor ||
+  lesson?.instructor_name ||
+  lesson?.pro ||
+  null;
+
+const getLessonLocation = (lesson) =>
+  lesson?.location?.name ||
+  lesson?.location_name ||
+  lesson?.locationName ||
+  lesson?.facility ||
+  lesson?.court ||
+  lesson?.address ||
+  null;
+
+const getLessonStart = (lesson) =>
+  lesson?.start_time ||
+  lesson?.startTime ||
+  lesson?.start_at ||
+  lesson?.startAt ||
+  lesson?.scheduled_for ||
+  lesson?.scheduledFor ||
+  null;
+
+const formatLessonHighlightTime = (lesson) => {
+  const raw = getLessonStart(lesson);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+};
+
 const TennisMatchApp = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -172,6 +230,11 @@ const TennisMatchApp = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [manualContacts, setManualContacts] = useState(new Map());
+  const [groupLessonHighlights, setGroupLessonHighlights] = useState([]);
+  const [groupLessonHighlightsLoading, setGroupLessonHighlightsLoading] =
+    useState(true);
+  const [groupLessonHighlightsError, setGroupLessonHighlightsError] =
+    useState(null);
   const [inviteMatchId, setInviteMatchId] = useState(() =>
     deriveInviteMatchId(initialPath),
   );
@@ -295,6 +358,32 @@ const TennisMatchApp = () => {
     if (storedUser) {
       setCurrentUser(JSON.parse(storedUser));
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadHighlights = async () => {
+      try {
+        setGroupLessonHighlightsLoading(true);
+        setGroupLessonHighlightsError(null);
+        const data = await listGroupLessons({ perPage: 3 });
+        if (cancelled) return;
+        const lessons = normalizeGroupLessons(data).slice(0, 3);
+        setGroupLessonHighlights(lessons);
+      } catch (error) {
+        if (!cancelled) {
+          setGroupLessonHighlightsError(error);
+        }
+      } finally {
+        if (!cancelled) {
+          setGroupLessonHighlightsLoading(false);
+        }
+      }
+    };
+    loadHighlights();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayToast = useCallback((message, type = "success") => {
@@ -1465,19 +1554,100 @@ const TennisMatchApp = () => {
       {/* Match Cards */}
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Quick Actions Bar */}
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 mb-8 shadow-xl">
-          <div className="flex items-center justify-between">
-            <div className="text-white">
-              <h3 className="text-xl font-black mb-1">
-                Looking for a quick game?
+        <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-3xl p-6 md:p-8 mb-8 shadow-2xl overflow-hidden">
+          <div className="flex flex-col lg:flex-row gap-8 lg:items-center">
+            <div className="flex-1 text-white space-y-4">
+              <div className="inline-flex items-center gap-2 bg-white/20 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
+                <Zap className="w-4 h-4" />
+                Train smarter
+              </div>
+              <h3 className="text-2xl md:text-3xl font-black leading-snug">
+                Ready for a group lesson or a high-energy liveball run?
               </h3>
-              <p className="text-blue-100 font-medium">
-                3 players near you are ready to play now
+              <p className="text-indigo-100 font-medium max-w-xl">
+                Explore curated programming from top coaches around you. Reserve a
+                spot in minutes and keep your game sharp between matches.
               </p>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button
+                  onClick={() => navigate("/group-lessons")}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-indigo-600 rounded-xl font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                >
+                  Find group lessons
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => navigate("/liveballs")}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-400/20 text-white border border-white/30 rounded-xl font-bold hover:bg-indigo-400/30 transition-all"
+                >
+                  Search liveball sessions
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <button className="px-6 py-3 bg-white text-blue-600 rounded-xl font-bold hover:shadow-lg hover:scale-105 transition-all">
-              Find Players
-            </button>
+            <div className="w-full lg:w-80 bg-white/15 border border-white/20 rounded-2xl p-5 space-y-4 text-white backdrop-blur">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-indigo-100 uppercase tracking-wide">
+                  Featured lessons
+                </p>
+                <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">
+                  {groupLessonHighlights.length}
+                </span>
+              </div>
+              {groupLessonHighlightsLoading ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="h-3.5 bg-white/30 rounded-full w-3/4"></div>
+                  <div className="h-3 bg-white/20 rounded-full w-1/2"></div>
+                  <div className="h-3 bg-white/20 rounded-full w-2/3"></div>
+                </div>
+              ) : groupLessonHighlightsError ? (
+                <p className="text-xs font-semibold text-indigo-100/80">
+                  We couldn't load group lessons. Try again soon.
+                </p>
+              ) : groupLessonHighlights.length ? (
+                <div className="space-y-4">
+                  {groupLessonHighlights.map((lesson) => {
+                    const id =
+                      lesson?.id ||
+                      lesson?.lesson_id ||
+                      lesson?.lessonId ||
+                      lesson?.uuid ||
+                      getLessonTitle(lesson);
+                    return (
+                      <div key={id} className="bg-white/10 rounded-xl px-4 py-3 space-y-2">
+                        <p className="text-sm font-bold leading-snug">
+                          {getLessonTitle(lesson)}
+                        </p>
+                        {getLessonCoach(lesson) && (
+                          <p className="flex items-center gap-2 text-xs font-semibold text-indigo-100/90">
+                            <Users className="w-3.5 h-3.5" />
+                            {getLessonCoach(lesson)}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs font-semibold text-indigo-100/80">
+                          {getLessonLocation(lesson) && (
+                            <span className="inline-flex items-center gap-1">
+                              <MapPin className="w-3.5 h-3.5" />
+                              {getLessonLocation(lesson)}
+                            </span>
+                          )}
+                          {formatLessonHighlightTime(lesson) && (
+                            <span className="inline-flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5" />
+                              {formatLessonHighlightTime(lesson)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs font-semibold text-indigo-100/80">
+                  No group lessons found nearby yet. Check the live listings.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 

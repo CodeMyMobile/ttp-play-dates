@@ -6,6 +6,8 @@ import InvitationPage from "./InvitationPage.jsx";
 import MatchPage from "./pages/MatchPage.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import CreateMatchPage from "./pages/CreateMatchPage.jsx";
+import GroupLessonsPage from "./pages/GroupLessonsPage.jsx";
+import LiveballSearchPage from "./pages/LiveballSearchPage.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
 
 const router = createHashRouter([
@@ -14,6 +16,8 @@ const router = createHashRouter([
   { path: "/invites", element: <TennisMatchApp /> },
   { path: "/matches/:id/invite", element: <TennisMatchApp /> },
   { path: "/create", element: <CreateMatchPage /> },
+  { path: "/group-lessons", element: <GroupLessonsPage /> },
+  { path: "/liveballs", element: <LiveballSearchPage /> },
 
   // Match details (direct link)
   { path: "/matches/:id", element: <MatchPage /> },
