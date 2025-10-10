@@ -1,7 +1,6 @@
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "https://api.thetennisplan.com";
+import { resolveApiBaseUrl } from "./config.js";
+
+const API_URL = resolveApiBaseUrl();
 
 export async function getPlayerAWSUrl(accessToken, imageType) {
   if (!accessToken) {

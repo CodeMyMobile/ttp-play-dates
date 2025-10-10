@@ -1,4 +1,6 @@
-const baseURL = import.meta.env.VITE_API_URL || "https://api.thetennisplan.com";
+import { resolveApiBaseUrl } from "./config.js";
+
+const baseURL = resolveApiBaseUrl();
 
 const api = (path, options = {}) => {
   const token = localStorage.getItem("authToken");

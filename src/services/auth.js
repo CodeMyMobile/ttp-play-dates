@@ -1,8 +1,7 @@
 import api, { unwrap } from "./api";
+import { resolveApiBaseUrl } from "./config.js";
 
-const AUTH_BASE =
-  import.meta.env.VITE_API_URL ||
-  "https://api.thetennisplan.com";
+const AUTH_BASE = resolveApiBaseUrl();
 
 export const login = async (email, password) => {
   const data = await unwrap(

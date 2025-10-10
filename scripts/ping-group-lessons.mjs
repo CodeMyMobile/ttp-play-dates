@@ -1,4 +1,6 @@
-const baseEnvUrl = process.env.VITE_API_URL || "https://api.thetennisplan.com";
+import { resolveApiBaseUrl } from "../src/services/config.js";
+
+const baseEnvUrl = resolveApiBaseUrl(process.env);
 const baseURL = baseEnvUrl.endsWith("/") ? baseEnvUrl.slice(0, -1) : baseEnvUrl;
 const endpoint = `${baseURL}/group_lessons`;
 
