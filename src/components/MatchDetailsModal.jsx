@@ -397,7 +397,79 @@ const MatchDetailsModal = ({
       idsMatch(invite.invitee_id, currentUser?.id) ||
       idsMatch(invite.player_id, currentUser?.id),
   );
-  const isJoined = isHost || isParticipant || hasAcceptedInvite;
+
+  const metadataIndicatesJoined = useMemo(() => {
+    if (!currentUser?.id) return false;
+    const identityMatchesCurrentUser = (value) =>
+      idsMatch(value, currentUser.id);
+
+    const sources = [matchData, matchData?.match, match];
+    const truthyStatuses = new Set([
+      "joined",
+      "accepted",
+      "confirmed",
+      "on_roster",
+      "on-roster",
+    ]);
+
+    for (const source of sources) {
+      if (!source || typeof source !== "object") continue;
+
+      const idCandidates = [
+        source.joined_player_id,
+        source.joinedPlayerId,
+        source.joined_by_player_id,
+        source.joinedByPlayerId,
+        source.joined_member_id,
+        source.joinedMemberId,
+        source.joined_user_id,
+        source.joinedUserId,
+        source.joined_participant_id,
+        source.joinedParticipantId,
+        source.participant_id,
+        source.participantId,
+      ];
+      if (idCandidates.some(identityMatchesCurrentUser)) {
+        return true;
+      }
+
+      const booleanCandidates = [
+        source.is_joined,
+        source.isJoined,
+        source.joined,
+        source.has_joined,
+        source.hasJoined,
+      ];
+      if (booleanCandidates.some((value) => value === true)) {
+        return true;
+      }
+
+      const statusCandidates = [
+        source.joined_status,
+        source.joinedStatus,
+        source.join_status,
+        source.joinStatus,
+        source.player_status,
+        source.playerStatus,
+      ];
+      if (
+        statusCandidates.some((value) => {
+          if (value === undefined || value === null) return false;
+          const normalized = value.toString().trim().toLowerCase();
+          return normalized && truthyStatuses.has(normalized);
+        })
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }, [currentUser?.id, match, matchData]);
+
+  const isJoined = useMemo(
+    () => isHost || isParticipant || hasAcceptedInvite || metadataIndicatesJoined,
+    [hasAcceptedInvite, isHost, isParticipant, metadataIndicatesJoined],
+  );
 
   const isArchived = match?.status === "archived";
   const isCancelled = match?.status === "cancelled";
