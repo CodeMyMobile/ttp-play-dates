@@ -483,15 +483,19 @@ const MatchDetailsModal = ({
       setLeaving(false);
       return;
     }
-    if (status === "success") return;
+    if (status === "success" && isOpenMatch && !isHost) return;
     if (isJoined) {
-      setStatus("alreadyJoined");
+      if (isOpenMatch && !isHost) {
+        setStatus("success");
+      } else {
+        setStatus("alreadyJoined");
+      }
     } else if (isFull) {
       setStatus("full");
     } else {
       setStatus("details");
     }
-  }, [isOpen, isJoined, isFull, status]);
+  }, [isFull, isHost, isJoined, isOpen, isOpenMatch, status]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -1532,121 +1536,247 @@ const MatchDetailsModal = ({
   };
 
   const renderSuccessView = () => (
-    <div className="flex flex-col">
-      <div className="rounded-t-3xl bg-gradient-to-br from-emerald-500 to-green-500 p-6 text-center text-white">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
-          <CheckCircle2 className="h-8 w-8" />
-        </div>
-        <h2 id="match-details-heading" className="text-2xl font-black">
-          Match Joined!
-        </h2>
-        <p className="mt-1 text-sm font-semibold text-white/80">
-          You're successfully on the roster. We'll send the organizer a heads-up.
-        </p>
-      </div>
-
-      <div className="space-y-6 p-6">
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600">
-              <Calendar className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-emerald-900">Match Confirmed</p>
-              <p className="text-sm font-semibold text-emerald-800">
-                {startDate
-                  ? formatDateTime
-                    ? formatDateTime(startDate)
-                    : startDate.toLocaleString()
-                  : "Date coming soon"}
-              </p>
-              {eventDetails?.location && (
-                <p className="text-xs font-semibold text-emerald-700">
-                  {eventDetails.location}
-                </p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="relative h-12 w-12">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
+              {hostAvatar ? (
+                <img src={hostAvatar} alt={hostName} className="h-12 w-12 rounded-full object-cover" />
+              ) : (
+                buildAvatarLabel(hostName)
               )}
             </div>
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm font-black text-gray-900">What happens next</p>
-          <ul className="space-y-2 text-sm font-semibold text-gray-600">
-            <li className="flex items-start gap-2">
-              <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
-              You'll receive an email confirmation shortly.
-            </li>
-            <li className="flex items-start gap-2">
-              <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
-              We'll remind you 24 hours before the match.
-            </li>
-            <li className="flex items-start gap-2">
-              <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
-              The organizer is notified you're in.
-            </li>
-          </ul>
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-sm font-black text-gray-900">Add to calendar</p>
-          <div className="grid grid-cols-2 gap-3 text-sm font-semibold">
-            <button
-              type="button"
-              onClick={() => handleCalendarAction("google")}
-              className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <Calendar className="h-4 w-4" /> Google
-            </button>
-            <button
-              type="button"
-              onClick={() => handleCalendarAction("outlook")}
-              className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <Calendar className="h-4 w-4" /> Outlook
-            </button>
-            <button
-              type="button"
-              onClick={() => handleCalendarAction("ics")}
-              className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <ClipboardList className="h-4 w-4" /> .ics File
-            </button>
-            <button
-              type="button"
-              onClick={handleSmsReminder}
-              className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <MessageCircle className="h-4 w-4" /> SMS Reminder
-            </button>
+          <div>
+            <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
+              Match Details
+            </h2>
+            <p className="text-sm font-semibold text-gray-500">Hosted by {hostName}</p>
           </div>
         </div>
-
-        <div className="space-y-2 rounded-2xl bg-gray-50 p-4 text-sm font-semibold text-gray-600">
-          <div className="flex items-center gap-2 text-gray-700">
-            <Sparkles className="h-4 w-4 text-emerald-500" />
-            Invite friends to fill the last spot!
+        {headerChips}
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600">
+            <CheckCircle2 className="h-5 w-5" />
           </div>
-          <p className="text-xs text-gray-500">
-            Share this match with your crew so you can lock in doubles partners.
+          <div className="text-sm font-semibold text-emerald-800">
+            <p className="font-black text-emerald-900">You're in!</p>
+            <p>We'll email a confirmation and notify the organizer.</p>
+          </div>
+        </div>
+      </div>
+
+      <section className="rounded-2xl bg-gray-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
+            <MapPin className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-black text-gray-900">Location</p>
+            {match.location_text || match.location ? (
+              <p className="text-sm font-semibold text-gray-700">
+                {match.map_url || match.mapUrl ? (
+                  <a
+                    href={match.map_url || match.mapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-600 underline-offset-2 hover:underline"
+                  >
+                    {match.location_text || match.location}
+                  </a>
+                ) : (
+                  match.location_text || match.location
+                )}
+              </p>
+            ) : (
+              <p className="text-sm font-semibold text-gray-500">Location coming soon</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-gray-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
+            <Trophy className="h-5 w-5 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-black text-gray-900">Match Type</p>
+            <p className="text-sm font-semibold text-gray-700">
+              {match.match_format || match.format || "Details coming soon"}
+            </p>
+            {suggestedSkillLevel && (
+              <p className="text-xs font-semibold text-gray-500">
+                {isOpenMatch ? "Suggested level" : "Skill level"}: {suggestedSkillLevel}
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-emerald-500" />
+          <p className="text-sm font-black text-gray-900">
+            Players
+            {Number.isFinite(capacityLimit) && ` (${capacityLimit} max)`}
           </p>
         </div>
+        {renderPlayers()}
+      </section>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+      {isOpenMatch && !isHost && (
+        <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+          <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
+            <Share2 className="h-4 w-4" />
+            Invite other players
+          </div>
+          <p className="text-xs font-semibold text-emerald-700">
+            Share this match link with tennis friends so they can grab a spot before it fills up.
+          </p>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-gray-600">
+              <span className="flex-1 truncate font-mono text-gray-700">
+                {shareLoading
+                  ? "Generating share link..."
+                  : shareLinkReady
+                  ? shareLink
+                  : "Share link unavailable"}
+              </span>
+              <button
+                type="button"
+                onClick={shareLinkReady ? handleCopyShareLink : handleRefreshShareLink}
+                disabled={shareLoading || (!shareLinkReady && !shareError)}
+                className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {shareCopied ? "Copied!" : shareLinkReady ? "Copy" : "Retry"}
+              </button>
+            </div>
+            {!shareLoading && shareError && (
+              <div className="flex items-start justify-between gap-2 text-xs font-semibold text-rose-600">
+                <span className="flex-1">{shareError}</span>
+                <button type="button" onClick={handleRefreshShareLink} className="text-rose-600 underline-offset-2 hover:underline">
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={handleShareSms}
+              disabled={!shareLinkReady}
+              className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Text link
+            </button>
+            <button
+              type="button"
+              onClick={handleShareWhatsApp}
+              disabled={!shareLinkReady}
+              className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Send className="h-4 w-4" />
+              WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={handleShareEmail}
+              disabled={!shareLinkReady}
+              className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Mail className="h-4 w-4" />
+              Email invite
+            </button>
+          </div>
+        </section>
+      )}
+
+      {match.notes && (
+        <section className="rounded-2xl border border-gray-100 bg-white p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100">
+              <FileText className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-gray-900">Notes from Organizer</p>
+              <p className="mt-1 text-sm font-semibold text-gray-600">{match.notes}</p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="rounded-2xl border border-gray-100 bg-white p-4">
+        <p className="text-sm font-black text-gray-900">What happens next</p>
+        <ul className="mt-3 space-y-2 text-sm font-semibold text-gray-600">
+          <li className="flex items-start gap-2">
+            <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
+            You'll receive an email confirmation shortly.
+          </li>
+          <li className="flex items-start gap-2">
+            <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
+            We'll remind you 24 hours before the match.
+          </li>
+          <li className="flex items-start gap-2">
+            <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
+            The organizer is notified you're in.
+          </li>
+        </ul>
+      </section>
+
+      <section className="rounded-2xl border border-gray-100 bg-white p-4">
+        <p className="text-sm font-black text-gray-900">Add to calendar</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm font-semibold">
           <button
             type="button"
-            onClick={onClose}
-            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            onClick={() => handleCalendarAction("google")}
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
           >
-            Back to Matches
+            <Calendar className="h-4 w-4" /> Google
           </button>
           <button
             type="button"
-            onClick={onClose}
-            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl"
+            onClick={() => handleCalendarAction("outlook")}
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
           >
-            Find More Matches
+            <Calendar className="h-4 w-4" /> Outlook
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCalendarAction("ics")}
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <ClipboardList className="h-4 w-4" /> .ics File
+          </button>
+          <button
+            type="button"
+            onClick={handleSmsReminder}
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <MessageCircle className="h-4 w-4" /> SMS Reminder
           </button>
         </div>
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={handleLeaveMatch}
+          disabled={leaving || isArchived || isCancelled}
+          className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {leaving ? "Leaving match..." : "Leave this match"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl"
+        >
+          Back to matches
+        </button>
       </div>
     </div>
   );
