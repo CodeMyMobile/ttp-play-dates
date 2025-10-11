@@ -156,6 +156,110 @@ const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
   return Math.round(distance * 10) / 10;
 };
 
+const ensureMatchDetailsJoined = (details, fallback = null) => {
+  if (!details || typeof details !== "object") return details;
+
+  const fallbackMatch =
+    fallback && typeof fallback.match === "object" && fallback.match !== null
+      ? fallback.match
+      : null;
+
+  const baseMatch =
+    details.match && typeof details.match === "object" && details.match !== null
+      ? { ...details.match }
+      : fallbackMatch
+      ? { ...fallbackMatch }
+      : {};
+
+  const copyMissingFields = (source) => {
+    if (!source || typeof source !== "object") return;
+    Object.entries(source).forEach(([key, value]) => {
+      if (baseMatch[key] === undefined && value !== undefined) {
+        baseMatch[key] = value;
+      }
+    });
+  };
+
+  copyMissingFields(fallbackMatch);
+  baseMatch.is_joined = true;
+  baseMatch.joined = true;
+  if (!baseMatch.joined_status) {
+    baseMatch.joined_status = "joined";
+  }
+
+  const normalizedParticipants = Array.isArray(details.participants)
+    ? details.participants.slice()
+    : Array.isArray(fallback?.participants)
+    ? fallback.participants.slice()
+    : [];
+  const normalizedInvitees = Array.isArray(details.invitees)
+    ? details.invitees.slice()
+    : Array.isArray(fallback?.invitees)
+    ? fallback.invitees.slice()
+    : [];
+
+  const mergedMetadata = {
+    ...(fallback?.metadata && typeof fallback.metadata === "object"
+      ? fallback.metadata
+      : {}),
+    ...(details.metadata && typeof details.metadata === "object"
+      ? details.metadata
+      : {}),
+    joined: true,
+  };
+
+  return {
+    ...(fallback || {}),
+    ...details,
+    match: baseMatch,
+    participants: normalizedParticipants,
+    invitees: normalizedInvitees,
+    joined: true,
+    metadata: mergedMetadata,
+  };
+};
+
+const buildOptimisticMatchDetailsFromBrowseMatch = (match) => {
+  if (!match || !match.id) return null;
+
+  const baseMatch = {
+    id: match.id,
+    start_date_time: match.dateTime,
+    startDateTime: match.dateTime,
+    status: match.status || "upcoming",
+    location_text: match.location,
+    location: match.location,
+    map_url: match.mapUrl,
+    mapUrl: match.mapUrl,
+    match_format: match.format,
+    format: match.format,
+    skill_level_min: match.skillLevel,
+    skill_level: match.skillLevel,
+    match_type: match.privacy || "open",
+    capacity: match.capacity || null,
+    player_limit: match.playerLimit ?? null,
+    spots_available: match.spotsAvailable ?? null,
+  };
+
+  if (match.title) baseMatch.title = match.title;
+  if (match.name) baseMatch.name = match.name;
+  if (match.hostName) baseMatch.host_name = match.hostName;
+  if (match.hostProfile) baseMatch.host_profile = match.hostProfile;
+
+  const participants = Array.isArray(match.participants)
+    ? match.participants
+    : [];
+  const invitees = Array.isArray(match.invitees) ? match.invitees : [];
+
+  const optimistic = {
+    match: baseMatch,
+    participants,
+    invitees,
+  };
+
+  return ensureMatchDetailsJoined(optimistic, optimistic);
+};
+
 const TennisMatchApp = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1804,6 +1908,8 @@ const TennisMatchApp = () => {
                 if (!currentUser) {
                   setShowSignInModal(true);
                 } else {
+                  const originScreen = currentScreen;
+                  let optimisticDetails = null;
                   try {
                     await joinMatch(match.id);
 
