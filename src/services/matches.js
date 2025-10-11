@@ -76,6 +76,7 @@ export const joinMatch = (id) =>
   unwrap(
     api(`/matches/${id}/join`, {
       method: "POST",
+      body: JSON.stringify({}),
     })
   );
 
@@ -83,6 +84,7 @@ export const leaveMatch = (id) =>
   unwrap(
     api(`/matches/${id}/leave`, {
       method: "POST",
+      body: JSON.stringify({}),
     })
   );
 
