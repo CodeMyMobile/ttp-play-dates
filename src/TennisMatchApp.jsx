@@ -254,6 +254,61 @@ const TennisMatchApp = () => {
   const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
+  const toastTimeoutRef = useRef(null);
+
+  const currentUserIdentifiers = useMemo(() => {
+    if (!currentUser || typeof currentUser !== "object") return [];
+    const candidates = [
+      currentUser.id,
+      currentUser.user_id,
+      currentUser.userId,
+      currentUser.player_id,
+      currentUser.playerId,
+      currentUser.member_id,
+      currentUser.memberId,
+      currentUser.profile?.id,
+      currentUser.profile?.player_id,
+      currentUser.profile?.playerId,
+      currentUser.profile?.user_id,
+      currentUser.profile?.userId,
+    ];
+    return candidates.filter((value) => {
+      if (value === null || value === undefined) return false;
+      if (typeof value === "string") return value.trim().length > 0;
+      return true;
+    });
+  }, [currentUser]);
+
+  const recordMatchesCurrentUser = useCallback(
+    (record) => {
+      if (!record || currentUserIdentifiers.length === 0) return false;
+      const candidates = [
+        record.player_id,
+        record.playerId,
+        record.invitee_id,
+        record.inviteeId,
+        record.participant_id,
+        record.participantId,
+        record.member_id,
+        record.memberId,
+        record.user_id,
+        record.userId,
+        record.id,
+        record.profile?.id,
+        record.profile?.player_id,
+        record.profile?.playerId,
+        record.profile?.user_id,
+        record.profile?.userId,
+        record.player?.id,
+        record.player?.player_id,
+        record.player?.playerId,
+      ];
+      return candidates.some((value) =>
+        currentUserIdentifiers.some((identifier) => idsMatch(value, identifier)),
+      );
+    },
+    [currentUserIdentifiers],
+  );
 
   useEffect(() => {
     setMatchPage(1);
@@ -297,10 +352,30 @@ const TennisMatchApp = () => {
     }
   }, []);
 
-  const displayToast = useCallback((message, type = "success") => {
-    setShowToast({ message, type });
-    setTimeout(() => setShowToast(null), 3000);
+  const clearToast = useCallback(() => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setShowToast(null);
   }, []);
+
+  const displayToast = useCallback(
+    (message, type = "success", options = {}) => {
+      clearToast();
+      setShowToast({ message, type });
+      const duration =
+        typeof options.duration === "number" ? options.duration : 3000;
+      if (Number.isFinite(duration) && duration > 0) {
+        toastTimeoutRef.current = setTimeout(() => {
+          clearToast();
+        }, duration);
+      }
+    },
+    [clearToast],
+  );
+
+  useEffect(() => () => clearToast(), [clearToast]);
 
   const fetchPendingInvites = useCallback(async () => {
     if (!currentUser) {
@@ -1791,45 +1866,161 @@ const TennisMatchApp = () => {
               onClick={async () => {
                 if (!currentUser) {
                   setShowSignInModal(true);
-                } else {
-                  try {
-                    await joinMatch(match.id);
+                  return;
+                }
 
-                    try {
-                      const data = await fetchMatchDetailsWithArchivedFallback(
-                        match.id,
-                      );
-                      if (data) {
-                        setMatchDetailsOrigin(currentScreen);
-                        setViewMatch(data);
-                        setShowMatchDetailsModal(true);
+                const showExistingSignupMessage = (details) => {
+                  const openDetails = () => {
+                    clearToast();
+                    if (details) {
+                      if (
+                        (details.match || {}).status === "archived" &&
+                        activeFilter !== "archived"
+                      ) {
+                        setActiveFilter("archived");
                       }
-                    } catch (detailsError) {
-                      console.error(detailsError);
-                      displayToast(
-                        "Joined the match, but we couldn't load the details. Try again in a moment.",
-                        "info",
-                      );
+                      setMatchDetailsOrigin(currentScreen);
+                      setViewMatch(details);
+                      setShowMatchDetailsModal(true);
+                    } else {
+                      handleViewDetails(match.id);
                     }
+                  };
 
-                    await Promise.all([
-                      fetchMatches(),
-                      fetchPendingInvites(),
-                    ]);
-                  } catch (err) {
-                    if (isMatchArchivedError(err)) {
+                  displayToast(
+                    <>
+                      You're already signed up for this match.
+                      <button
+                        type="button"
+                        className="ml-2 underline underline-offset-4 decoration-2"
+                        onClick={openDetails}
+                      >
+                        See match details
+                      </button>
+                    </>,
+                    "info",
+                    { duration: 6000 },
+                  );
+                };
+
+                let matchDetailsForExistingCheck = null;
+                let alreadySignedUp = false;
+
+                if (currentUserIdentifiers.length > 0) {
+                  try {
+                    matchDetailsForExistingCheck =
+                      await fetchMatchDetailsWithArchivedFallback(match.id);
+                    if (matchDetailsForExistingCheck) {
+                      const matchRecord = matchDetailsForExistingCheck.match || {};
+                      const participantsSource = Array.isArray(
+                        matchDetailsForExistingCheck.participants,
+                      )
+                        ? matchDetailsForExistingCheck.participants
+                        : Array.isArray(matchRecord.participants)
+                        ? matchRecord.participants
+                        : [];
+                      const inviteesSource = Array.isArray(
+                        matchDetailsForExistingCheck.invitees,
+                      )
+                        ? matchDetailsForExistingCheck.invitees
+                        : Array.isArray(matchRecord.invitees)
+                        ? matchRecord.invitees
+                        : [];
+                      const activeParticipants =
+                        uniqueActiveParticipants(participantsSource);
+                      const acceptedInvitees =
+                        uniqueAcceptedInvitees(inviteesSource);
+
+                      alreadySignedUp =
+                        activeParticipants.some(recordMatchesCurrentUser) ||
+                        acceptedInvitees.some(recordMatchesCurrentUser);
+                    }
+                  } catch (prefetchError) {
+                    if (isMatchArchivedError(prefetchError)) {
                       displayToast(
                         "This match has been archived. You can't join.",
                         "error",
                       );
-                      fetchMatches();
+                      await fetchMatches();
                       return;
                     }
+                    // Continue with join attempt if we cannot pre-check the roster
+                  }
+                }
+
+                if (alreadySignedUp) {
+                  showExistingSignupMessage(matchDetailsForExistingCheck);
+                  await Promise.all([fetchMatches(), fetchPendingInvites()]);
+                  return;
+                }
+
+                try {
+                  await joinMatch(match.id);
+
+                  try {
+                    const data = await fetchMatchDetailsWithArchivedFallback(
+                      match.id,
+                    );
+                    if (data) {
+                      setMatchDetailsOrigin(currentScreen);
+                      setViewMatch(data);
+                      setShowMatchDetailsModal(true);
+                    }
+                  } catch (detailsError) {
+                    console.error(detailsError);
                     displayToast(
-                      err.response?.data?.message || "Failed to join match",
-                      "error",
+                      "Joined the match, but we couldn't load the details. Try again in a moment.",
+                      "info",
                     );
                   }
+
+                  await Promise.all([fetchMatches(), fetchPendingInvites()]);
+                } catch (err) {
+                  const errorCodeRaw =
+                    err?.response?.data?.error ||
+                    err?.data?.error ||
+                    err?.message ||
+                    "";
+                  const normalizedErrorCode = errorCodeRaw
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                  const responseMessage = err?.response?.data?.message || "";
+                  const normalizedMessage = responseMessage
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+
+                  if (isMatchArchivedError(err)) {
+                    displayToast(
+                      "This match has been archived. You can't join.",
+                      "error",
+                    );
+                    await fetchMatches();
+                    return;
+                  }
+
+                  if (
+                    normalizedErrorCode === "already_joined" ||
+                    normalizedMessage.includes("already joined")
+                  ) {
+                    if (!matchDetailsForExistingCheck) {
+                      try {
+                        matchDetailsForExistingCheck =
+                          await fetchMatchDetailsWithArchivedFallback(match.id);
+                      } catch {
+                        matchDetailsForExistingCheck = null;
+                      }
+                    }
+                    showExistingSignupMessage(matchDetailsForExistingCheck);
+                    await Promise.all([fetchMatches(), fetchPendingInvites()]);
+                    return;
+                  }
+
+                  displayToast(
+                    responseMessage || err?.message || "Failed to join match",
+                    "error",
+                  );
                 }
               }}
               className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-105 transition-all flex items-center gap-1.5 shadow-lg"
@@ -4625,6 +4816,15 @@ const TennisMatchApp = () => {
   const Toast = () => {
     if (!showToast) return null;
 
+    const isStringMessage = typeof showToast.message === "string";
+    const messageContent = isStringMessage ? (
+      <span className="font-black">{showToast.message}</span>
+    ) : (
+      <div className="font-black flex flex-wrap items-center gap-2">
+        {showToast.message}
+      </div>
+    );
+
     return (
       <div
         className={`fixed top-20 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-xl z-50 animate-slideDown flex items-center gap-2 ${
@@ -4638,7 +4838,7 @@ const TennisMatchApp = () => {
         ) : (
           <Check className="w-5 h-5" />
         )}
-        <span className="font-black">{showToast.message}</span>
+        {messageContent}
       </div>
     );
   }; // FIX: Removed comma here
