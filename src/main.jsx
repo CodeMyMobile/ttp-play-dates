@@ -8,6 +8,7 @@ import ResetPassword from "./pages/ResetPassword.jsx";
 import CreateMatchPage from "./pages/CreateMatchPage.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
 import MatchSuccessPreview from "./pages/MatchSuccessPreview.jsx";
+import CourtFinder from "./pages/CourtFinder.jsx";
 
 const routes = [
   // App home
@@ -15,6 +16,7 @@ const routes = [
   { path: "/invites", element: <TennisMatchApp /> },
   { path: "/matches/:id/invite", element: <TennisMatchApp /> },
   { path: "/create", element: <CreateMatchPage /> },
+  { path: "/courts", element: <CourtFinder /> },
 
   // Match details (direct link)
   { path: "/matches/:id", element: <MatchPage /> },

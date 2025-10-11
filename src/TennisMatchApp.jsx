@@ -1141,21 +1141,33 @@ const TennisMatchApp = () => {
           </p>
 
           {/* Prominent Action Button */}
-          <button
-            onClick={() => {
-              if (!currentUser) {
-                setShowSignInModal(true);
-              } else {
-                navigate("/create");
-              }
-            }}
-            className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
-          >
-            <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
-            <Sparkles className="w-6 h-6 relative" />
-            <span className="relative">Create New Match</span>
-            <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (!currentUser) {
+                  setShowSignInModal(true);
+                } else {
+                  navigate("/create");
+                }
+              }}
+              className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+            >
+              <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
+              <Sparkles className="w-6 h-6 relative" />
+              <span className="relative">Create New Match</span>
+              <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/courts")}
+              className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-emerald-700 rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
+            >
+              <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
+              <span>Find Local Courts</span>
+              <ArrowRight className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1" />
+            </button>
+          </div>
         </div>
       </div>
 
