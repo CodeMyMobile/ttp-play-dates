@@ -19,9 +19,11 @@ import {
   acceptInvite,
 } from "./services/invites";
 import { login, signup } from "./services/auth";
+import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import { uniqueActiveParticipants } from "./utils/participants";
 import Header from "./components/Header.jsx";
+import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -47,6 +49,44 @@ export default function InvitationPage() {
   const [signUpPassword, setSignUpPassword] = useState("");
   const [signUpPhone, setSignUpPhone] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem("user");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [successModal, setSuccessModal] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const successDateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    [],
+  );
+
+  const formatSuccessDateTime = useCallback(
+    (value) => {
+      if (!value) return "";
+      const date = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return successDateFormatter.format(date);
+    },
+    [successDateFormatter],
+  );
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timeout = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timeout);
+  }, [toast]);
 
   const inviteeEmail = preview?.invitee?.email || "";
   const inviteeRequiresAccountClaim = useMemo(() => {
@@ -258,8 +298,9 @@ export default function InvitationPage() {
       } catch {
         // ignore localStorage write errors
       }
+      setCurrentUser(userRecord);
     }
-  }, []);
+  }, [setCurrentUser]);
 
   const getInviteDestination = useCallback(
     (authData = {}, acceptance = {}) => {
@@ -306,6 +347,166 @@ export default function InvitationPage() {
     [navigate],
   );
 
+  const loadSuccessMatch = useCallback(
+    async (matchId, { includeArchived = false } = {}) => {
+      if (!matchId) return null;
+      try {
+        if (includeArchived) {
+          return await getMatch(matchId, { filter: ARCHIVE_FILTER_VALUE });
+        }
+        return await getMatch(matchId);
+      } catch (error) {
+        if (!includeArchived && isMatchArchivedError(error)) {
+          return await getMatch(matchId, { filter: ARCHIVE_FILTER_VALUE });
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const fallbackSuccessMatchData = useMemo(() => {
+    const baseMatch = preview?.match;
+    if (!baseMatch) return null;
+
+    const participants = getActiveParticipants(baseMatch, preview);
+    const invitees = Array.isArray(baseMatch?.invitees)
+      ? baseMatch.invitees
+      : Array.isArray(preview?.invitees)
+      ? preview.invitees
+      : undefined;
+
+    const rawCapacity = baseMatch?.capacity || preview?.capacity;
+    const capacityLimit =
+      rawCapacity?.limit ??
+      baseMatch?.player_limit ??
+      baseMatch?.playerLimit ??
+      undefined;
+    const capacity =
+      rawCapacity || capacityLimit !== undefined
+        ? {
+            confirmed: rawCapacity?.confirmed,
+            limit: capacityLimit,
+            open: rawCapacity?.open,
+            isFull: rawCapacity?.isFull ?? rawCapacity?.is_full ?? false,
+          }
+        : undefined;
+
+    const matchData = { match: baseMatch };
+
+    if (participants.length) {
+      matchData.participants = participants;
+    }
+
+    if (invitees?.length) {
+      matchData.invitees = invitees;
+    }
+
+    if (capacity) {
+      matchData.capacity = capacity;
+    }
+
+    return matchData;
+  }, [preview]);
+
+  const handleJoinSuccess = useCallback(
+    async (destination) => {
+      if (!destination) {
+        navigateAfterJoin(destination);
+        return;
+      }
+
+      const { matchId } = destination;
+      const fallbackMatchData = matchId ? fallbackSuccessMatchData : null;
+
+      if (!matchId) {
+        if (fallbackMatchData) {
+          setSuccessModal({ matchData: fallbackMatchData, destination, isFallback: true });
+          return;
+        }
+        navigateAfterJoin(destination);
+        return;
+      }
+
+      if (fallbackMatchData) {
+        setSuccessModal({ matchData: fallbackMatchData, destination, isFallback: true });
+      }
+
+      try {
+        const matchData = await loadSuccessMatch(matchId);
+        if (!matchData) {
+          if (!fallbackMatchData) {
+            navigateAfterJoin(destination);
+          }
+          return;
+        }
+        setSuccessModal({ matchData, destination, isFallback: false });
+      } catch (error) {
+        console.error("Failed to load match details for success view", error);
+        if (!fallbackMatchData) {
+          navigateAfterJoin(destination);
+        }
+      }
+    },
+    [fallbackSuccessMatchData, loadSuccessMatch, navigateAfterJoin],
+  );
+
+  const successMatchId = successModal?.destination?.matchId || null;
+
+  const refreshSuccessMatch = useCallback(async () => {
+    if (!successMatchId) return null;
+    try {
+      const updated = await loadSuccessMatch(successMatchId);
+      if (updated) {
+        setSuccessModal((prev) =>
+          prev
+            ? { ...prev, matchData: updated, isFallback: false }
+            : prev,
+        );
+      }
+      return updated;
+    } catch (error) {
+      console.error("Failed to refresh match", error);
+      return null;
+    }
+  }, [loadSuccessMatch, successMatchId]);
+
+  const reloadSuccessMatch = useCallback(
+    async (matchId, options = {}) => {
+      try {
+        return await loadSuccessMatch(matchId, options);
+      } catch (error) {
+        console.error("Failed to reload match", error);
+        return null;
+      }
+    },
+    [loadSuccessMatch],
+  );
+
+  const handleSuccessMatchUpdate = useCallback((updater) => {
+    setSuccessModal((prev) => {
+      if (!prev) return prev;
+      const nextData =
+        typeof updater === "function" ? updater(prev.matchData) : updater;
+      if (!nextData) return prev;
+      return { ...prev, matchData: nextData, isFallback: false };
+    });
+  }, []);
+
+  const handleSuccessClose = useCallback(() => {
+    if (successModal?.destination) {
+      navigateAfterJoin(successModal.destination);
+    } else {
+      navigateAfterJoin(null);
+    }
+    setSuccessModal(null);
+  }, [navigateAfterJoin, successModal]);
+
+  const handleToast = useCallback((message, type = "info") => {
+    if (!message) return;
+    setToast({ message, type });
+  }, []);
+
   const handleSignInSubmit = async (event) => {
     event.preventDefault();
     if (authSubmitting) return;
@@ -323,7 +524,7 @@ export default function InvitationPage() {
     try {
       const data = await login(trimmedEmail, signInPassword);
       const destination = await completeJoin(data, { email: trimmedEmail });
-      navigateAfterJoin(destination);
+      await handleJoinSuccess(destination);
     } catch (err) {
       if (isMatchArchivedError(err)) {
         setArchivedNotice(true);
@@ -366,7 +567,7 @@ export default function InvitationPage() {
         name: trimmedName,
         phone: trimmedPhone,
       });
-      navigateAfterJoin(destination);
+      await handleJoinSuccess(destination);
     } catch (err) {
       if (isMatchArchivedError(err)) {
         setArchivedNotice(true);
@@ -411,9 +612,8 @@ export default function InvitationPage() {
       if (trimmedName) payload.fullName = trimmedName;
       const data = await claimInvite(token, payload);
       persistSession(data);
-      navigate(data.redirect || `/matches/${data.matchId}`, {
-        replace: true,
-      });
+      const destination = getInviteDestination(data);
+      await handleJoinSuccess(destination);
     } catch (err) {
       if (isMatchArchivedError(err)) {
         setArchivedNotice(true);
@@ -882,6 +1082,19 @@ export default function InvitationPage() {
 
   return (
     <InvitationLayout>
+      {toast && (
+        <div
+          className={`fixed top-6 right-6 z-50 rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg transition ${
+            toast.type === "error"
+              ? "bg-rose-100 text-rose-700"
+              : toast.type === "success"
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-slate-900 text-white"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
       <div className="w-full max-w-xl">
         <div className="overflow-hidden rounded-[32px] border border-white/20 bg-white/10 shadow-[0_24px_60px_-15px_rgba(24,24,27,0.45)] backdrop-blur">
           <div className="bg-gradient-to-br from-[#fef08a] via-[#fbbf24] to-[#f97316] px-8 pt-8 pb-24 text-center text-amber-900">
@@ -1034,6 +1247,22 @@ export default function InvitationPage() {
           </div>
         </div>
       </div>
+      {successModal && (
+        <MatchDetailsModal
+          isOpen
+          matchData={successModal.matchData}
+          currentUser={currentUser}
+          onClose={handleSuccessClose}
+          onRequireSignIn={() => {}}
+          onMatchRefresh={refreshSuccessMatch}
+          onReloadMatch={reloadSuccessMatch}
+          onUpdateMatch={handleSuccessMatchUpdate}
+          onToast={handleToast}
+          formatDateTime={formatSuccessDateTime}
+          onManageInvites={() => {}}
+          initialStatus="success"
+        />
+      )}
     </InvitationLayout>
   );
 }
