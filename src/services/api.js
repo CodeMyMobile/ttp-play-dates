@@ -3,9 +3,18 @@ const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.co
 const api = (path, options = {}) => {
   const token = localStorage.getItem("authToken");
   const headers = {
-    "Content-Type": "application/json",
+    Accept: "application/json",
     ...(options.headers || {}),
   };
+  const hasBody =
+    options.body !== undefined && options.body !== null && options.body !== "";
+  if (
+    hasBody &&
+    !(options.body instanceof FormData) &&
+    !Object.prototype.hasOwnProperty.call(headers, "Content-Type")
+  ) {
+    headers["Content-Type"] = "application/json";
+  }
   if (token) headers.Authorization = `Bearer ${token}`;
   // Allow absolute URLs by not prefixing baseURL when path looks absolute
   const url = /^https?:\/\//i.test(path) ? path : baseURL + path;

@@ -72,12 +72,15 @@ export const cancelMatch = (id) =>
     })
   );
 
-export const joinMatch = (id) =>
-  unwrap(
+export const joinMatch = (id) => {
+  const payload = { match_id: id, matchId: id };
+  return unwrap(
     api(`/matches/${id}/join`, {
       method: "POST",
+      body: JSON.stringify(payload),
     })
   );
+};
 
 export const leaveMatch = (id) =>
   unwrap(
