@@ -44,8 +44,16 @@ export const signup = async ({ email, password, name, phone, user_type = 2 }) =>
   return data;
 };
 
-export const getPersonalDetails = async () =>
-  unwrap(api(`/player/personal_details`));
+export const getPersonalDetails = async () => {
+  try {
+    return await unwrap(api(`/player/personal_details`));
+  } catch (error) {
+    if (error?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
 
 export const logout = () => {
   localStorage.removeItem("authToken");

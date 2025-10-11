@@ -10,11 +10,16 @@ export default function ProfilePhotoUploader({
   className = "btn",
   disabledLabel = "Uploading…",
   errorClassName = "text-sm font-semibold text-red-600 mt-2",
+  disabled = false,
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
 
   async function handleFile(e) {
+    if (disabled) {
+      e.target.value = "";
+      return;
+    }
     setError("");
     const file = e.target.files?.[0];
     if (!file) return;
@@ -45,7 +50,10 @@ export default function ProfilePhotoUploader({
   return (
     <div>
       <label
-        className={`${className} ${isUploading ? "opacity-70 cursor-not-allowed" : ""}`}
+        className={`${className} ${
+          isUploading || disabled ? "opacity-70 cursor-not-allowed" : ""
+        }`}
+        aria-disabled={isUploading || disabled}
       >
         {isUploading ? disabledLabel : label}
         <input
@@ -53,7 +61,7 @@ export default function ProfilePhotoUploader({
           accept={accept}
           style={{ display: "none" }}
           onChange={handleFile}
-          disabled={isUploading}
+          disabled={isUploading || disabled}
         />
       </label>
       {error && <div className={errorClassName}>{error}</div>}
