@@ -1,4 +1,6 @@
-const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.com/api";
+import { resolveApiBaseUrl } from "./config.js";
+
+const baseURL = resolveApiBaseUrl();
 
 const api = (path, options = {}) => {
   const token = localStorage.getItem("authToken");
