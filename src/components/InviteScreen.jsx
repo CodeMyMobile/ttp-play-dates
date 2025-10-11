@@ -312,7 +312,7 @@ const InviteScreen = ({
             ) : participants.length ? (
               <ul className="divide-y divide-gray-100 border rounded-xl">
                 {participants.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                     <span className="text-gray-800">
                       {p.profile?.full_name || `Player ${p.player_id}`}
                       {(p.player_id === (hostId ?? currentUser?.id)) && (
@@ -355,17 +355,17 @@ const InviteScreen = ({
 
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
             <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">Share Link</h3>
-            <div className="flex gap-3 mb-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row">
               <input
                 type="text"
                 value={shareLink}
                 readOnly
-                className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-600"
+                className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-600 sm:flex-1"
               />
               <button
                 onClick={copyLink}
                 disabled={!shareLink}
-                className={`px-5 py-3 rounded-xl font-black transition-all ${
+                className={`w-full rounded-xl px-5 py-3 font-black transition-all sm:w-auto ${
                   copiedLink
                     ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
                     : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
@@ -375,7 +375,7 @@ const InviteScreen = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <button
                 onClick={openWhatsApp}
                 disabled={!shareLink}
@@ -413,10 +413,10 @@ const InviteScreen = ({
           </div>
 
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <div className="flex justify-between items-center mb-5">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Players</h3>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {players.map((player) => {
                 const name = player.full_name;
                 const pid = Number(player.user_id);
@@ -460,11 +460,11 @@ const InviteScreen = ({
             </div>
 
             {pagination && (
-              <div className="flex items-center justify-between mt-4">
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                  className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   Previous
                 </button>
@@ -474,7 +474,7 @@ const InviteScreen = ({
                 <button
                   onClick={() => setPage((p) => p + 1)}
                   disabled={pagination.page >= Math.ceil(pagination.total / pagination.perPage)}
-                  className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                  className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   Next
                 </button>
@@ -484,13 +484,13 @@ const InviteScreen = ({
 
           {selectedPlayers.size > 0 && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
                   Selected ({totalSelectedInvitees})
                 </h3>
                 <button
                   onClick={() => setSelectedPlayers(new Map())}
-                  className="text-sm text-gray-500 hover:text-gray-700 font-bold"
+                  className="w-full text-left text-sm font-bold text-gray-500 transition-colors hover:text-gray-700 sm:w-auto sm:text-right"
                 >
                   Clear all
                 </button>
