@@ -18,7 +18,7 @@ import {
   claimInvite,
   acceptInvite,
 } from "./services/invites";
-import { login, signup } from "./services/auth";
+import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import { uniqueActiveParticipants } from "./utils/participants";
@@ -48,6 +48,9 @@ export default function InvitationPage() {
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
   const [signUpPhone, setSignUpPhone] = useState("");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSubmitting, setForgotSubmitting] = useState(false);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -126,7 +129,9 @@ export default function InvitationPage() {
         setPassword("");
         setAgreeTerms(false);
         setAuthMode("signIn");
+        setShowForgotPassword(false);
         setSignInEmail(invitee?.email || "");
+        setForgotEmail(invitee?.email || "");
         setSignInPassword("");
         setSignUpName(invitee?.full_name || "");
         setSignUpEmail(invitee?.email || "");
@@ -156,7 +161,9 @@ export default function InvitationPage() {
             setPassword("");
             setAgreeTerms(false);
             setAuthMode("signIn");
+            setShowForgotPassword(false);
             setSignInEmail(invitee?.email || "");
+            setForgotEmail(invitee?.email || "");
             setSignInPassword("");
             setSignUpName(invitee?.full_name || "");
             setSignUpEmail(invitee?.email || "");
@@ -432,13 +439,22 @@ export default function InvitationPage() {
   }, []);
 
   const handleSuccessClose = useCallback(() => {
+    const matchType =
+      successModal?.matchData?.match?.match_type ||
+      successModal?.matchData?.match_type ||
+      "";
+    if (typeof matchType === "string" && matchType.toLowerCase() === "open") {
+      navigate("/", { replace: true });
+      setSuccessModal(null);
+      return;
+    }
     if (successModal?.destination) {
       navigateAfterJoin(successModal.destination);
     } else {
       navigateAfterJoin(null);
     }
     setSuccessModal(null);
-  }, [navigateAfterJoin, successModal]);
+  }, [navigate, navigateAfterJoin, successModal]);
 
   const handleToast = useCallback((message, type = "info") => {
     if (!message) return;
@@ -477,6 +493,33 @@ export default function InvitationPage() {
     }
   };
 
+  const handleForgotPasswordSubmit = async (event) => {
+    event.preventDefault();
+    if (forgotSubmitting) return;
+    setError("");
+    const trimmedEmail = forgotEmail.trim();
+    if (!trimmedEmail) {
+      setError("Enter your email to receive a reset link.");
+      return;
+    }
+    setForgotSubmitting(true);
+    try {
+      await forgotPassword(trimmedEmail);
+      setToast({
+        message:
+          "If that email exists, we'll send password reset instructions shortly.",
+        type: "success",
+      });
+      setShowForgotPassword(false);
+      setSignInEmail(trimmedEmail);
+      setForgotEmail(trimmedEmail);
+    } catch (err) {
+      setError(err?.message || "Unable to send reset link. Please try again.");
+    } finally {
+      setForgotSubmitting(false);
+    }
+  };
+
   const handleSignUpSubmit = async (event) => {
     event.preventDefault();
     if (authSubmitting) return;
@@ -492,13 +535,17 @@ export default function InvitationPage() {
       setError("Please enter your email and create a password to sign up.");
       return;
     }
+    if (!trimmedPhone) {
+      setError("Please enter your mobile number to sign up.");
+      return;
+    }
     setAuthSubmitting(true);
     try {
       const data = await signup({
         email: trimmedEmail,
         password: signUpPassword,
         name: trimmedName,
-        phone: trimmedPhone || undefined,
+        phone: trimmedPhone,
       });
       const destination = await completeJoin(data, {
         email: trimmedEmail,
@@ -864,6 +911,7 @@ export default function InvitationPage() {
           onClick={() => {
             setPhase("preview");
             setError("");
+            setShowForgotPassword(false);
           }}
           className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100"
         >
@@ -876,6 +924,7 @@ export default function InvitationPage() {
           onClick={() => {
             setAuthMode("signIn");
             setError("");
+            setShowForgotPassword(false);
           }}
           className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
             authMode === "signIn"
@@ -891,6 +940,7 @@ export default function InvitationPage() {
           onClick={() => {
             setAuthMode("signUp");
             setError("");
+            setShowForgotPassword(false);
           }}
           className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
             authMode === "signUp"
@@ -903,42 +953,90 @@ export default function InvitationPage() {
         </button>
       </div>
       {authMode === "signIn" ? (
-        <form onSubmit={handleSignInSubmit} className="space-y-4">
-          <label className="block">
-            <span className="mb-1 block text-sm font-semibold text-slate-700">
-              Email
-            </span>
-            <input
-              type="email"
-              value={signInEmail}
-              onChange={(event) => setSignInEmail(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
-              placeholder="you@example.com"
-              autoComplete="email"
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-semibold text-slate-700">
-              Password
-            </span>
-            <input
-              type="password"
-              value={signInPassword}
-              onChange={(event) => setSignInPassword(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <PrimaryButton
-            type="submit"
-            disabled={authSubmitting || isArchivedMatch}
-          >
-            {authSubmitting ? "Joining match..." : "Sign in & Join"}
-          </PrimaryButton>
-        </form>
+        showForgotPassword ? (
+          <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Enter your email address and we'll send you a password reset link.
+            </p>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">
+                Email
+              </span>
+              <input
+                type="email"
+                value={forgotEmail}
+                onChange={(event) => setForgotEmail(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+              />
+            </label>
+            <PrimaryButton type="submit" disabled={forgotSubmitting}>
+              {forgotSubmitting ? "Sending reset link..." : "Send reset link"}
+            </PrimaryButton>
+            <button
+              type="button"
+              onClick={() => {
+                setShowForgotPassword(false);
+                setError("");
+              }}
+              className="w-full text-center text-sm font-semibold text-emerald-600 transition-colors hover:text-emerald-700"
+            >
+              Back to sign in
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSignInSubmit} className="space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">
+                Email
+              </span>
+              <input
+                type="email"
+                value={signInEmail}
+                onChange={(event) => setSignInEmail(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">
+                Password
+              </span>
+              <input
+                type="password"
+                value={signInPassword}
+                onChange={(event) => setSignInPassword(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPassword(true);
+                  setError("");
+                  setForgotEmail(signInEmail || inviteeEmail || "");
+                }}
+                className="text-xs font-semibold text-emerald-600 transition-colors hover:text-emerald-700"
+              >
+                Forgot password?
+              </button>
+            </div>
+            <PrimaryButton
+              type="submit"
+              disabled={authSubmitting || isArchivedMatch}
+            >
+              {authSubmitting ? "Joining match..." : "Sign in & Join"}
+            </PrimaryButton>
+          </form>
+        )
       ) : (
         <form onSubmit={handleSignUpSubmit} className="space-y-4">
           <label className="block">
@@ -983,17 +1081,19 @@ export default function InvitationPage() {
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-semibold text-slate-700">
-              Mobile number (optional)
+              Mobile number
             </span>
             <input
+              type="tel"
               value={signUpPhone}
               onChange={(event) => setSignUpPhone(event.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
               placeholder="(555) 123-4567"
               autoComplete="tel"
+              required
             />
             <p className="mt-1 text-xs text-slate-400">
-              We use this for match reminders and schedule updates.
+              We'll use this for match reminders and schedule updates.
             </p>
           </label>
           <PrimaryButton
@@ -1166,11 +1266,12 @@ export default function InvitationPage() {
               ) : (
                 <>
                   <PrimaryButton
-                    onClick={() => {
-                      setPhase("auth");
-                      setAuthMode("signIn");
-                      setError("");
-                    }}
+                  onClick={() => {
+                    setPhase("auth");
+                    setAuthMode("signIn");
+                    setError("");
+                    setShowForgotPassword(false);
+                  }}
                     disabled={isArchivedMatch}
                   >
                     Join Match &amp; Play
