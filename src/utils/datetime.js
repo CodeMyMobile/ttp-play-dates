@@ -46,7 +46,11 @@ const combineDateAndTimeToIso = (dateString, timeString) => {
     return null;
   }
 
-  return toIsoStringWithOffset(localDate);
+  // Convert to an ISO string in UTC ("Z") so the backend interprets the
+  // scheduled start time consistently regardless of the creator's local
+  // timezone. This matches the format returned by the API and avoids SMS
+  // notifications shifting to a different hour when processed server-side.
+  return localDate.toISOString();
 };
 
 export { combineDateAndTimeToIso, toIsoStringWithOffset };
