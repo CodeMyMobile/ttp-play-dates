@@ -1,18 +1,5 @@
+import api, { unwrap } from "./api";
 import { normalizeAuthToken } from "./authToken";
-
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "https://ttp-api.codemymobile.com/api";
-
-const toParams = (params) => {
-  return Object.entries(params).reduce((acc, [key, value]) => {
-    if (value !== undefined) {
-      acc[key] = value;
-    }
-    return acc;
-  }, {});
-};
 
 export const updatePlayerPersonalDetails = async ({
   player = null,
@@ -36,8 +23,7 @@ export const updatePlayerPersonalDetails = async ({
     throw new Error("Missing player id");
   }
 
-  const params = toParams({
-    id,
+  const params = Object.entries({
     date_of_birth,
     usta_rating,
     uta_rating,
@@ -45,25 +31,19 @@ export const updatePlayerPersonalDetails = async ({
     phone: mobile,
     about_me,
     profile_picture,
-  });
+  }).reduce((acc, [key, value]) => {
+    if (value !== undefined) {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
 
-  const response = await fetch(`${API_URL}/player/personal_details/${id}`, {
-    method: "PATCH",
-    headers: {
-      "Content-type": "application/json;charset=UTF-8",
-      Authorization: authHeader,
-    },
-    body: JSON.stringify(params),
-  });
-
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = data?.message || response.statusText || "Failed to update profile";
-    const error = new Error(message);
-    error.status = response.status;
-    error.data = data;
-    throw error;
-  }
-
-  return data;
+  return unwrap(
+    api(`/player/personal_details/${id}`, {
+      method: "PATCH",
+      authToken: authHeader,
+      authSchemePreference: "token",
+      json: params,
+    }),
+  );
 };

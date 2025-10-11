@@ -1,33 +1,57 @@
-import { getStoredAuthToken } from "./authToken";
+import { getStoredAuthToken, normalizeAuthToken } from "./authToken";
 
 const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.com/api";
 
 const api = (path, options = {}) => {
-  const token = getStoredAuthToken({ preferScheme: "Bearer" });
+  const {
+    headers: optionHeaders = {},
+    body: providedBody,
+    json,
+    authSchemePreference = "token",
+    authToken,
+    credentials: providedCredentials,
+    ...rest
+  } = options;
+
+  const token = authToken
+    ? normalizeAuthToken(authToken, { preferScheme: authSchemePreference })
+    : getStoredAuthToken({ preferScheme: authSchemePreference });
+
   const headers = {
-    ...(options.headers || {}),
+    Accept: "application/json",
+    ...optionHeaders,
   };
-  const hasBody =
-    options.body !== undefined &&
-    options.body !== null &&
-    options.body !== "";
-  const isStringBody = typeof options.body === "string";
+
+  let body = providedBody;
+
+  if (json !== undefined) {
+    body = JSON.stringify(json);
+    if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = "application/json";
+    }
+  }
+
+  const hasBody = body !== undefined && body !== null && body !== "";
+  const isStringBody = typeof body === "string";
   if (
     hasBody &&
     isStringBody &&
+    json === undefined &&
     !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")
   ) {
     headers["Content-Type"] = "application/json";
   }
+
   if (token) headers.Authorization = token;
   // Allow absolute URLs by not prefixing baseURL when path looks absolute
   const url = /^https?:\/\//i.test(path) ? path : baseURL + path;
   // Default to no cookies to avoid CORS credential restrictions unless explicitly requested
-  const credentials = options.credentials ?? "omit";
+  const credentials = providedCredentials ?? "omit";
   return fetch(url, {
-    ...options,
+    ...rest,
     credentials,
     headers,
+    ...(hasBody ? { body } : {}),
   });
 };
 
