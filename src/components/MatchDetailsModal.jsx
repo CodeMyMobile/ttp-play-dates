@@ -106,6 +106,124 @@ const skillLevelNumeric = (value) => {
   return null;
 };
 
+const asNonEmptyString = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : null;
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  return null;
+};
+
+const PROFILE_BASE_URL = "https://matchplay.app/players";
+
+const buildProfileUrlFromString = (value) => {
+  const str = asNonEmptyString(value);
+  if (!str) return null;
+  if (/^https?:\/\//i.test(str)) {
+    return str;
+  }
+  if (str.startsWith("/")) {
+    return `${PROFILE_BASE_URL}${str}`;
+  }
+  return `${PROFILE_BASE_URL}/${encodeURIComponent(str)}`;
+};
+
+const getProfileImageFromSource = (source) => {
+  if (!source || typeof source !== "object") return null;
+  const keys = [
+    "profile_picture",
+    "profilePicture",
+    "profile_photo",
+    "profilePhoto",
+    "profile_image",
+    "profileImage",
+    "photo_url",
+    "photoUrl",
+    "image_url",
+    "imageUrl",
+    "avatar_url",
+    "avatarUrl",
+    "avatar",
+    "picture",
+    "photo",
+  ];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = asNonEmptyString(source[key]);
+    if (value) return value;
+  }
+  return null;
+};
+
+const getProfileUrlFromSource = (source) => {
+  if (!source || typeof source !== "object") return null;
+  const keys = [
+    "profile_url",
+    "profileUrl",
+    "profile_link",
+    "profileLink",
+    "profile_page",
+    "profilePage",
+    "profile_path",
+    "profilePath",
+    "profile_handle",
+    "profileHandle",
+    "permalink",
+    "url",
+    "link",
+    "slug",
+    "handle",
+  ];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const candidate = source[key];
+    const url = buildProfileUrlFromString(candidate);
+    if (url) return url;
+  }
+  return null;
+};
+
+const getParticipantProfileImage = (participant) => {
+  if (!participant || typeof participant !== "object") return null;
+  return (
+    getProfileImageFromSource(participant.profile) ||
+    getProfileImageFromSource(participant) ||
+    null
+  );
+};
+
+const getParticipantProfileUrl = (participant, playerId) => {
+  if (!participant || typeof participant !== "object") {
+    if (playerId === null || playerId === undefined) return null;
+    const numeric = Number(playerId);
+    return Number.isFinite(numeric)
+      ? `${PROFILE_BASE_URL}/${numeric}`
+      : null;
+  }
+
+  const profileUrl =
+    getProfileUrlFromSource(participant.profile) ||
+    getProfileUrlFromSource(participant);
+  if (profileUrl) {
+    return profileUrl;
+  }
+
+  const numeric = Number(playerId);
+  if (Number.isFinite(numeric)) {
+    return `${PROFILE_BASE_URL}/${numeric}`;
+  }
+  return null;
+};
+
 const getSkillLevelDisplay = (match) => {
   if (!match) return "";
 
@@ -305,6 +423,7 @@ const MatchDetailsModal = ({
   formatDateTime,
   onManageInvites,
   initialStatus,
+  onViewPlayerProfile,
 }) => {
   const normalizedInitialStatus = initialStatus || "details";
   const [status, setStatus] = useState(normalizedInitialStatus);
@@ -397,7 +516,10 @@ const MatchDetailsModal = ({
     hostParticipant?.profile?.name ||
     "Match Organizer";
 
-  const hostAvatar = hostProfile?.avatar_url || hostProfile?.avatar || null;
+  const hostAvatar =
+    getProfileImageFromSource(hostProfile) ||
+    getParticipantProfileImage(hostParticipant) ||
+    null;
 
   const committedParticipants = useMemo(
     () => uniqueActiveParticipants(participants),
@@ -941,6 +1063,23 @@ const MatchDetailsModal = ({
     requestShareLink({ silent: false });
   };
 
+  const handlePlayerProfileClick = useCallback(
+    (player) => {
+      if (!player) return;
+      if (typeof onViewPlayerProfile === "function") {
+        onViewPlayerProfile(player);
+        return;
+      }
+      if (!player.profileUrl) return;
+      try {
+        window.open(player.profileUrl, "_blank", "noopener,noreferrer");
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [onViewPlayerProfile],
+  );
+
   const matchDistanceLabel = useMemo(
     () =>
       distanceLabel(
@@ -954,6 +1093,8 @@ const MatchDetailsModal = ({
       const profile = participant.profile || {};
       const playerId = getParticipantPlayerId(participant);
       const id = getParticipantIdentity(participant, `participant-${index}`);
+      const avatar = getParticipantProfileImage(participant);
+      const profileUrl = getParticipantProfileUrl(participant, playerId);
       return {
         id,
         playerId,
@@ -967,12 +1108,7 @@ const MatchDetailsModal = ({
           profile.name ||
           participant.name ||
           (playerId ? `Player ${playerId}` : `Player ${index + 1}`),
-        avatar:
-          profile.avatar_url ||
-          profile.avatar ||
-          participant.avatar_url ||
-          participant.avatar ||
-          null,
+        avatar,
         isHost: match?.host_id ? idsMatch(playerId, match.host_id) : false,
         rating:
           profile.usta_rating ||
@@ -981,6 +1117,8 @@ const MatchDetailsModal = ({
           profile.ntrp_rating ||
           participant.rating ||
           null,
+        profileUrl,
+        participant,
       };
     });
 
@@ -1185,35 +1323,53 @@ const MatchDetailsModal = ({
             </div>
           );
         }
+        const canViewProfile =
+          typeof onViewPlayerProfile === "function" || Boolean(player.profileUrl);
         return (
           <div
             key={player.id}
             className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-sm font-bold text-indigo-700">
-              {player.avatar ? (
-                <img
-                  src={player.avatar}
-                  alt={player.name}
-                  className="h-10 w-10 rounded-full object-cover"
-                />
-              ) : (
-                buildAvatarLabel(player.name)
-              )}
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-black text-gray-900">
-                {player.name}
-                {player.isHost && (
-                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
-                    Host
-                  </span>
+            <button
+              type="button"
+              onClick={() => handlePlayerProfileClick(player)}
+              disabled={!canViewProfile}
+              className={`flex flex-1 items-center gap-3 rounded-2xl bg-transparent p-0 text-left focus:outline-none transition-colors ${
+                canViewProfile
+                  ? "cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-white/70"
+                  : "cursor-default"
+              }`}
+              title={
+                canViewProfile ? `View ${player.name}'s profile` : undefined
+              }
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-sm font-bold text-indigo-700">
+                {player.avatar ? (
+                  <img
+                    src={player.avatar}
+                    alt={player.name}
+                    className="h-10 w-10 rounded-full object-cover"
+                  />
+                ) : (
+                  buildAvatarLabel(player.name)
                 )}
-              </p>
-              {player.rating && (
-                <p className="text-xs font-semibold text-gray-500">Rating {player.rating}</p>
-              )}
-            </div>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-black text-gray-900">
+                  {player.name}
+                  {player.isHost && (
+                    <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                      Host
+                    </span>
+                  )}
+                </p>
+                {player.rating && (
+                  <p className="text-xs font-semibold text-gray-500">
+                    Rating {player.rating}
+                  </p>
+                )}
+              </div>
+            </button>
             {isHost &&
               !player.placeholder &&
               !player.isHost &&
