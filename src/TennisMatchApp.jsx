@@ -172,6 +172,7 @@ const TennisMatchApp = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [manualContacts, setManualContacts] = useState(new Map());
+  const [landingAuthTab, setLandingAuthTab] = useState("signup");
   const [inviteMatchId, setInviteMatchId] = useState(() =>
     deriveInviteMatchId(initialPath),
   );
@@ -181,6 +182,7 @@ const TennisMatchApp = () => {
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
   const [password, setPassword] = useState("");
+  const landingSignInRef = useRef(null);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -1118,60 +1120,360 @@ const TennisMatchApp = () => {
     [matchCounts],
   );
 
-  const BrowseScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
-      {/* Hero Section with Action Button */}
-      <div className="bg-gradient-to-br from-white via-green-50/20 to-emerald-50/30 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 py-10">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-5 h-5 text-green-600" />
-            <span className="text-sm font-bold text-green-600 uppercase tracking-wide">
-              Active Now
-            </span>
-          </div>
-          <h2 className="text-4xl font-black text-gray-900 mb-3">
-            {currentUser
-              ? `Welcome back, ${currentUser.name.split(" ")[0]}!`
-              : "Find Your Next Match"}
-          </h2>
-          <p className="text-lg font-medium text-gray-600 mb-8">
-            {currentUser
-              ? "You have 2 upcoming matches this week"
-              : "Join 500+ players in North County"}
-          </p>
+  const scrollToLandingForm = useCallback(() => {
+    if (landingSignInRef.current) {
+      landingSignInRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
 
-          {/* Prominent Action Button */}
-          <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                if (!currentUser) {
-                  setShowSignInModal(true);
-                } else {
-                  navigate("/create");
-                }
-              }}
-              className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+  const LandingPage = () => (
+    <div className="relative isolate min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-emerald-50/40 to-white">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 opacity-60"
+        style={{
+          backgroundImage:
+            "linear-gradient(90deg, rgba(16, 185, 129, 0.08) 1px, transparent 1px), linear-gradient(rgba(16, 185, 129, 0.08) 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }}
+      ></div>
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-6 pb-20 pt-12 sm:px-8 lg:px-10">
+        <header className="mb-16 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-400 text-3xl shadow-lg shadow-emerald-500/30">
+              🎾
+            </div>
+            <span className="text-3xl font-black text-slate-900 tracking-tight">Matchplay</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLandingAuthTab("signup");
+              scrollToLandingForm();
+            }}
+            className="inline-flex items-center rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-emerald-400/40 transition-transform duration-300 hover:scale-105"
+          >
+            Sign Up Free
+          </button>
+        </header>
+
+        <section className="text-center">
+          <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+            Find Your Next Match
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-lg font-medium text-slate-600 sm:text-xl">
+            The easiest way to organize tennis matches and connect with local players.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4 text-base font-semibold text-slate-700">
+            {[
+              { icon: "⚡", label: "Quick Match Setup" },
+              { icon: "🎯", label: "Smart Player Matching" },
+              { icon: "📅", label: "Easy Scheduling" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="inline-flex items-center gap-2 rounded-full bg-white/80 px-5 py-2.5 shadow-md shadow-emerald-200/60 backdrop-blur"
+              >
+                <span className="text-xl">{item.icon}</span>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section ref={landingSignInRef} className="mt-16">
+          <div className="mx-auto w-full max-w-2xl rounded-3xl border border-emerald-100/70 bg-white/90 p-8 shadow-2xl shadow-emerald-200/50 backdrop-blur sm:p-12">
+            <div className="text-center">
+              <h2 className="text-3xl font-black text-slate-900">
+                {landingAuthTab === "signup" ? "Join Matchplay Today" : "Welcome Back"}
+              </h2>
+              <p className="mt-3 text-base font-medium text-slate-600">
+                {landingAuthTab === "signup"
+                  ? "Stop the endless back-and-forth texts and emails. Create or join matches in seconds."
+                  : "Sign in to organize matches and connect with players."}
+              </p>
+            </div>
+
+            <div className="mt-8">
+              <div className="flex items-center gap-2 rounded-2xl bg-emerald-100/60 p-1">
+                {[
+                  { id: "signup", label: "Sign Up" },
+                  { id: "signin", label: "Sign In" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setLandingAuthTab(tab.id)}
+                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+                      landingAuthTab === tab.id
+                        ? "bg-white text-emerald-600 shadow"
+                        : "text-slate-500 hover:text-emerald-600"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {landingAuthTab === "signup" ? (
+                <form
+                  className="mt-8 space-y-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setShowSignInModal(true);
+                  }}
+                >
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Full Name</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="John Doe"
+                      type="text"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Email Address</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="your.email@example.com"
+                      type="email"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Cell Phone</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="(555) 123-4567"
+                      type="tel"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Password</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="Create a password (8+ characters)"
+                      type="password"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Skill Level</label>
+                    <select
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      required
+                      defaultValue=""
+                    >
+                      <option value="" disabled>
+                        Select your skill level
+                      </option>
+                      <option value="beginner">Beginner (1.0 - 2.5)</option>
+                      <option value="intermediate">Intermediate (3.0 - 3.5)</option>
+                      <option value="advanced">Advanced (4.0 - 4.5)</option>
+                      <option value="expert">Expert (5.0+)</option>
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-400/40 transition-transform duration-300 hover:scale-105"
+                  >
+                    Create Free Account
+                  </button>
+                </form>
+              ) : (
+                <form
+                  className="mt-8 space-y-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setShowSignInModal(true);
+                  }}
+                >
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Email Address</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="your.email@example.com"
+                      type="email"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Password</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="Enter your password"
+                      type="password"
+                      required
+                    />
+                    <div className="mt-2 text-right text-sm font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setShowSignInModal(true)}
+                        className="text-emerald-600 transition-colors hover:text-emerald-500"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-400/40 transition-transform duration-300 hover:scale-105"
+                  >
+                    Sign In
+                  </button>
+                </form>
+              )}
+
+              <div className="my-10 flex items-center gap-4 text-sm font-semibold text-slate-400">
+                <span className="h-px flex-1 bg-slate-200"></span>
+                or continue with
+                <span className="h-px flex-1 bg-slate-200"></span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSignInModal(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl border-2 border-slate-200/80 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50/60"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                  </svg>
+                  Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSignInModal(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl border-2 border-slate-200/80 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50/60"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="#1877F2" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                  </svg>
+                  Facebook
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-20">
+          <div className="grid gap-8 rounded-3xl bg-white/80 p-10 shadow-xl shadow-emerald-200/50 sm:grid-cols-3">
+            {[
+              { value: "500+", label: "Active Players" },
+              { value: "1,200+", label: "Matches Played" },
+              { value: "50+", label: "Courts Available" },
+            ].map((stat) => (
+              <div key={stat.label} className="text-center">
+                <div className="text-4xl font-black text-emerald-500 sm:text-5xl">{stat.value}</div>
+                <div className="mt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-16 grid gap-6 pb-10 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              icon: "📅",
+              title: "Organize Matches in Seconds",
+              description:
+                "Set your match details, send invites, and manage RSVPs all in one place.",
+            },
+            {
+              icon: "🔍",
+              title: "Find Players Instantly",
+              description:
+                "Browse players by skill level and availability to fill your matches fast.",
+            },
+            {
+              icon: "🎯",
+              title: "Match Your Skill Level",
+              description:
+                "Filter by rating to ensure every match is competitive and fun.",
+            },
+          ].map((feature) => (
+            <div
+              key={feature.title}
+              className="rounded-3xl border border-emerald-100/60 bg-white/90 p-8 text-center shadow-lg shadow-emerald-100/70 transition-transform duration-300 hover:-translate-y-1 hover:shadow-emerald-200/80"
             >
-              <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
-              <Sparkles className="w-6 h-6 relative" />
-              <span className="relative">Create New Match</span>
-              <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/courts")}
-              className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-emerald-700 rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
-            >
-              <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
-              <span>Find Local Courts</span>
-              <ArrowRight className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1" />
-            </button>
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-2xl">
+                {feature.icon}
+              </div>
+              <h3 className="mt-5 text-xl font-semibold text-slate-900">{feature.title}</h3>
+              <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
+                {feature.description}
+              </p>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+
+  const BrowseScreen = () => {
+    if (!currentUser) {
+      return <LandingPage />;
+    }
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
+        {/* Hero Section with Action Button */}
+        <div className="bg-gradient-to-br from-white via-green-50/20 to-emerald-50/30 border-b border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 py-10">
+            <div className="flex items-center gap-2 mb-3">
+              <Activity className="w-5 h-5 text-green-600" />
+              <span className="text-sm font-bold text-green-600 uppercase tracking-wide">
+                Active Now
+              </span>
+            </div>
+            <h2 className="text-4xl font-black text-gray-900 mb-3">
+              {currentUser
+                ? `Welcome back, ${currentUser.name.split(" ")[0]}!`
+                : "Find Your Next Match"}
+            </h2>
+            <p className="text-lg font-medium text-gray-600 mb-8">
+              {currentUser
+                ? "You have 2 upcoming matches this week"
+                : "Join 500+ players in North County"}
+            </p>
+
+            {/* Prominent Action Button */}
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentUser) {
+                    setShowSignInModal(true);
+                  } else {
+                    navigate("/create");
+                  }
+                }}
+                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+              >
+                <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
+                <Sparkles className="w-6 h-6 relative" />
+                <span className="relative">Create New Match</span>
+                <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/courts")}
+                className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-emerald-700 rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
+              >
+                <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
+                <span>Find Local Courts</span>
+                <ArrowRight className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {currentUser ? (
         <>
           <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
             <section className="bg-white/80 border border-gray-100 rounded-3xl shadow-sm p-5 space-y-4">
@@ -1602,22 +1904,10 @@ const TennisMatchApp = () => {
           </div>
         )}
       </div>
-        </>
-      ) : (
-        <div className="max-w-7xl mx-auto px-4 py-10 text-center">
-          <p className="text-gray-600 font-semibold mb-6">
-            Sign up or log in to view available matches.
-          </p>
-          <button
-            onClick={() => setShowSignInModal(true)}
-            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
-          >
-            Sign Up / Log In
-          </button>
-        </div>
-      )}
+      </>
     </div>
   );
+  };
 
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
