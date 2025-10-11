@@ -8,23 +8,52 @@ const collapseRepeatedScheme = (scheme, value) => {
   return trimmed;
 };
 
-export const normalizeAuthToken = (token, { defaultScheme = "Bearer" } = {}) => {
+const canonicalizeScheme = (scheme) => {
+  if (!scheme) return "";
+  const lower = scheme.trim().toLowerCase();
+  if (!lower) return "";
+  if (lower === "bearer") return "Bearer";
+  if (lower === "token") return "token";
+  return scheme.trim();
+};
+
+const pickScheme = (detected, { defaultScheme, preferScheme } = {}) => {
+  if (preferScheme) {
+    return canonicalizeScheme(preferScheme);
+  }
+  if (detected) {
+    return canonicalizeScheme(detected);
+  }
+  return canonicalizeScheme(defaultScheme);
+};
+
+export const normalizeAuthToken = (
+  token,
+  { defaultScheme = "Bearer", preferScheme } = {},
+) => {
   if (token === null || token === undefined) return null;
   const raw = String(token).trim();
   if (!raw) return null;
 
+  let scheme = null;
+  let credentials = raw;
+
   const match = raw.match(/^([A-Za-z]+)\s+(.+)$/);
   if (match) {
-    const [, scheme, rest] = match;
-    const credentials = collapseRepeatedScheme(scheme, rest);
-    return credentials ? `${scheme} ${credentials}` : null;
+    const [, detectedScheme, rest] = match;
+    scheme = detectedScheme;
+    credentials = collapseRepeatedScheme(detectedScheme, rest);
   }
 
-  if (!defaultScheme) {
-    return raw;
+  credentials = credentials.trim();
+  if (!credentials) return null;
+
+  const finalScheme = pickScheme(scheme, { defaultScheme, preferScheme });
+  if (!finalScheme) {
+    return credentials;
   }
 
-  return `${defaultScheme} ${raw}`;
+  return `${finalScheme} ${credentials}`;
 };
 
 export const getStoredAuthToken = (options) => {

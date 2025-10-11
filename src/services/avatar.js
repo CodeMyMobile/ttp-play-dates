@@ -6,7 +6,10 @@ const API_URL =
   "https://ttp-api.codemymobile.com/api";
 
 export async function getPlayerAWSUrl(accessToken, imageType) {
-  const authHeader = normalizeAuthToken(accessToken, { defaultScheme: "token" });
+  const authHeader = normalizeAuthToken(accessToken, {
+    defaultScheme: "token",
+    preferScheme: "token",
+  });
   if (!authHeader) {
     throw new Error("Missing access token for avatar upload");
   }

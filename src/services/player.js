@@ -25,7 +25,10 @@ export const updatePlayerPersonalDetails = async ({
   about_me = null,
   profile_picture,
 }) => {
-  const authHeader = normalizeAuthToken(player, { defaultScheme: "token" });
+  const authHeader = normalizeAuthToken(player, {
+    defaultScheme: "token",
+    preferScheme: "token",
+  });
   if (!authHeader) {
     throw new Error("Missing player token");
   }
