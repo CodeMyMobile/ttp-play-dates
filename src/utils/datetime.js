@@ -46,6 +46,10 @@ const combineDateAndTimeToIso = (dateString, timeString) => {
     return null;
   }
 
+  // Preserve the creator's local offset so the backend can render and send
+  // notifications using the exact wall time the user selected. Serialising
+  // to UTC ("Z") caused the API to interpret the match in the wrong local
+  // day/hour, leading to SMS invites showing `1:00 AM` for a 6:00 PM match.
   return toIsoStringWithOffset(localDate);
 };
 
