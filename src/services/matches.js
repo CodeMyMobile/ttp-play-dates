@@ -76,6 +76,7 @@ export const joinMatch = (id) =>
   unwrap(
     api(`/matches/${id}/join`, {
       method: "POST",
+      body: JSON.stringify({}),
     })
   );
 
