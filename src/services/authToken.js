@@ -18,11 +18,16 @@ const canonicalizeScheme = (scheme) => {
 };
 
 const pickScheme = (detected, { defaultScheme, preferScheme } = {}) => {
-  if (preferScheme) {
-    return canonicalizeScheme(preferScheme);
+  const normalizedDetected = canonicalizeScheme(detected);
+  const normalizedPrefer = canonicalizeScheme(preferScheme);
+  if (normalizedDetected) {
+    if (normalizedPrefer && normalizedPrefer === normalizedDetected) {
+      return normalizedPrefer;
+    }
+    return normalizedDetected;
   }
-  if (detected) {
-    return canonicalizeScheme(detected);
+  if (normalizedPrefer) {
+    return normalizedPrefer;
   }
   return canonicalizeScheme(defaultScheme);
 };
