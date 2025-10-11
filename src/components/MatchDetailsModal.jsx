@@ -236,8 +236,10 @@ const MatchDetailsModal = ({
   onToast,
   formatDateTime,
   onManageInvites,
+  initialStatus,
 }) => {
-  const [status, setStatus] = useState("details");
+  const normalizedInitialStatus = initialStatus || "details";
+  const [status, setStatus] = useState(normalizedInitialStatus);
   const [joining, setJoining] = useState(false);
   const [removingParticipantId, setRemovingParticipantId] = useState(null);
   const [leaving, setLeaving] = useState(false);
@@ -546,12 +548,12 @@ const MatchDetailsModal = ({
 
   useEffect(() => {
     if (!isOpen) {
-      setStatus("details");
+      setStatus(normalizedInitialStatus);
       setJoining(false);
       setLeaving(false);
       return;
     }
-    if (status === "success" && isOpenMatch && !isHost) return;
+    if (initialStatus && status === initialStatus) return;
     if (isJoined) {
       if (isOpenMatch && !isHost) {
         setStatus("success");
@@ -563,7 +565,16 @@ const MatchDetailsModal = ({
     } else {
       setStatus("details");
     }
-  }, [isFull, isHost, isJoined, isOpen, isOpenMatch, status]);
+  }, [
+    initialStatus,
+    isFull,
+    isHost,
+    isJoined,
+    isOpen,
+    isOpenMatch,
+    normalizedInitialStatus,
+    status,
+  ]);
 
   useEffect(() => {
     if (!isOpen) return undefined;

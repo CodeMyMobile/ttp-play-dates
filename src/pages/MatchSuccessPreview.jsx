@@ -120,6 +120,7 @@ const MatchSuccessPreview = () => {
         onClose={() => {}}
         onToast={() => {}}
         formatDateTime={(date) => dateFormatter.format(date)}
+        initialStatus="success"
       />
     </div>
   );
