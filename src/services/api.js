@@ -1,17 +1,14 @@
+import { getStoredAuthToken } from "./authToken";
+
 const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.com/api";
 
 const api = (path, options = {}) => {
-  const storedToken = localStorage.getItem("authToken");
-  const token = (() => {
-    if (!storedToken) return storedToken;
-    const match = storedToken.match(/^Bearer\s+(.+)$/i);
-    return match ? match[1] : storedToken;
-  })();
+  const token = getStoredAuthToken();
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers.Authorization = token;
   // Allow absolute URLs by not prefixing baseURL when path looks absolute
   const url = /^https?:\/\//i.test(path) ? path : baseURL + path;
   // Default to no cookies to avoid CORS credential restrictions unless explicitly requested

@@ -1,3 +1,5 @@
+import { normalizeAuthToken } from "./authToken";
+
 const API_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
@@ -23,7 +25,8 @@ export const updatePlayerPersonalDetails = async ({
   about_me = null,
   profile_picture,
 }) => {
-  if (!player) {
+  const authHeader = normalizeAuthToken(player, { defaultScheme: "token" });
+  if (!authHeader) {
     throw new Error("Missing player token");
   }
   if (!id) {
@@ -45,7 +48,7 @@ export const updatePlayerPersonalDetails = async ({
     method: "PATCH",
     headers: {
       "Content-type": "application/json;charset=UTF-8",
-      Authorization: `token ${player}`,
+      Authorization: authHeader,
     },
     body: JSON.stringify(params),
   });
