@@ -365,90 +365,30 @@ export default function InvitationPage() {
     [],
   );
 
-  const fallbackSuccessMatchData = useMemo(() => {
-    const baseMatch = preview?.match;
-    if (!baseMatch) return null;
-
-    const participants = getActiveParticipants(baseMatch, preview);
-    const invitees = Array.isArray(baseMatch?.invitees)
-      ? baseMatch.invitees
-      : Array.isArray(preview?.invitees)
-      ? preview.invitees
-      : undefined;
-
-    const rawCapacity = baseMatch?.capacity || preview?.capacity;
-    const capacityLimit =
-      rawCapacity?.limit ??
-      baseMatch?.player_limit ??
-      baseMatch?.playerLimit ??
-      undefined;
-    const capacity =
-      rawCapacity || capacityLimit !== undefined
-        ? {
-            confirmed: rawCapacity?.confirmed,
-            limit: capacityLimit,
-            open: rawCapacity?.open,
-            isFull: rawCapacity?.isFull ?? rawCapacity?.is_full ?? false,
-          }
-        : undefined;
-
-    const matchData = { match: baseMatch };
-
-    if (participants.length) {
-      matchData.participants = participants;
-    }
-
-    if (invitees?.length) {
-      matchData.invitees = invitees;
-    }
-
-    if (capacity) {
-      matchData.capacity = capacity;
-    }
-
-    return matchData;
-  }, [preview]);
-
   const handleJoinSuccess = useCallback(
     async (destination) => {
       if (!destination) {
         navigateAfterJoin(destination);
         return;
       }
-
       const { matchId } = destination;
-      const fallbackMatchData = matchId ? fallbackSuccessMatchData : null;
-
       if (!matchId) {
-        if (fallbackMatchData) {
-          setSuccessModal({ matchData: fallbackMatchData, destination, isFallback: true });
-          return;
-        }
         navigateAfterJoin(destination);
         return;
       }
-
-      if (fallbackMatchData) {
-        setSuccessModal({ matchData: fallbackMatchData, destination, isFallback: true });
-      }
-
       try {
         const matchData = await loadSuccessMatch(matchId);
         if (!matchData) {
-          if (!fallbackMatchData) {
-            navigateAfterJoin(destination);
-          }
+          navigateAfterJoin(destination);
           return;
         }
-        setSuccessModal({ matchData, destination, isFallback: false });
+        setSuccessModal({ matchData, destination });
       } catch (error) {
         console.error("Failed to load match details for success view", error);
-        if (!fallbackMatchData) {
-          navigateAfterJoin(destination);
-        }
+        navigateAfterJoin(destination);
       }
     },
-    [fallbackSuccessMatchData, loadSuccessMatch, navigateAfterJoin],
+    [loadSuccessMatch, navigateAfterJoin],
   );
 
   const successMatchId = successModal?.destination?.matchId || null;
@@ -459,9 +399,7 @@ export default function InvitationPage() {
       const updated = await loadSuccessMatch(successMatchId);
       if (updated) {
         setSuccessModal((prev) =>
-          prev
-            ? { ...prev, matchData: updated, isFallback: false }
-            : prev,
+          prev ? { ...prev, matchData: updated } : prev,
         );
       }
       return updated;
@@ -489,7 +427,7 @@ export default function InvitationPage() {
       const nextData =
         typeof updater === "function" ? updater(prev.matchData) : updater;
       if (!nextData) return prev;
-      return { ...prev, matchData: nextData, isFallback: false };
+      return { ...prev, matchData: nextData };
     });
   }, []);
 
