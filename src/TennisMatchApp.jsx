@@ -1794,9 +1794,28 @@ const TennisMatchApp = () => {
                 } else {
                   try {
                     await joinMatch(match.id);
-                    displayToast("Successfully joined the match! 🎾");
-                    fetchMatches();
-                    fetchPendingInvites();
+
+                    try {
+                      const data = await fetchMatchDetailsWithArchivedFallback(
+                        match.id,
+                      );
+                      if (data) {
+                        setMatchDetailsOrigin(currentScreen);
+                        setViewMatch(data);
+                        setShowMatchDetailsModal(true);
+                      }
+                    } catch (detailsError) {
+                      console.error(detailsError);
+                      displayToast(
+                        "Joined the match, but we couldn't load the details. Try again in a moment.",
+                        "info",
+                      );
+                    }
+
+                    await Promise.all([
+                      fetchMatches(),
+                      fetchPendingInvites(),
+                    ]);
                   } catch (err) {
                     if (isMatchArchivedError(err)) {
                       displayToast(
