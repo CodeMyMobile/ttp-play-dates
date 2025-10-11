@@ -485,7 +485,10 @@ export default function InvitationPage() {
       const destination = await completeJoin(data, { email: trimmedEmail });
       await handleJoinSuccess(destination);
     } catch (err) {
-      if (isMatchArchivedError(err)) {
+      const statusCode = Number(err?.status ?? err?.response?.status);
+      if (statusCode === 403) {
+        setError(mapSignInError(err));
+      } else if (isMatchArchivedError(err)) {
         setArchivedNotice(true);
         setError("This match has been archived. Invites are read-only.");
       } else if (isAcceptError(err)) {
@@ -1381,17 +1384,17 @@ function isAcceptError(error) {
 
 function mapSignInError(error) {
   if (!error) return "We couldn't sign you in. Try again.";
-  const status = error.status ?? error.response?.status;
-  if (status === 401 || status === 400 || status === 403) {
+  const statusCode = Number(error.status ?? error.response?.status);
+  if ([400, 401, 403].includes(statusCode)) {
     return "That email or password doesn't match our records. Double-check your details or reset your password.";
   }
-  if (status === 422) {
+  if (statusCode === 422) {
     return (
       error.data?.message ||
       "Please double-check your email and password before trying again."
     );
   }
-  if (status && status >= 500) {
+  if (Number.isFinite(statusCode) && statusCode >= 500) {
     return "We're having trouble signing you in. Try again later.";
   }
   if (error.data?.message) return error.data.message;
