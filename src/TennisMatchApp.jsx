@@ -3730,7 +3730,7 @@ const TennisMatchApp = () => {
           return "We couldn't sign you in. Please try again.";
         }
         const status = error.status ?? error.response?.status;
-        if (status === 401 || status === 400) {
+        if (status === 401 || status === 400 || status === 403) {
           return "That email or password doesn't match our records. Double-check your details or reset your password.";
         }
         if (status === 422) {
