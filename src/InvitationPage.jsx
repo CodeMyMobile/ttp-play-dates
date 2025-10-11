@@ -338,7 +338,7 @@ export default function InvitationPage() {
   const navigateAfterJoin = useCallback(
     (destination) => {
       if (!destination) {
-        navigate(`/matches`, { replace: true });
+        navigate("/", { replace: true });
         return;
       }
       if (destination.redirect) {
@@ -349,7 +349,7 @@ export default function InvitationPage() {
         navigate(`/matches/${destination.matchId}`, { replace: true });
         return;
       }
-      navigate(`/matches`, { replace: true });
+      navigate("/", { replace: true });
     },
     [navigate],
   );
@@ -439,11 +439,16 @@ export default function InvitationPage() {
   }, []);
 
   const handleSuccessClose = useCallback(() => {
-    const matchType =
+    const rawMatchType =
       successModal?.matchData?.match?.match_type ||
+      successModal?.matchData?.match?.matchType ||
+      successModal?.matchData?.match?.type ||
       successModal?.matchData?.match_type ||
       "";
-    if (typeof matchType === "string" && matchType.toLowerCase() === "open") {
+    const normalizedMatchType =
+      typeof rawMatchType === "string" ? rawMatchType.toLowerCase() : "";
+
+    if (normalizedMatchType === "open" || normalizedMatchType === "available") {
       navigate("/", { replace: true });
       setSuccessModal(null);
       return;
