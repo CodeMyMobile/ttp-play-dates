@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Loader2, UserRound } from "lucide-react";
 import { getPersonalDetails } from "../services/auth";
 import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
@@ -16,6 +16,17 @@ const emptyDetails = {
   about_me: "",
 };
 
+const readStoredUser = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem("user");
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
 const ProfileManager = ({ isOpen, onClose }) => {
   const [details, setDetails] = useState(emptyDetails);
   const [phoneInput, setPhoneInput] = useState("");
@@ -24,6 +35,7 @@ const ProfileManager = ({ isOpen, onClose }) => {
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState("");
   const accessToken = localStorage.getItem("authToken");
+  const storedUserRef = useRef(readStoredUser());
 
   useEffect(() => {
     if (isOpen) {
@@ -42,10 +54,15 @@ const ProfileManager = ({ isOpen, onClose }) => {
         setLoading(true);
       }
       const data = await getPersonalDetails();
+      const fallbackUser = storedUserRef.current;
       const normalizedDetails = {
-        id: data?.id ?? null,
-        full_name: data?.full_name || "",
-        phone: data?.phone ? String(data.phone).replace(/\D/g, "") : "",
+        id: data?.id ?? fallbackUser?.id ?? null,
+        full_name: data?.full_name || fallbackUser?.name || "",
+        phone: data?.phone
+          ? String(data.phone).replace(/\D/g, "")
+          : fallbackUser?.phone
+            ? String(fallbackUser.phone).replace(/\D/g, "")
+            : "",
         profile_picture: data?.profile_picture || "",
         date_of_birth: data?.date_of_birth
           ? data.date_of_birth.split("T")[0]
@@ -61,7 +78,9 @@ const ProfileManager = ({ isOpen, onClose }) => {
         about_me: data?.about_me || "",
       };
       setDetails(normalizedDetails);
-      setPhoneInput(formatPhoneDisplay(data?.phone) || "");
+      setPhoneInput(
+        formatPhoneDisplay(data?.phone ?? fallbackUser?.phone) || "",
+      );
       setImagePreview(normalizedDetails.profile_picture || "");
     } catch (err) {
       console.error(err);
@@ -84,11 +103,6 @@ const ProfileManager = ({ isOpen, onClose }) => {
     e.preventDefault();
     setError("");
     setSaving(true);
-    if (!details.id) {
-      setSaving(false);
-      setError("We couldn't determine your player profile. Please reload and try again.");
-      return;
-    }
     if (!accessToken) {
       setSaving(false);
       setError("Please sign in again to update your profile.");
@@ -105,9 +119,9 @@ const ProfileManager = ({ isOpen, onClose }) => {
 
       const sanitizedPhone = String(details.phone || "").replace(/\D/g, "");
       const aboutMe = details.about_me?.trim();
-      await updatePlayerPersonalDetails({
+      const result = await updatePlayerPersonalDetails({
         player: accessToken,
-        id: details.id,
+        id: details.id || undefined,
         date_of_birth: details.date_of_birth || null,
         usta_rating: parseRating(details.usta_rating),
         uta_rating: parseRating(details.uta_rating),
@@ -115,6 +129,21 @@ const ProfileManager = ({ isOpen, onClose }) => {
         mobile: sanitizedPhone ? sanitizedPhone : null,
         about_me: aboutMe || null,
       });
+      if (result?.id) {
+        setDetails((prev) => ({ ...prev, id: result.id }));
+        const updatedUser = {
+          ...(storedUserRef.current || {}),
+          id: result.id,
+          name: result.full_name || storedUserRef.current?.name || "",
+          phone: result.phone || storedUserRef.current?.phone || "",
+        };
+        storedUserRef.current = updatedUser;
+        try {
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+        } catch {
+          // ignore storage write issues
+        }
+      }
       onClose();
     } catch (err) {
       console.error(err);
@@ -225,9 +254,15 @@ const ProfileManager = ({ isOpen, onClose }) => {
                       onUploaded={() => fetchDetails({ showLoader: false })}
                       className="px-4 py-2 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-green-500 shadow hover:shadow-md transition-shadow inline-flex items-center justify-center cursor-pointer"
                       disabledLabel="Uploading…"
+                      disabled={!details.id}
                       label="Upload from device"
                       errorClassName="text-sm font-semibold text-red-600"
                     />
+                    {!details.id && (
+                      <p className="text-xs font-semibold text-amber-600">
+                        Save your profile before uploading a photo.
+                      </p>
+                    )}
                     <p className="text-xs font-semibold text-gray-500">
                       JPG or PNG, up to 5MB. We'll resize it to fit nicely in the app.
                     </p>

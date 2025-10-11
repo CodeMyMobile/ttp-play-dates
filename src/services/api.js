@@ -6,7 +6,7 @@ const api = (path, options = {}) => {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers.Authorization = `token ${token}`;
   // Allow absolute URLs by not prefixing baseURL when path looks absolute
   const url = /^https?:\/\//i.test(path) ? path : baseURL + path;
   // Default to no cookies to avoid CORS credential restrictions unless explicitly requested
