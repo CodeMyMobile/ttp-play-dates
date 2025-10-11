@@ -199,6 +199,74 @@ const toTimeInput = (value) => {
 
 const combineDateTime = (date, time) => combineDateAndTimeToIso(date, time);
 
+const isNonEmptyValue = (value) => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  return true;
+};
+
+const firstNonEmptyValue = (values = []) => {
+  for (const value of values) {
+    if (isNonEmptyValue(value)) {
+      return value;
+    }
+  }
+  return null;
+};
+
+const getParticipantIdentityCandidates = (participant) => {
+  if (!participant || typeof participant !== "object") return [];
+  const profile = participant.profile || {};
+  const player = participant.player || {};
+  return [
+    participant.match_participant_id,
+    participant.matchParticipantId,
+    participant.participant_id,
+    participant.participantId,
+    participant.player_id,
+    participant.playerId,
+    participant.invitee_id,
+    participant.inviteeId,
+    participant.id,
+    profile.id,
+    profile.player_id,
+    profile.playerId,
+    profile.user_id,
+    profile.userId,
+    player.id,
+    player.player_id,
+    player.playerId,
+  ];
+};
+
+const getParticipantIdentity = (participant, fallback = null) =>
+  firstNonEmptyValue(getParticipantIdentityCandidates(participant)) ?? fallback;
+
+const getParticipantPlayerId = (participant) => {
+  if (!participant || typeof participant !== "object") return null;
+  const profile = participant.profile || {};
+  const player = participant.player || {};
+  return firstNonEmptyValue([
+    participant.player_id,
+    participant.playerId,
+    player.id,
+    player.player_id,
+    player.playerId,
+    profile.player_id,
+    profile.playerId,
+    profile.id,
+  ]);
+};
+
+const participantMatchesMember = (participant, memberId) => {
+  if (memberId === null || memberId === undefined) return false;
+  return getParticipantIdentityCandidates(participant).some((candidate) =>
+    idsMatch(candidate, memberId),
+  );
+};
+
 const buildInitialEditForm = (match) => {
   if (!match) return { ...DEFAULT_EDIT_FORM };
   const latitude =
@@ -315,7 +383,9 @@ const MatchDetailsModal = ({
   const hostParticipant = useMemo(() => {
     if (!match?.host_id) return null;
     return (
-      participants.find((p) => idsMatch(p.player_id, match.host_id)) || null
+      participants.find((participant) =>
+        participantMatchesMember(participant, match.host_id),
+      ) || null
     );
   }, [match?.host_id, participants]);
 
@@ -391,13 +461,11 @@ const MatchDetailsModal = ({
     currentUser?.id && match?.host_id
       ? idsMatch(currentUser.id, match.host_id)
       : false;
-  const isParticipant = committedParticipants.some((p) =>
-    idsMatch(p.player_id, currentUser?.id),
+  const isParticipant = committedParticipants.some((participant) =>
+    participantMatchesMember(participant, currentUser?.id),
   );
-  const hasAcceptedInvite = acceptedInvitees.some(
-    (invite) =>
-      idsMatch(invite.invitee_id, currentUser?.id) ||
-      idsMatch(invite.player_id, currentUser?.id),
+  const hasAcceptedInvite = acceptedInvitees.some((invite) =>
+    participantMatchesMember(invite, currentUser?.id),
   );
 
   const metadataIndicatesJoined = useMemo(() => {
@@ -882,23 +950,36 @@ const MatchDetailsModal = ({
   );
 
   const playersList = useMemo(() => {
-    const list = committedParticipants.map((participant) => {
+    const list = committedParticipants.map((participant, index) => {
       const profile = participant.profile || {};
+      const playerId = getParticipantPlayerId(participant);
+      const id = getParticipantIdentity(participant, `participant-${index}`);
       return {
-        id: participant.id || participant.player_id,
-        playerId: participant.player_id,
+        id,
+        playerId,
         name:
           profile.full_name ||
           profile.fullName ||
+          profile.preferred_name ||
+          profile.preferredName ||
+          participant.full_name ||
+          participant.fullName ||
           profile.name ||
-          `Player ${participant.player_id}`,
-        avatar: profile.avatar_url || profile.avatar,
-        isHost: participant.player_id === match?.host_id,
+          participant.name ||
+          (playerId ? `Player ${playerId}` : `Player ${index + 1}`),
+        avatar:
+          profile.avatar_url ||
+          profile.avatar ||
+          participant.avatar_url ||
+          participant.avatar ||
+          null,
+        isHost: match?.host_id ? idsMatch(playerId, match.host_id) : false,
         rating:
           profile.usta_rating ||
           profile.rating ||
           profile.skill_rating ||
           profile.ntrp_rating ||
+          participant.rating ||
           null,
       };
     });

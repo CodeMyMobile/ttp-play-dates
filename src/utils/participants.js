@@ -1,4 +1,57 @@
-const DEFAULT_IDENTITY_KEYS = ["player_id", "invitee_id", "id"];
+const PARTICIPANT_IDENTITY_KEYS = [
+  "match_participant_id",
+  "matchParticipantId",
+  "participant_id",
+  "participantId",
+  "player_id",
+  "playerId",
+  "invitee_id",
+  "inviteeId",
+  "id",
+  "profile.id",
+  "profile.player_id",
+  "profile.playerId",
+  "profile.user_id",
+  "profile.userId",
+  "player.id",
+  "player.player_id",
+  "player.playerId",
+];
+
+const INVITE_IDENTITY_KEYS = [
+  "invitee_id",
+  "inviteeId",
+  "player_id",
+  "playerId",
+  "participant_id",
+  "participantId",
+  "id",
+  "profile.id",
+  "profile.player_id",
+  "profile.playerId",
+];
+
+const DEFAULT_IDENTITY_KEYS = PARTICIPANT_IDENTITY_KEYS;
+
+const getValueByKeyPath = (item, key) => {
+  if (!item || typeof item !== "object") return undefined;
+  if (Array.isArray(key)) {
+    return getValueByKeyPath(item, key.join("."));
+  }
+  if (typeof key !== "string" || key.length === 0) return undefined;
+  if (!key.includes(".")) {
+    return item[key];
+  }
+  const segments = key.split(".");
+  let current = item;
+  for (const segment of segments) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+};
 
 const normalizeIdentityValue = (value) => {
   if (value === null || value === undefined) {
@@ -26,10 +79,10 @@ const normalizeIdentityValue = (value) => {
 
 const buildIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
   for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
-    const identity = normalizeIdentityValue(item[key]);
+    const identity = normalizeIdentityValue(getValueByKeyPath(item, key));
     if (identity !== null) {
-      return `${key}:${identity}`;
+      const label = Array.isArray(key) ? key.join(".") : key;
+      return `${label}:${identity}`;
     }
   }
   return null;
@@ -59,11 +112,18 @@ export const dedupeByIdentity = (items = [], keys = DEFAULT_IDENTITY_KEYS) => {
 
 export const uniqueParticipants = (participants = []) => {
   if (!Array.isArray(participants)) return [];
-  const identityKeys = ["player_id", "invitee_id", "id"];
-  return dedupeByIdentity(
-    participants.filter((participant) => hasIdentity(participant, identityKeys)),
-    identityKeys,
+  const identityKeys = PARTICIPANT_IDENTITY_KEYS;
+  const withIdentity = participants.filter((participant) =>
+    hasIdentity(participant, identityKeys),
   );
+  const deduped = dedupeByIdentity(withIdentity, identityKeys);
+  if (deduped.length === participants.length) {
+    return deduped;
+  }
+  const withoutIdentity = participants.filter(
+    (participant) => !hasIdentity(participant, identityKeys),
+  );
+  return [...deduped, ...withoutIdentity];
 };
 
 const isParticipantActive = (participant) => {
@@ -129,7 +189,7 @@ export const uniqueMatchOccupants = (
 
   return dedupeByIdentity(
     [...activeParticipants, ...acceptedInvitees],
-    ["player_id", "invitee_id", "id"],
+    PARTICIPANT_IDENTITY_KEYS,
   );
 };
 
@@ -138,7 +198,7 @@ export const countUniqueMatchOccupants = (participants = [], invitees = []) =>
 
 export const uniqueInvitees = (invitees = []) => {
   if (!Array.isArray(invitees)) return [];
-  const identityKeys = ["invitee_id", "player_id", "id"];
+  const identityKeys = INVITE_IDENTITY_KEYS;
   return dedupeByIdentity(
     invitees.filter((invite) => hasIdentity(invite, identityKeys)),
     identityKeys,
@@ -232,13 +292,19 @@ const isInviteActive = (invite) => {
 
 export const uniqueAcceptedInvitees = (invitees = []) => {
   if (!Array.isArray(invitees) || invitees.length === 0) return [];
-  const identityKeys = ["invitee_id", "player_id", "id"];
-  return dedupeByIdentity(
-    invitees.filter(
-      (invite) => hasIdentity(invite, identityKeys) && isInviteActive(invite),
-    ),
-    identityKeys,
+  const identityKeys = INVITE_IDENTITY_KEYS;
+  const activeInvitees = invitees.filter((invite) => isInviteActive(invite));
+  const withIdentity = activeInvitees.filter((invite) =>
+    hasIdentity(invite, identityKeys),
   );
+  const deduped = dedupeByIdentity(withIdentity, identityKeys);
+  if (deduped.length === activeInvitees.length) {
+    return deduped;
+  }
+  const withoutIdentity = activeInvitees.filter(
+    (invite) => !hasIdentity(invite, identityKeys),
+  );
+  return [...deduped, ...withoutIdentity];
 };
 
 export const countUniqueAcceptedInvitees = (invitees = []) =>
@@ -263,11 +329,21 @@ const pruneItemsByIdentity = (items, memberId) => {
   if (!Array.isArray(items)) return items;
   return items.filter((item) => {
     if (!item || typeof item !== "object") return true;
-    return (
-      !idsMatch(item.player_id, memberId) &&
-      !idsMatch(item.invitee_id, memberId) &&
-      !idsMatch(item.id, memberId)
-    );
+    const candidates = [
+      item.player_id,
+      item.playerId,
+      item.match_participant_id,
+      item.matchParticipantId,
+      item.participant_id,
+      item.participantId,
+      item.invitee_id,
+      item.inviteeId,
+      item.id,
+      item.profile?.id,
+      item.profile?.player_id,
+      item.profile?.playerId,
+    ];
+    return !candidates.some((value) => idsMatch(value, memberId));
   });
 };
 
