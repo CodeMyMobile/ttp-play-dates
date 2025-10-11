@@ -82,6 +82,30 @@ const distanceLabel = (distance) => {
   return `${display} mile${plural} away`;
 };
 
+const SKILL_LEVEL_KEYS = [
+  "skill_level",
+  "skillLevel",
+  "suggested_skill_level",
+  "suggestedSkillLevel",
+  "level",
+  "match_level",
+  "matchLevel",
+];
+
+const SKILL_LEVEL_MIN_KEYS = [
+  "skill_level_min",
+  "skillLevelMin",
+  "min_skill_level",
+  "minSkillLevel",
+];
+
+const SKILL_LEVEL_MAX_KEYS = [
+  "skill_level_max",
+  "skillLevelMax",
+  "max_skill_level",
+  "maxSkillLevel",
+];
+
 const skillLevelString = (value) => {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value.toString() : "";
@@ -106,30 +130,65 @@ const skillLevelNumeric = (value) => {
   return null;
 };
 
+const formatSkillLevelNumeric = (value) => {
+  if (!Number.isFinite(value)) return "";
+  const normalized = Math.round(value * 10) / 10;
+  return normalized.toFixed(1);
+};
+
+const formatSkillLevelRange = (base) => {
+  if (!Number.isFinite(base)) return "";
+  const start = formatSkillLevelNumeric(base);
+  const end = formatSkillLevelNumeric(base + 0.5);
+  if (!start || !end) return "";
+  return `${start}-${end}`;
+};
+
+const firstValueFromKeys = (subject, keys = []) => {
+  if (!subject || typeof subject !== "object") return undefined;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(subject, key)) {
+      return subject[key];
+    }
+  }
+  return undefined;
+};
+
 const getSkillLevelDisplay = (match) => {
   if (!match) return "";
 
-  const directLevels = [match.skill_level, match.skillLevel];
-  for (const level of directLevels) {
-    const display = skillLevelString(level);
+  for (const key of SKILL_LEVEL_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(match, key)) continue;
+    const raw = match[key];
+    const numeric = skillLevelNumeric(raw);
+    if (numeric !== null) {
+      const range = formatSkillLevelRange(numeric);
+      if (range) return range;
+    }
+    const display = skillLevelString(raw);
     if (display) return display;
   }
 
-  const minRaw = match.skill_level_min ?? match.skillLevelMin;
-  const maxRaw = match.skill_level_max ?? match.skillLevelMax;
-  const minDisplay = skillLevelString(minRaw);
-  const maxDisplay = skillLevelString(maxRaw);
+  const minRaw = firstValueFromKeys(match, SKILL_LEVEL_MIN_KEYS);
+  const maxRaw = firstValueFromKeys(match, SKILL_LEVEL_MAX_KEYS);
   const minNumeric = skillLevelNumeric(minRaw);
   const maxNumeric = skillLevelNumeric(maxRaw);
+  const minDisplay = skillLevelString(minRaw);
+  const maxDisplay = skillLevelString(maxRaw);
 
-  if (minDisplay && maxDisplay && minNumeric !== null && maxNumeric !== null) {
-    return `${minDisplay} - ${maxDisplay}`;
+  if (minNumeric !== null) {
+    const range = formatSkillLevelRange(minNumeric);
+    if (range) return range;
   }
-  if (minDisplay && minNumeric !== null) {
-    return `${minDisplay}+`;
+
+  if (maxNumeric !== null) {
+    const base = maxNumeric - 0.5;
+    const range = formatSkillLevelRange(base);
+    if (range) return range;
   }
-  if (maxDisplay && maxNumeric !== null) {
-    return `Up to ${maxDisplay}`;
+
+  if (minDisplay && maxDisplay) {
+    return `${minDisplay}-${maxDisplay}`;
   }
   return minDisplay || maxDisplay || "";
 };
@@ -881,6 +940,24 @@ const MatchDetailsModal = ({
     [match?.distance, match?.distanceMiles, match?.distance_miles],
   );
 
+  const locationLabel = useMemo(() => {
+    const label =
+      match?.location_text || match?.location || match?.locationText || "";
+    return typeof label === "string" ? label.trim() : "";
+  }, [match?.location, match?.locationText, match?.location_text]);
+
+  const locationHref = useMemo(() => {
+    const directUrl = match?.map_url || match?.mapUrl;
+    if (directUrl) {
+      return directUrl;
+    }
+    if (!locationLabel) {
+      return "";
+    }
+    const encoded = encodeURIComponent(locationLabel);
+    return `https://www.google.com/maps/search/?api=1&query=${encoded}`;
+  }, [locationLabel, match?.mapUrl, match?.map_url]);
+
   const playersList = useMemo(() => {
     const list = committedParticipants.map((participant) => {
       const profile = participant.profile || {};
@@ -1375,19 +1452,19 @@ const MatchDetailsModal = ({
               </div>
               <div className="flex-1">
                 <p className="text-sm font-black text-gray-900">Location</p>
-                {match.location_text || match.location ? (
+                {locationLabel ? (
                   <p className="text-sm font-semibold text-gray-700">
-                    {match.map_url || match.mapUrl ? (
+                    {locationHref ? (
                       <a
-                        href={match.map_url || match.mapUrl}
+                        href={locationHref}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-emerald-600 underline-offset-2 hover:underline"
                       >
-                        {match.location_text || match.location}
+                        {locationLabel}
                       </a>
                     ) : (
-                      match.location_text || match.location
+                      locationLabel
                     )}
                   </p>
                 ) : (
