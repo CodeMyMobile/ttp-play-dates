@@ -1141,7 +1141,7 @@ const TennisMatchApp = () => {
           </p>
 
           {/* Prominent Action Button */}
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-start">
             <button
               type="button"
               onClick={() => {
@@ -1151,7 +1151,7 @@ const TennisMatchApp = () => {
                   navigate("/create");
                 }
               }}
-              className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+              className="group relative inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 px-8 py-4 text-lg font-black text-white shadow-xl transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:bg-pos-100 sm:w-auto"
             >
               <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
               <Sparkles className="w-6 h-6 relative" />
@@ -1161,7 +1161,7 @@ const TennisMatchApp = () => {
             <button
               type="button"
               onClick={() => navigate("/courts")}
-              className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-emerald-700 rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
+              className="group inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-emerald-100 bg-white px-8 py-4 text-lg font-black text-emerald-700 shadow-xl transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:shadow-2xl sm:w-auto"
             >
               <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
               <span>Find Local Courts</span>
@@ -1529,7 +1529,7 @@ const TennisMatchApp = () => {
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Quick Actions Bar */}
         <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 mb-8 shadow-xl">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-white">
               <h3 className="text-xl font-black mb-1">
                 Looking for a quick game?
@@ -1538,7 +1538,7 @@ const TennisMatchApp = () => {
                 3 players near you are ready to play now
               </p>
             </div>
-            <button className="px-6 py-3 bg-white text-blue-600 rounded-xl font-bold hover:shadow-lg hover:scale-105 transition-all">
+            <button className="w-full rounded-xl bg-white px-6 py-3 text-center font-bold text-blue-600 transition-all hover:scale-105 hover:shadow-lg sm:w-auto">
               Find Players
             </button>
           </div>
@@ -1567,11 +1567,11 @@ const TennisMatchApp = () => {
         </div>
 
         {matchPagination && !hasLocationFilter && (
-          <div className="flex items-center justify-between mt-6">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
               disabled={matchPage === 1}
-              className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               Previous
             </button>
@@ -1595,7 +1595,7 @@ const TennisMatchApp = () => {
                     matchPagination.perPage
                 )
               }
-              className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+              className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               Next
             </button>
@@ -1659,7 +1659,7 @@ const TennisMatchApp = () => {
           isArchived ? "opacity-90" : "hover:shadow-2xl hover:scale-[1.02]"
         }`}
       >
-        <div className="flex justify-between items-start mb-4">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {match.privacy === "open" && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 rounded-full text-xs font-black flex items-center gap-1.5">
@@ -1704,7 +1704,7 @@ const TennisMatchApp = () => {
                 e.stopPropagation();
                 setShowMatchMenu(showMatchMenu === match.id ? null : match.id);
               }}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative opacity-0 group-hover:opacity-100"
+              className="relative rounded-lg p-2 transition-colors hover:bg-gray-100"
             >
               <MoreVertical className="w-4 h-4 text-gray-400" />
                 {showMatchMenu === match.id && (
@@ -1794,7 +1794,7 @@ const TennisMatchApp = () => {
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <button
             onClick={() => handleViewDetails(match.id)}
-            className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+            className="w-full rounded-xl border-2 border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 sm:w-auto"
           >
             View & manage
           </button>
@@ -1844,7 +1844,7 @@ const TennisMatchApp = () => {
                   }
                 }
               }}
-              className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-black hover:shadow-xl hover:scale-105 transition-all flex items-center gap-1.5 shadow-lg"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl sm:w-auto"
             >
               <Zap className="w-4 h-4" />
               Join match
@@ -2364,7 +2364,7 @@ const TennisMatchApp = () => {
                 <label className="block text-sm font-black text-gray-700 mb-4 uppercase tracking-wider">
                   Match Type
                 </label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
                     {
                       id: "open",
@@ -2597,7 +2597,7 @@ const TennisMatchApp = () => {
                       REQUIRED
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {[
                       {
                         value: "2.5 - Beginner",
@@ -3174,7 +3174,7 @@ const TennisMatchApp = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   onClick={openWhatsApp}
                   disabled={!shareLink}
@@ -3218,7 +3218,7 @@ const TennisMatchApp = () => {
                   Players
                 </h3>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {players.map((player) => {
                   const name = player.full_name;
                   return (

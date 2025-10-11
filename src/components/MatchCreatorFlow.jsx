@@ -626,7 +626,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-4">
               Match Type
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 onClick={() =>
                   setMatchData((prev) => ({ ...prev, type: "open", invitedPlayers: [] }))
@@ -700,7 +700,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">DATE</label>
                 <input
@@ -876,7 +876,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 REQUIRED
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               {skillLevels.map((level) => (
                 <button
                   key={level.value}
@@ -1178,7 +1178,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 onClick={() => handleShare("copy")}
                 className="flex flex-col items-center gap-2 p-4 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
@@ -1435,7 +1435,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">
                 {matchData.type === "private" ? "Share Private Link" : "Share Match"}
               </h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   onClick={handleNavigatorShare}
                   className="flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
@@ -1452,7 +1452,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 </button>
               </div>
               {matchData.type === "private" && (
-                <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                   <button
                     onClick={() => handleShare("sms")}
                     className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
@@ -1475,7 +1475,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">
                 Add to Calendar
               </h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   onClick={() => handleAddToCalendar("google")}
                   className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
@@ -1519,7 +1519,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             >
               View Match Details
             </button>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 onClick={goBackToHome}
                 className="flex items-center justify-center gap-2 px-6 py-4 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
@@ -1660,7 +1660,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">Host Controls</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors">
                   <Edit size={16} className="text-gray-600" />
                   <span className="text-sm font-medium">Edit Match</span>
@@ -1681,7 +1681,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">Quick Actions</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   onClick={() => handleAddToCalendar("google")}
                   className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
@@ -1699,7 +1699,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4">
               <button
                 onClick={goBackToHome}
                 className="flex items-center justify-center gap-2 px-6 py-4 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
