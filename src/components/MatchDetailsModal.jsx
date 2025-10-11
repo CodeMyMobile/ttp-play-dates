@@ -123,7 +123,56 @@ const asNonEmptyString = (value) => {
   return null;
 };
 
-const PROFILE_BASE_URL = "https://matchplay.app/players";
+const sanitizeBaseUrl = (value) => {
+  const str = asNonEmptyString(value);
+  if (!str) return null;
+  const normalized = /^https?:\/\//i.test(str)
+    ? str
+    : `https://${str.replace(/^\/+/, "")}`;
+  try {
+    const url = new URL(normalized);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    url.hash = "";
+    url.search = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+};
+
+const ENV_PROFILE_BASE_URL = (() => {
+  const candidates = [
+    import.meta.env.VITE_PLAYER_PROFILE_BASE_URL,
+    import.meta.env.VITE_PLAYER_PORTAL_URL,
+    import.meta.env.VITE_PLAYER_APP_URL,
+    import.meta.env.VITE_APP_BASE_URL,
+    import.meta.env.VITE_APP_URL,
+  ];
+  for (const candidate of candidates) {
+    const sanitized = sanitizeBaseUrl(candidate);
+    if (sanitized) return sanitized;
+  }
+  return null;
+})();
+
+const getProfileBaseUrl = () => {
+  if (ENV_PROFILE_BASE_URL) return ENV_PROFILE_BASE_URL;
+  if (typeof window !== "undefined") {
+    const overrides = [
+      window.__TTP_PLAYER_PROFILE_BASE_URL__,
+      window.__PLAYER_PROFILE_BASE_URL__,
+      window.__MATCH_PLAYER_PROFILE_BASE_URL__,
+      window.location?.origin,
+    ];
+    for (const override of overrides) {
+      const sanitized = sanitizeBaseUrl(override);
+      if (sanitized) return sanitized;
+    }
+  }
+  return null;
+};
 
 const buildProfileUrlFromString = (value) => {
   const str = asNonEmptyString(value);
@@ -131,10 +180,37 @@ const buildProfileUrlFromString = (value) => {
   if (/^https?:\/\//i.test(str)) {
     return str;
   }
-  if (str.startsWith("/")) {
-    return `${PROFILE_BASE_URL}${str}`;
+  if (/^www\./i.test(str)) {
+    return `https://${str}`;
   }
-  return `${PROFILE_BASE_URL}/${encodeURIComponent(str)}`;
+  const baseUrl = getProfileBaseUrl();
+  if (!baseUrl) return null;
+  try {
+    const url = new URL(str, `${baseUrl}/`);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const buildProfileUrlFromPlayerId = (playerId) => {
+  const idString = asNonEmptyString(playerId);
+  if (!idString || !ENV_PROFILE_BASE_URL) return null;
+  try {
+    const url = new URL(
+      encodeURIComponent(idString),
+      `${ENV_PROFILE_BASE_URL}/`,
+    );
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
 };
 
 const getProfileImageFromSource = (source) => {
@@ -142,10 +218,14 @@ const getProfileImageFromSource = (source) => {
   const keys = [
     "profile_picture",
     "profilePicture",
+    "profile_picture_url",
+    "profilePictureUrl",
     "profile_photo",
     "profilePhoto",
     "profile_image",
     "profileImage",
+    "profile_image_url",
+    "profileImageUrl",
     "photo_url",
     "photoUrl",
     "image_url",
@@ -153,6 +233,8 @@ const getProfileImageFromSource = (source) => {
     "avatar_url",
     "avatarUrl",
     "avatar",
+    "host_avatar",
+    "hostAvatar",
     "picture",
     "photo",
   ];
@@ -196,6 +278,7 @@ const getParticipantProfileImage = (participant) => {
   if (!participant || typeof participant !== "object") return null;
   return (
     getProfileImageFromSource(participant.profile) ||
+    getProfileImageFromSource(participant.player) ||
     getProfileImageFromSource(participant) ||
     null
   );
@@ -203,25 +286,18 @@ const getParticipantProfileImage = (participant) => {
 
 const getParticipantProfileUrl = (participant, playerId) => {
   if (!participant || typeof participant !== "object") {
-    if (playerId === null || playerId === undefined) return null;
-    const numeric = Number(playerId);
-    return Number.isFinite(numeric)
-      ? `${PROFILE_BASE_URL}/${numeric}`
-      : null;
+    return buildProfileUrlFromPlayerId(playerId);
   }
 
   const profileUrl =
     getProfileUrlFromSource(participant.profile) ||
+    getProfileUrlFromSource(participant.player) ||
     getProfileUrlFromSource(participant);
   if (profileUrl) {
     return profileUrl;
   }
 
-  const numeric = Number(playerId);
-  if (Number.isFinite(numeric)) {
-    return `${PROFILE_BASE_URL}/${numeric}`;
-  }
-  return null;
+  return buildProfileUrlFromPlayerId(playerId);
 };
 
 const getSkillLevelDisplay = (match) => {
@@ -519,6 +595,7 @@ const MatchDetailsModal = ({
   const hostAvatar =
     getProfileImageFromSource(hostProfile) ||
     getParticipantProfileImage(hostParticipant) ||
+    getProfileImageFromSource(match) ||
     null;
 
   const committedParticipants = useMemo(
