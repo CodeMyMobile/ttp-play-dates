@@ -46,11 +46,11 @@ const combineDateAndTimeToIso = (dateString, timeString) => {
     return null;
   }
 
-  // Convert to an ISO string in UTC ("Z") so the backend interprets the
-  // scheduled start time consistently regardless of the creator's local
-  // timezone. This matches the format returned by the API and avoids SMS
-  // notifications shifting to a different hour when processed server-side.
-  return localDate.toISOString();
+  // Preserve the creator's local offset so the backend can render and send
+  // notifications using the exact wall time the user selected. Serialising
+  // to UTC ("Z") caused the API to interpret the match in the wrong local
+  // day/hour, leading to SMS invites showing `1:00 AM` for a 6:00 PM match.
+  return toIsoStringWithOffset(localDate);
 };
 
 export { combineDateAndTimeToIso, toIsoStringWithOffset };
