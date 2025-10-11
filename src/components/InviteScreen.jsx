@@ -47,6 +47,7 @@ const InviteScreen = ({
   const [participantsError, setParticipantsError] = useState("");
   const [hostId, setHostId] = useState(null);
   const [isArchived, setIsArchived] = useState(false);
+  const [matchStatus, setMatchStatus] = useState(null);
 
   // Local state for manual phone invites (isolated from search input)
   const totalSelectedInvitees = useMemo(
@@ -77,6 +78,8 @@ const InviteScreen = ({
   useEffect(() => {
     if (!matchId) return;
     let alive = true;
+    setMatchStatus(null);
+    setIsArchived(false);
     (async () => {
       try {
         setParticipantsLoading(true);
@@ -92,7 +95,9 @@ const InviteScreen = ({
 
         const data = await loadMatch();
         if (!alive) return;
-        const archived = data.match?.status === "archived";
+        const status = data.match?.status ?? null;
+        setMatchStatus(status);
+        const archived = status === "archived";
         setIsArchived(archived);
         if (archived) {
           setParticipants([]);
@@ -108,6 +113,7 @@ const InviteScreen = ({
         setParticipants([]);
         if (isMatchArchivedError(error)) {
           setIsArchived(true);
+          setMatchStatus("archived");
           setParticipantsError("This match has been archived. Invites are read-only.");
           onToast("This match has been archived. Invites are read-only.", "error");
         } else {
@@ -565,7 +571,10 @@ const InviteScreen = ({
                     onToast("No new players selected", "error");
                     return;
                   }
-                  await updateMatch(matchId, { status: "upcoming" });
+                  if (matchStatus !== "upcoming") {
+                    await updateMatch(matchId, { status: "upcoming" });
+                    setMatchStatus("upcoming");
+                  }
                   const response = await sendInvites(matchId, {
                     playerIds: newIds,
                     phoneNumbers: [],
