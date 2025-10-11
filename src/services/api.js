@@ -3,6 +3,7 @@ const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.co
 const api = (path, options = {}) => {
   const token = localStorage.getItem("authToken");
   const headers = {
+    Accept: "application/json",
     ...(options.headers || {}),
   };
   const hasBody =
