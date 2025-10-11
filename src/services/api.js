@@ -1,6 +1,9 @@
 import { getStoredAuthToken, normalizeAuthToken } from "./authToken";
 
-const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.com/api";
+const baseURL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "https://ttp-api.codemymobile.com/api";
 
 const api = (path, options = {}) => {
   const {

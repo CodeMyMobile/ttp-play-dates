@@ -92,6 +92,7 @@ const useQueryClient = () => {
 const useQuery = ({ queryKey, queryFn, enabled = true, retry = false }) => {
   const client = useQueryClient();
   const key = useMemo(() => hashKey(queryKey), [queryKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const stableQueryKey = useMemo(() => queryKey, [key]);
   const queryFnRef = useRef(queryFn);
   queryFnRef.current = queryFn;

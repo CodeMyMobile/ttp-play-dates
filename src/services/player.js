@@ -24,6 +24,7 @@ export const updatePlayerPersonalDetails = async ({
   }
 
   const params = Object.entries({
+    id,
     date_of_birth,
     usta_rating,
     uta_rating,

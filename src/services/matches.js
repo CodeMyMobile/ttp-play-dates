@@ -77,7 +77,7 @@ export const joinMatch = (id) =>
     api(`/matches/${id}/join`, {
       method: "POST",
       authSchemePreference: "token",
-      json: {},
+      json: { match_id: id },
     })
   );
 
@@ -86,7 +86,7 @@ export const leaveMatch = (id) =>
     api(`/matches/${id}/leave`, {
       method: "POST",
       authSchemePreference: "token",
-      json: {},
+      json: { match_id: id },
     })
   );
 
