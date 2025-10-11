@@ -1,7 +1,12 @@
 const baseURL = import.meta.env.VITE_API_URL || "https://ttp-api.codemymobile.com/api";
 
 const api = (path, options = {}) => {
-  const token = localStorage.getItem("authToken");
+  const storedToken = localStorage.getItem("authToken");
+  const token = (() => {
+    if (!storedToken) return storedToken;
+    const match = storedToken.match(/^Bearer\s+(.+)$/i);
+    return match ? match[1] : storedToken;
+  })();
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
