@@ -3724,77 +3724,105 @@ const TennisMatchApp = () => {
     }
 
     // Email/password login step
-  if (signInStep === "login") {
-  const handleLogin = () => {
-    login(formData.email, password)
-      .then((res) => {
-        // Support both payload shapes:
-        // 1) { access_token, refresh_token, profile, user_id, user_type }
-        // 2) { token, user: { ... } }
-        const {
-          access_token,
-          refresh_token,
-          profile,
-          user_id,
-          user_type,
-          token,
-          user: userFromApi,
-        } = res || {};
-
-        let user;
-
-        if (access_token) {
-          // Newer shape with profile & tokens
-          localStorage.setItem("authToken", access_token);
-          if (refresh_token) localStorage.setItem("refreshToken", refresh_token);
-
-          const name = profile?.full_name || formData.email;
-          user = {
-            id: user_id,
-            type: user_type,
-            name,
-            email: formData.email,
-            avatar: name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .toUpperCase(),
-            skillLevel: profile?.usta_rating || "",
-          };
-        } else {
-          // Legacy/alternative shape with single token + user object
-          if (token) localStorage.setItem("authToken", token);
-
-          const fallbackName = (userFromApi?.name || formData.email || "").trim();
-          user =
-            userFromApi ||
-            {
-              name: fallbackName,
-              email: formData.email,
-              avatar: fallbackName
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase(),
-            };
+    if (signInStep === "login") {
+      const getLoginErrorMessage = (error) => {
+        if (!error) {
+          return "We couldn't sign you in. Please try again.";
         }
+        const status = error.status ?? error.response?.status;
+        if (status === 401 || status === 400 || status === 403) {
+          return "That email or password doesn't match our records. Double-check your details or reset your password.";
+        }
+        if (status === 422) {
+          return (
+            error.response?.data?.message ||
+            error.data?.message ||
+            "Please double-check your email and password, then try again."
+          );
+        }
+        if (status && status >= 500) {
+          return "We're having trouble signing you in right now. Please try again later.";
+        }
+        const fallbackMessage =
+          error.response?.data?.message ||
+          error.data?.message ||
+          error.message;
+        if (fallbackMessage && !["Error", "API_ERROR"].includes(fallbackMessage)) {
+          return fallbackMessage;
+        }
+        return "We couldn't sign you in. Please try again.";
+      };
 
-        // Persist user for session restore
-        localStorage.setItem("user", JSON.stringify(user));
+      const handleLogin = () => {
+        login(formData.email, password)
+          .then((res) => {
+            // Support both payload shapes:
+            // 1) { access_token, refresh_token, profile, user_id, user_type }
+            // 2) { token, user: { ... } }
+            const {
+              access_token,
+              refresh_token,
+              profile,
+              user_id,
+              user_type,
+              token,
+              user: userFromApi,
+            } = res || {};
 
-        setCurrentUser(user);
-        setShowSignInModal(false);
-        setSignInStep("initial");
-        setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-        setPassword("");
+            let user;
 
-        const safeFirst = (user.name || "").split(" ")[0] || "Player";
-        displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
-      })
-      .catch((err) =>
-        displayToast(err.response?.data?.message || err.message, "error")
-      );
-  };
+            if (access_token) {
+              // Newer shape with profile & tokens
+              localStorage.setItem("authToken", access_token);
+              if (refresh_token) localStorage.setItem("refreshToken", refresh_token);
+
+              const name = profile?.full_name || formData.email;
+              user = {
+                id: user_id,
+                type: user_type,
+                name,
+                email: formData.email,
+                avatar: name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase(),
+                skillLevel: profile?.usta_rating || "",
+              };
+            } else {
+              // Legacy/alternative shape with single token + user object
+              if (token) localStorage.setItem("authToken", token);
+
+              const fallbackName = (userFromApi?.name || formData.email || "").trim();
+              user =
+                userFromApi ||
+                {
+                  name: fallbackName,
+                  email: formData.email,
+                  avatar: fallbackName
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase(),
+                };
+            }
+
+            // Persist user for session restore
+            localStorage.setItem("user", JSON.stringify(user));
+
+            setCurrentUser(user);
+            setShowSignInModal(false);
+            setSignInStep("initial");
+            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setPassword("");
+
+            const safeFirst = (user.name || "").split(" ")[0] || "Player";
+            displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
+          })
+          .catch((err) => {
+            displayToast(getLoginErrorMessage(err), "error");
+          });
+      };
 
 
       return (

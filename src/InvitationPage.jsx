@@ -1382,8 +1382,8 @@ function isAcceptError(error) {
 function mapSignInError(error) {
   if (!error) return "We couldn't sign you in. Try again.";
   const status = error.status ?? error.response?.status;
-  if (status === 401 || status === 400) {
-    return "Incorrect email or password. Try again.";
+  if (status === 401 || status === 400 || status === 403) {
+    return "That email or password doesn't match our records. Double-check your details or reset your password.";
   }
   if (status === 422) {
     return (
