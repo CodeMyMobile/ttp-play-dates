@@ -1901,34 +1901,19 @@ const TennisMatchApp = () => {
                   try {
                     await joinMatch(match.id);
 
-                    optimisticDetails = buildOptimisticMatchDetailsFromBrowseMatch(
-                      match,
-                    );
-                    if (optimisticDetails) {
-                      setMatchDetailsOrigin(originScreen);
-                      setViewMatch(optimisticDetails);
-                      setShowMatchDetailsModal(true);
-                    }
-
                     try {
                       const data = await fetchMatchDetailsWithArchivedFallback(
                         match.id,
                       );
                       if (data) {
-                        const hydratedDetails = ensureMatchDetailsJoined(
-                          data,
-                          optimisticDetails || undefined,
-                        );
-                        setMatchDetailsOrigin(originScreen);
-                        setViewMatch(hydratedDetails);
+                        setMatchDetailsOrigin(currentScreen);
+                        setViewMatch(data);
                         setShowMatchDetailsModal(true);
                       }
                     } catch (detailsError) {
                       console.error(detailsError);
                       displayToast(
-                        optimisticDetails
-                          ? "You're in! We're still pulling the full match details."
-                          : "Joined the match, but we couldn't load the details. Try again in a moment.",
+                        "Joined the match, but we couldn't load the details. Try again in a moment.",
                         "info",
                       );
                     }
