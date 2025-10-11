@@ -313,11 +313,13 @@ export default function MatchPage() {
       setFormError("Date, time, and location are required.");
       return;
     }
-    const isoDate = combineDateTime(formState.date, formState.time);
-    if (!isoDate) {
+    const dateTimeInfo = buildDateTimePayload(formState.date, formState.time);
+    const isoDateTime = dateTimeInfo?.isoString || null;
+    if (!isoDateTime) {
       setFormError("Please provide a valid date and time.");
       return;
     }
+    const localDateTime = dateTimeInfo?.localDateTime || null;
     if (scheduleChanged) {
       const confirmed = window.confirm(
         "Changing the schedule will notify participants. Continue?",
@@ -342,7 +344,10 @@ export default function MatchPage() {
     const longitude = parseCoordinate(formState.longitude);
 
     const payload = buildMatchUpdatePayload({
-      startDateTime: isoDate,
+      startDateTime: isoDateTime,
+      startDateTimeLocal: localDateTime,
+      startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
+      startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,
       matchFormat,
       previousMatchFormat: originalForm.matchFormat,

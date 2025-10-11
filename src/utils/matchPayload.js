@@ -3,6 +3,9 @@ const isFiniteNumber = (value) =>
 
 const buildMatchUpdatePayload = ({
   startDateTime,
+  startDateTimeLocal,
+  startDateTimeOffsetMinutes,
+  startDateTimeTimezone,
   locationText,
   matchFormat,
   previousMatchFormat,
@@ -15,10 +18,28 @@ const buildMatchUpdatePayload = ({
   previousLatitude,
   previousLongitude,
 }) => {
+  const trimmedStart =
+    typeof startDateTime === "string" ? startDateTime.trim() : "";
+
   const payload = {
-    start_date_time: startDateTime,
+    ...(trimmedStart ? { start_date_time: trimmedStart } : {}),
     location_text: locationText,
   };
+
+  if (typeof startDateTimeLocal === "string" && startDateTimeLocal.trim()) {
+    payload.start_date_time_local = startDateTimeLocal;
+  }
+
+  if (Number.isFinite(startDateTimeOffsetMinutes)) {
+    payload.start_date_time_offset_minutes = startDateTimeOffsetMinutes;
+  }
+
+  if (
+    typeof startDateTimeTimezone === "string" &&
+    startDateTimeTimezone.trim()
+  ) {
+    payload.start_date_time_timezone = startDateTimeTimezone;
+  }
 
   if (isFiniteNumber(latitude)) {
     payload.latitude = latitude;

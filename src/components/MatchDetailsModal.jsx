@@ -991,11 +991,13 @@ const MatchDetailsModal = ({
       setEditError("Date, time, and location are required.");
       return;
     }
-    const isoDate = combineDateTime(editForm.date, editForm.time);
-    if (!isoDate) {
+    const dateTimeInfo = buildDateTimePayload(editForm.date, editForm.time);
+    const isoDateTime = dateTimeInfo?.isoString || null;
+    if (!isoDateTime) {
       setEditError("Please provide a valid date and time.");
       return;
     }
+    const localDateTime = dateTimeInfo?.localDateTime || null;
     if (scheduleChanged) {
       const confirmed = window.confirm(
         "Changing the schedule will notify players. Continue?",
@@ -1022,7 +1024,10 @@ const MatchDetailsModal = ({
     const skillLevel = isOpenMatch ? level : "";
 
     const payload = buildMatchUpdatePayload({
-      startDateTime: isoDate,
+      startDateTime: isoDateTime,
+      startDateTimeLocal: localDateTime,
+      startDateTimeOffsetMinutes: dateTimeInfo?.timezoneOffsetMinutes,
+      startDateTimeTimezone: dateTimeInfo?.timezoneName || null,
       locationText: trimmedLocation,
       matchFormat,
       previousMatchFormat: originalEditForm.matchFormat,
@@ -1052,8 +1057,27 @@ const MatchDetailsModal = ({
           if (!prev) return prev;
           const nextMatch = {
             ...(prev.match || {}),
-            start_date_time: isoDate,
-            startDateTime: isoDate,
+            start_date_time: isoDateTime,
+            startDateTime: isoDateTime,
+            ...(localDateTime
+              ? {
+                  start_date_time_local: localDateTime,
+                  startDateTimeLocal: localDateTime,
+                }
+              : {}),
+            ...(Number.isFinite(dateTimeInfo?.timezoneOffsetMinutes)
+              ? {
+                  start_date_time_offset_minutes:
+                    dateTimeInfo.timezoneOffsetMinutes,
+                  startDateTimeOffsetMinutes: dateTimeInfo.timezoneOffsetMinutes,
+                }
+              : {}),
+            ...(dateTimeInfo?.timezoneName
+              ? {
+                  start_date_time_timezone: dateTimeInfo.timezoneName,
+                  startDateTimeTimezone: dateTimeInfo.timezoneName,
+                }
+              : {}),
             location_text: trimmedLocation,
             locationText: trimmedLocation,
             location: trimmedLocation,

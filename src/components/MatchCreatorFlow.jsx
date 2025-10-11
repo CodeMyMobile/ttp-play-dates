@@ -402,7 +402,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1));
   const handlePublish = async () => {
     if (creating) return;
-    const isoStart = combineDateTime();
+    const startInfo = startDateTimeInfo;
+    const isoStart = startInfo?.isoString || null;
     if (!isoStart) {
       showToast("Invalid start time", "error");
       return;
@@ -412,6 +413,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       status: "upcoming",
       match_type: matchData.type === "private" ? "private" : "open",
       start_date_time: isoStart,
+      ...(startInfo?.localDateTime
+        ? { start_date_time_local: startInfo.localDateTime }
+        : {}),
+      ...(Number.isFinite(startInfo?.timezoneOffsetMinutes)
+        ? { start_date_time_offset_minutes: startInfo.timezoneOffsetMinutes }
+        : {}),
+      ...(startInfo?.timezoneName
+        ? { start_date_time_timezone: startInfo.timezoneName }
+        : {}),
       location_text: matchData.location,
       latitude: matchData.latitude ?? undefined,
       longitude: matchData.longitude ?? undefined,
