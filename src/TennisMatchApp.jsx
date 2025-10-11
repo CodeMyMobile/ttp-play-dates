@@ -172,6 +172,7 @@ const TennisMatchApp = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
   const [manualContacts, setManualContacts] = useState(new Map());
+  const [landingAuthTab, setLandingAuthTab] = useState("signup");
   const [inviteMatchId, setInviteMatchId] = useState(() =>
     deriveInviteMatchId(initialPath),
   );
@@ -181,6 +182,7 @@ const TennisMatchApp = () => {
   const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
   const [password, setPassword] = useState("");
+  const landingSignInRef = useRef(null);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -189,6 +191,9 @@ const TennisMatchApp = () => {
     dateOfBirth: "",
   });
   const [signupErrors, setSignupErrors] = useState({});
+  const [signupPassword, setSignupPassword] = useState("");
+  const [landingSignupLoading, setLandingSignupLoading] = useState(false);
+  const [landingSignInLoading, setLandingSignInLoading] = useState(false);
   // Removed OTP verification; no verification code needed
 
   const [matchData, setMatchData] = useState({
@@ -704,6 +709,243 @@ const TennisMatchApp = () => {
     }
   }, [location.pathname, navigate]);
 
+  const finishAuthentication = useCallback(
+    (user, { toastMessage, toastType = "success" } = {}) => {
+      if (!user) return;
+
+      localStorage.setItem("user", JSON.stringify(user));
+      setCurrentUser(user);
+      setShowSignInModal(false);
+      setSignInStep("initial");
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        skillLevel: "",
+        dateOfBirth: "",
+      });
+      setPassword("");
+      setSignupPassword("");
+      setSignupErrors({});
+
+      if (toastMessage) {
+        displayToast(toastMessage, toastType);
+      }
+
+      goToBrowse({ replace: true });
+    },
+    [
+      displayToast,
+      goToBrowse,
+      setCurrentUser,
+      setFormData,
+      setShowSignInModal,
+      setSignInStep,
+      setPassword,
+      setSignupPassword,
+      setSignupErrors,
+    ],
+  );
+
+  const getLoginErrorMessage = useCallback((error) => {
+    const statusCode =
+      error?.response?.status ?? error?.status ?? error?.statusCode;
+    if (statusCode === 401 || statusCode === 403) {
+      return (
+        error?.response?.data?.message ||
+        error?.data?.message ||
+        "Please double-check your email and password, then try again."
+      );
+    }
+    if (Number.isFinite(statusCode) && statusCode >= 500) {
+      return "We're having trouble signing you in right now. Please try again later.";
+    }
+    const fallbackMessage =
+      error?.response?.data?.message || error?.data?.message || error?.message;
+    if (fallbackMessage && !["Error", "API_ERROR"].includes(fallbackMessage)) {
+      return fallbackMessage;
+    }
+    return "We couldn't sign you in. Please try again.";
+  }, []);
+
+  const handleLandingSignup = useCallback(async () => {
+    if (landingSignupLoading) return;
+
+    const trimmedName = (formData.name || "").trim();
+    const trimmedEmail = (formData.email || "").trim();
+    const trimmedPassword = signupPassword.trim();
+    const trimmedPhone = (formData.phone || "").trim();
+    const selectedSkill = formData.skillLevel;
+
+    const errors = {};
+    if (!trimmedName) errors.fullName = "Please enter your full name";
+    if (!trimmedEmail) errors.email = "Please enter your email";
+    if (!trimmedPassword) errors.password = "Please create a password";
+    if (!trimmedPhone) errors.mobile = "Please enter your mobile";
+    if (!selectedSkill) errors.skillLevel = "Please select a skill level";
+
+    if (Object.keys(errors).length > 0) {
+      setSignupErrors(errors);
+      displayToast("Please fill in all required fields", "error");
+      return;
+    }
+
+    setLandingSignupLoading(true);
+    try {
+      const response = await signup({
+        email: trimmedEmail,
+        password: trimmedPassword,
+        name: trimmedName,
+        phone: trimmedPhone,
+      });
+
+      if (response?.access_token) {
+        localStorage.setItem("authToken", response.access_token);
+      }
+      if (response?.refresh_token) {
+        localStorage.setItem("refreshToken", response.refresh_token);
+      }
+
+      const digits = (trimmedPhone || "").replace(/\D/g, "");
+      const signupToken =
+        response?.access_token || localStorage.getItem("authToken") || "";
+
+      if (signupToken && response?.user_id) {
+        await updatePlayerPersonalDetails({
+          player: signupToken,
+          id: response.user_id,
+          date_of_birth: formData.dateOfBirth || null,
+          usta_rating: 0,
+          uta_rating: 0,
+          fullName: trimmedName,
+          mobile: digits || null,
+          about_me: null,
+        });
+      }
+
+      const newUser = {
+        id: response?.user_id,
+        type: response?.user_type,
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        skillLevel: selectedSkill,
+        avatar: trimmedName
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase(),
+        rating: 4.2,
+      };
+
+      const firstName = trimmedName.split(" ")[0] || "Player";
+      finishAuthentication(newUser, {
+        toastMessage: `Welcome to Matchplay, ${firstName}! 🎾`,
+      });
+    } catch (err) {
+      const data = err?.response?.data;
+      if (data?.err?.constraint === "users_email_unique") {
+        setSignupErrors((prev) => ({ ...prev, email: "Email Already Exists" }));
+        displayToast("Email Already Exists", "error");
+      } else {
+        console.error(err);
+        displayToast("Signup failed", "error");
+      }
+    } finally {
+      setLandingSignupLoading(false);
+    }
+  }, [
+    finishAuthentication,
+    formData.dateOfBirth,
+    formData.email,
+    formData.name,
+    formData.phone,
+    formData.skillLevel,
+    landingSignupLoading,
+    displayToast,
+    signupPassword,
+  ]);
+
+  const handleLandingLogin = useCallback(async () => {
+    if (landingSignInLoading) return;
+
+    const email = (formData.email || "").trim();
+    const pwd = password.trim();
+
+    if (!email || !pwd) {
+      displayToast("Enter your email and password to continue", "error");
+      return;
+    }
+
+    setLandingSignInLoading(true);
+    try {
+      const res = await login(email, pwd);
+      const {
+        access_token,
+        refresh_token,
+        profile,
+        user_id,
+        user_type,
+        token,
+        user: userFromApi,
+      } = res || {};
+
+      let user;
+
+      if (access_token) {
+        localStorage.setItem("authToken", access_token);
+        if (refresh_token) {
+          localStorage.setItem("refreshToken", refresh_token);
+        }
+
+        const name = profile?.full_name || email;
+        user = {
+          id: user_id,
+          type: user_type,
+          name,
+          email,
+          avatar: name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase(),
+          skillLevel: profile?.usta_rating || "",
+        };
+      } else {
+        if (token) localStorage.setItem("authToken", token);
+
+        const fallbackName = (userFromApi?.name || email || "").trim();
+        user =
+          userFromApi ||
+          {
+            name: fallbackName,
+            email,
+            avatar: fallbackName
+              .split(" ")
+              .map((n) => n[0])
+              .join("")
+              .toUpperCase(),
+          };
+      }
+
+      const safeFirst = (user.name || "").split(" ")[0] || "Player";
+      finishAuthentication(user, {
+        toastMessage: `Welcome back, ${safeFirst}! 🎾`,
+      });
+    } catch (err) {
+      displayToast(getLoginErrorMessage(err), "error");
+    } finally {
+      setLandingSignInLoading(false);
+    }
+  }, [
+    displayToast,
+    finishAuthentication,
+    formData.email,
+    getLoginErrorMessage,
+    landingSignInLoading,
+    password,
+  ]);
+
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
       const numericMatchId = Number(matchId);
@@ -1118,60 +1360,392 @@ const TennisMatchApp = () => {
     [matchCounts],
   );
 
-  const BrowseScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
-      {/* Hero Section with Action Button */}
-      <div className="bg-gradient-to-br from-white via-green-50/20 to-emerald-50/30 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 py-10">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-5 h-5 text-green-600" />
-            <span className="text-sm font-bold text-green-600 uppercase tracking-wide">
-              Active Now
-            </span>
-          </div>
-          <h2 className="text-4xl font-black text-gray-900 mb-3">
-            {currentUser
-              ? `Welcome back, ${currentUser.name.split(" ")[0]}!`
-              : "Find Your Next Match"}
-          </h2>
-          <p className="text-lg font-medium text-gray-600 mb-8">
-            {currentUser
-              ? "You have 2 upcoming matches this week"
-              : "Join 500+ players in North County"}
-          </p>
+  const scrollToLandingForm = useCallback(() => {
+    if (landingSignInRef.current) {
+      landingSignInRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
 
-          {/* Prominent Action Button */}
-          <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                if (!currentUser) {
-                  setShowSignInModal(true);
-                } else {
-                  navigate("/create");
-                }
-              }}
-              className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+  const LandingPage = () => (
+    <div className="relative isolate min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-emerald-50/40 to-white">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 opacity-60"
+        style={{
+          backgroundImage:
+            "linear-gradient(90deg, rgba(16, 185, 129, 0.08) 1px, transparent 1px), linear-gradient(rgba(16, 185, 129, 0.08) 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }}
+      ></div>
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-6 pb-20 pt-12 sm:px-8 lg:px-10">
+        <header className="mb-16 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-400 text-3xl shadow-lg shadow-emerald-500/30">
+              🎾
+            </div>
+            <span className="text-3xl font-black text-slate-900 tracking-tight">Matchplay</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLandingAuthTab("signup");
+              scrollToLandingForm();
+            }}
+            className="inline-flex items-center rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-emerald-400/40 transition-transform duration-300 hover:scale-105"
+          >
+            Sign Up Free
+          </button>
+        </header>
+
+        <section className="text-center">
+          <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+            Find Your Next Match
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-lg font-medium text-slate-600 sm:text-xl">
+            The easiest way to organize tennis matches and connect with local players.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4 text-base font-semibold text-slate-700">
+            {[
+              { icon: "⚡", label: "Quick Match Setup" },
+              { icon: "🎯", label: "Smart Player Matching" },
+              { icon: "📅", label: "Easy Scheduling" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="inline-flex items-center gap-2 rounded-full bg-white/80 px-5 py-2.5 shadow-md shadow-emerald-200/60 backdrop-blur"
+              >
+                <span className="text-xl">{item.icon}</span>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section ref={landingSignInRef} className="mt-16">
+          <div className="mx-auto w-full max-w-2xl rounded-3xl border border-emerald-100/70 bg-white/90 p-8 shadow-2xl shadow-emerald-200/50 backdrop-blur sm:p-12">
+            <div className="text-center">
+              <h2 className="text-3xl font-black text-slate-900">
+                {landingAuthTab === "signup" ? "Join Matchplay Today" : "Welcome Back"}
+              </h2>
+              <p className="mt-3 text-base font-medium text-slate-600">
+                {landingAuthTab === "signup"
+                  ? "Stop the endless back-and-forth texts and emails. Create or join matches in seconds."
+                  : "Sign in to organize matches and connect with players."}
+              </p>
+            </div>
+
+            <div className="mt-8">
+              <div className="flex items-center gap-2 rounded-2xl bg-emerald-100/60 p-1">
+                {[
+                  { id: "signup", label: "Sign Up" },
+                  { id: "signin", label: "Sign In" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setLandingAuthTab(tab.id);
+                      setSignupErrors({});
+                    }}
+                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+                      landingAuthTab === tab.id
+                        ? "bg-white text-emerald-600 shadow"
+                        : "text-slate-500 hover:text-emerald-600"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {landingAuthTab === "signup" ? (
+                <form
+                  className="mt-8 space-y-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleLandingSignup();
+                  }}
+                >
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Full Name</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="John Doe"
+                      type="text"
+                      required
+                      value={formData.name}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, name: e.target.value }))
+                      }
+                    />
+                    {signupErrors.fullName && (
+                      <p className="mt-2 text-sm font-semibold text-red-600">
+                        {signupErrors.fullName}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Email Address</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="your.email@example.com"
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, email: e.target.value }))
+                      }
+                    />
+                    {signupErrors.email && (
+                      <p className="mt-2 text-sm font-semibold text-red-600">
+                        {signupErrors.email}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Cell Phone</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="(555) 123-4567"
+                      type="tel"
+                      required
+                      value={formData.phone}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          phone: formatPhoneNumber(e.target.value),
+                        }))
+                      }
+                      maxLength={14}
+                    />
+                    {signupErrors.mobile && (
+                      <p className="mt-2 text-sm font-semibold text-red-600">
+                        {signupErrors.mobile}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Password</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="Create a password (8+ characters)"
+                      type="password"
+                      required
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
+                    />
+                    {signupErrors.password && (
+                      <p className="mt-2 text-sm font-semibold text-red-600">
+                        {signupErrors.password}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Skill Level</label>
+                    <select
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      required
+                      value={formData.skillLevel}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          skillLevel: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="" disabled>
+                        Select your skill level
+                      </option>
+                      <option value="beginner">Beginner (1.0 - 2.5)</option>
+                      <option value="intermediate">Intermediate (3.0 - 3.5)</option>
+                      <option value="advanced">Advanced (4.0 - 4.5)</option>
+                      <option value="expert">Expert (5.0+)</option>
+                    </select>
+                    {signupErrors.skillLevel && (
+                      <p className="mt-2 text-sm font-semibold text-red-600">
+                        {signupErrors.skillLevel}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={landingSignupLoading}
+                    className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-400/40 transition-transform duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {landingSignupLoading ? "Creating Account..." : "Create Free Account"}
+                  </button>
+                </form>
+              ) : (
+                <form
+                  className="mt-8 space-y-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleLandingLogin();
+                  }}
+                >
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Email Address</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="your.email@example.com"
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, email: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Password</label>
+                    <input
+                      className="mt-2 w-full rounded-xl border-2 border-slate-200/70 bg-slate-50 px-4 py-3 text-base font-medium text-slate-700 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-200/50"
+                      placeholder="Enter your password"
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <div className="mt-2 text-right text-sm font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSignInModal(true);
+                          setSignInStep("forgot");
+                        }}
+                        className="text-emerald-600 transition-colors hover:text-emerald-500"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={landingSignInLoading}
+                    className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-400/40 transition-transform duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {landingSignInLoading ? "Signing In..." : "Sign In"}
+                  </button>
+                </form>
+              )}
+
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-20">
+          <div className="grid gap-8 rounded-3xl bg-white/80 p-10 shadow-xl shadow-emerald-200/50 sm:grid-cols-3">
+            {[
+              { value: "500+", label: "Active Players" },
+              { value: "1,200+", label: "Matches Played" },
+              { value: "50+", label: "Courts Available" },
+            ].map((stat) => (
+              <div key={stat.label} className="text-center">
+                <div className="text-4xl font-black text-emerald-500 sm:text-5xl">{stat.value}</div>
+                <div className="mt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-16 grid gap-6 pb-10 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              icon: "📅",
+              title: "Organize Matches in Seconds",
+              description:
+                "Set your match details, send invites, and manage RSVPs all in one place.",
+            },
+            {
+              icon: "🔍",
+              title: "Find Players Instantly",
+              description:
+                "Browse players by skill level and availability to fill your matches fast.",
+            },
+            {
+              icon: "🎯",
+              title: "Match Your Skill Level",
+              description:
+                "Filter by rating to ensure every match is competitive and fun.",
+            },
+          ].map((feature) => (
+            <div
+              key={feature.title}
+              className="rounded-3xl border border-emerald-100/60 bg-white/90 p-8 text-center shadow-lg shadow-emerald-100/70 transition-transform duration-300 hover:-translate-y-1 hover:shadow-emerald-200/80"
             >
-              <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
-              <Sparkles className="w-6 h-6 relative" />
-              <span className="relative">Create New Match</span>
-              <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/courts")}
-              className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-emerald-700 rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
-            >
-              <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
-              <span>Find Local Courts</span>
-              <ArrowRight className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1" />
-            </button>
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-2xl">
+                {feature.icon}
+              </div>
+              <h3 className="mt-5 text-xl font-semibold text-slate-900">{feature.title}</h3>
+              <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
+                {feature.description}
+              </p>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+
+  const BrowseScreen = () => {
+    if (!currentUser) {
+      return <LandingPage />;
+    }
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
+        {/* Hero Section with Action Button */}
+        <div className="bg-gradient-to-br from-white via-green-50/20 to-emerald-50/30 border-b border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 py-10">
+            <div className="flex items-center gap-2 mb-3">
+              <Activity className="w-5 h-5 text-green-600" />
+              <span className="text-sm font-bold text-green-600 uppercase tracking-wide">
+                Active Now
+              </span>
+            </div>
+            <h2 className="text-4xl font-black text-gray-900 mb-3">
+              {currentUser
+                ? `Welcome back, ${currentUser.name.split(" ")[0]}!`
+                : "Find Your Next Match"}
+            </h2>
+            <p className="text-lg font-medium text-gray-600 mb-8">
+              {currentUser
+                ? "You have 2 upcoming matches this week"
+                : "Join 500+ players in North County"}
+            </p>
+
+            {/* Prominent Action Button */}
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentUser) {
+                    setShowSignInModal(true);
+                  } else {
+                    navigate("/create");
+                  }
+                }}
+                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+              >
+                <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
+                <Sparkles className="w-6 h-6 relative" />
+                <span className="relative">Create New Match</span>
+                <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/courts")}
+                className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-emerald-700 rounded-2xl font-black text-lg shadow-xl hover:shadow-2xl border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
+              >
+                <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
+                <span>Find Local Courts</span>
+                <ArrowRight className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {currentUser ? (
         <>
           <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
             <section className="bg-white/80 border border-gray-100 rounded-3xl shadow-sm p-5 space-y-4">
@@ -1602,22 +2176,10 @@ const TennisMatchApp = () => {
           </div>
         )}
       </div>
-        </>
-      ) : (
-        <div className="max-w-7xl mx-auto px-4 py-10 text-center">
-          <p className="text-gray-600 font-semibold mb-6">
-            Sign up or log in to view available matches.
-          </p>
-          <button
-            onClick={() => setShowSignInModal(true)}
-            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
-          >
-            Sign Up / Log In
-          </button>
-        </div>
-      )}
+      </>
     </div>
   );
+  };
 
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
@@ -3602,17 +4164,10 @@ const TennisMatchApp = () => {
             .toUpperCase(),
           rating: 4.2,
         };
-        localStorage.setItem("user", JSON.stringify(newUser));
-        setCurrentUser(newUser);
-        setShowSignInModal(false);
-        setSignInStep("initial");
-        setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
-        setPassword("");
-        setSignupErrors({});
-        displayToast(
-          `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
-          "success",
-        );
+        const firstName = formData.name.split(" ")[0] || "Player";
+        finishAuthentication(newUser, {
+          toastMessage: `Welcome to Matchplay, ${firstName}! 🎾`,
+        });
       } catch (err) {
         const data = err?.response?.data;
         if (data?.err?.constraint === "users_email_unique") {
@@ -3737,34 +4292,6 @@ const TennisMatchApp = () => {
 
     // Email/password login step
     if (signInStep === "login") {
-      const getLoginErrorMessage = (error) => {
-        if (!error) {
-          return "We couldn't sign you in. Please try again.";
-        }
-        const statusCode = Number(error.status ?? error.response?.status);
-        if ([400, 401, 403].includes(statusCode)) {
-          return "That email or password doesn't match our records. Double-check your details or reset your password.";
-        }
-        if (statusCode === 422) {
-          return (
-            error.response?.data?.message ||
-            error.data?.message ||
-            "Please double-check your email and password, then try again."
-          );
-        }
-        if (Number.isFinite(statusCode) && statusCode >= 500) {
-          return "We're having trouble signing you in right now. Please try again later.";
-        }
-        const fallbackMessage =
-          error.response?.data?.message ||
-          error.data?.message ||
-          error.message;
-        if (fallbackMessage && !["Error", "API_ERROR"].includes(fallbackMessage)) {
-          return fallbackMessage;
-        }
-        return "We couldn't sign you in. Please try again.";
-      };
-
       const handleLogin = () => {
         login(formData.email, password)
           .then((res) => {
@@ -3819,17 +4346,10 @@ const TennisMatchApp = () => {
                 };
             }
 
-            // Persist user for session restore
-            localStorage.setItem("user", JSON.stringify(user));
-
-            setCurrentUser(user);
-            setShowSignInModal(false);
-            setSignInStep("initial");
-            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
-            setPassword("");
-
             const safeFirst = (user.name || "").split(" ")[0] || "Player";
-            displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
+            finishAuthentication(user, {
+              toastMessage: `Welcome back, ${safeFirst}! 🎾`,
+            });
           })
           .catch((err) => {
             displayToast(getLoginErrorMessage(err), "error");
