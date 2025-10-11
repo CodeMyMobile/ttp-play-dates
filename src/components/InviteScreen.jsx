@@ -263,10 +263,10 @@ const InviteScreen = ({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 pb-20">
-      <div className="max-w-2xl mx-auto p-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-6">
-          <h2 className="text-3xl font-black text-gray-900 mb-3">Invite Players</h2>
-          <p className="text-lg font-semibold text-gray-600 mb-4">
+      <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6">
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+          <h2 className="mb-3 text-2xl font-black text-gray-900 sm:text-3xl">Invite Players</h2>
+          <p className="mb-4 text-base font-semibold text-gray-600 sm:text-lg">
             Need {matchData.playerCount - matchData.occupied} more{" "}
             {matchData.playerCount - matchData.occupied === 1 ? "player" : "players"}
           </p>
@@ -276,7 +276,7 @@ const InviteScreen = ({
               This match has been archived. Invites are read-only.
             </div>
           )}
-          <div className="flex items-center gap-4 text-sm font-bold text-gray-500">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-gray-500 sm:gap-4">
             <span className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
               {formatDateTime(matchData.dateTime)}
@@ -301,8 +301,8 @@ const InviteScreen = ({
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+            <h3 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-gray-900">
               <Users className="w-4 h-4" /> Current Participants
             </h3>
             {participantsLoading ? (
@@ -310,9 +310,12 @@ const InviteScreen = ({
             ) : participantsError ? (
               <p className="text-sm text-red-600">{participantsError}</p>
             ) : participants.length ? (
-              <ul className="divide-y divide-gray-100 border rounded-xl">
+              <ul className="divide-y divide-gray-100 rounded-xl border">
                 {participants.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <li
+                    key={p.id}
+                    className="flex flex-col gap-2 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                  >
                     <span className="text-gray-800">
                       {p.profile?.full_name || `Player ${p.player_id}`}
                       {(p.player_id === (hostId ?? currentUser?.id)) && (
@@ -353,9 +356,9 @@ const InviteScreen = ({
             />
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">Share Link</h3>
-            <div className="flex gap-3 mb-4">
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+            <h3 className="mb-4 text-sm font-black uppercase tracking-wider text-gray-900">Share Link</h3>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row">
               <input
                 type="text"
                 value={shareLink}
@@ -375,7 +378,7 @@ const InviteScreen = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <button
                 onClick={openWhatsApp}
                 disabled={!shareLink}
@@ -412,11 +415,11 @@ const InviteScreen = ({
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Players</h3>
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-sm font-black uppercase tracking-wider text-gray-900">Players</h3>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {players.map((player) => {
                 const name = player.full_name;
                 const pid = Number(player.user_id);
@@ -460,7 +463,7 @@ const InviteScreen = ({
             </div>
 
             {pagination && (
-              <div className="flex items-center justify-between mt-4">
+              <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
@@ -483,8 +486,8 @@ const InviteScreen = ({
           </div>
 
           {selectedPlayers.size > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-3">
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-lg">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
                   Selected ({totalSelectedInvitees})
                 </h3>
@@ -534,10 +537,10 @@ const InviteScreen = ({
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-          <div className="max-w-2xl mx-auto flex gap-3">
+          <div className="mx-auto flex max-w-2xl flex-col gap-3 sm:flex-row">
             <button
               onClick={() => onDone?.("cancel")}
-              className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+              className="w-full flex-1 rounded-xl border-2 border-gray-200 bg-white px-6 py-3.5 font-black text-gray-700 transition-colors hover:bg-gray-50"
             >
               SAVE FOR LATER
             </button>
@@ -593,7 +596,7 @@ const InviteScreen = ({
                 }
               }}
               disabled={isArchived}
-              className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+              className="flex w-full flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3.5 font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Send className="w-5 h-5" />
               SEND INVITES
