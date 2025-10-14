@@ -21,7 +21,7 @@ import {
 import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
-import { uniqueActiveParticipants } from "./utils/participants";
+import { uniqueMatchOccupants } from "./utils/participants";
 import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
 
@@ -1577,14 +1577,31 @@ function prettyInviteStatus(status) {
 }
 
 function getActiveParticipants(match, preview) {
-  const fromMatch = Array.isArray(match?.participants)
+  const matchParticipants = Array.isArray(match?.participants)
     ? match.participants
     : [];
-  const fromPreview = Array.isArray(preview?.participants)
+  const previewParticipants = Array.isArray(preview?.participants)
     ? preview.participants
     : [];
-  const source = fromMatch.length ? fromMatch : fromPreview;
-  return uniqueActiveParticipants(source);
+  const participantSource = [
+    ...matchParticipants,
+    ...previewParticipants,
+  ];
+
+  const matchInvitees = Array.isArray(match?.invitees) ? match.invitees : [];
+  const previewInvitees = Array.isArray(preview?.invitees)
+    ? preview.invitees
+    : [];
+  const inviteeSource = [
+    ...matchInvitees,
+    ...previewInvitees,
+  ];
+
+  if (!participantSource.length && !inviteeSource.length) {
+    return [];
+  }
+
+  return uniqueMatchOccupants(participantSource, inviteeSource);
 }
 
 function participantDisplayName(participant) {
