@@ -1411,20 +1411,26 @@ function mapSignUpError(error) {
   const normalizedMessage = (error.data?.message || "")
     .toString()
     .toLowerCase();
-  const emailErrors = (() => {
-    const raw = error.data?.errors?.email;
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    return [raw];
-  })()
-    .filter((msg) => typeof msg === "string")
-    .map((msg) => msg.toLowerCase());
 
-  const hasDuplicateEmailHint = [
+  const collectErrorStrings = (value) => {
+    if (!value) return [];
+    if (typeof value === "string") return [value.toLowerCase()];
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => collectErrorStrings(item));
+    }
+    if (typeof value === "object") {
+      return Object.values(value).flatMap((item) => collectErrorStrings(item));
+    }
+    return [];
+  };
+
+  const duplicateHintValues = [
     normalized,
     normalizedMessage,
-    ...emailErrors,
-  ].some((value) =>
+    ...collectErrorStrings(error.data?.errors),
+  ];
+
+  const hasDuplicateEmailHint = duplicateHintValues.some((value) =>
     value
       ? /email.*(already|taken|exists|in use)|already.*(account|registered)|account.*exists|user.*exists|duplicate.*email/.test(
           value,
@@ -1446,7 +1452,7 @@ function mapSignUpError(error) {
   }
   if (error.data?.message) return error.data.message;
   if (error.message && error.message !== "Error") return error.message;
-  return "We couldn't create your account. Try again.";
+  return "We couldn't create your account. If you already have one, try signing in instead.";
 }
 
 function mapAcceptError(error) {
