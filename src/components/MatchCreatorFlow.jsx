@@ -290,7 +290,7 @@ const Avatar = ({
   imageUrl,
   fallback,
   className = "w-10 h-10",
-  fallbackClassName = "bg-gray-200 text-gray-700",
+  fallbackClassName = "bg-blue-500 text-white font-bold",
   alt,
 }) => {
   if (imageUrl) {
@@ -304,7 +304,7 @@ const Avatar = ({
   }
   return (
     <div
-      className={`rounded-full flex items-center justify-center font-semibold ${fallbackClassName} ${className}`}
+      className={`rounded-full flex items-center justify-center ${fallbackClassName} ${className}`}
     >
       {fallback || (name ? name.charAt(0).toUpperCase() : "?")}
     </div>
@@ -1050,7 +1050,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   imageUrl={currentUserAvatarUrl}
                   fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
                   className="w-10 h-10"
-                  fallbackClassName="bg-gray-900 text-white"
+                  fallbackClassName="bg-green-600 text-white font-bold"
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900">You (Host)</div>
@@ -1355,7 +1355,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     imageUrl={currentUserAvatarUrl}
                     fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
                     className="w-6 h-6 text-[10px]"
-                    fallbackClassName="bg-gray-900 text-white"
+                    fallbackClassName="bg-green-600 text-white font-bold"
                   />
                   <span className="text-gray-700 font-medium">You (Host)</span>
                 </div>
@@ -1671,7 +1671,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                       imageUrl={currentUserAvatarUrl}
                       fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
                       className="w-10 h-10"
-                      fallbackClassName="bg-gray-900 text-white"
+                      fallbackClassName="bg-green-600 text-white font-bold"
                     />
                     <div>
                       <p className="font-medium text-gray-800">You</p>
