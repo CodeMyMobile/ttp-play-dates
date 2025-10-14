@@ -80,7 +80,9 @@ import {
   pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
+  uniqueInvitees,
 } from "./utils/participants";
+import { getMatchPrivacy } from "./utils/matchPrivacy";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -909,7 +911,6 @@ const TennisMatchApp = () => {
       const counts = data.counts || {};
       const archivedCount =
         counts.archived ?? counts.archieve ?? counts.archive ?? 0;
-      setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
 
       const DEPARTURE_KEYS = [
@@ -969,9 +970,40 @@ const TennisMatchApp = () => {
         });
       };
 
+      const isInviteRelevant = (invite) => {
+        if (!invite || typeof invite !== "object") return false;
+        const status = invite.status
+          ? invite.status.toString().trim().toLowerCase()
+          : "";
+        if (status && INACTIVE_PARTICIPANT_STATUSES.has(status)) {
+          return false;
+        }
+        if (invite.is_active === false || invite.active === false) {
+          return false;
+        }
+        const statusReason = invite.status_reason
+          ? invite.status_reason.toString().trim().toLowerCase()
+          : invite.statusReason
+          ? invite.statusReason.toString().trim().toLowerCase()
+          : "";
+        if (statusReason && INACTIVE_PARTICIPANT_STATUSES.has(statusReason)) {
+          return false;
+        }
+        if (hasAnyValue(invite, DEPARTURE_KEYS)) {
+          return false;
+        }
+        return true;
+      };
+
+      let hiddenPrivateMatches = 0;
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
         const acceptedInvitees = uniqueAcceptedInvitees(m.invitees);
+        const invitees = uniqueInvitees(
+          Array.isArray(m.invitees)
+            ? m.invitees.filter((invite) => isInviteRelevant(invite))
+            : [],
+        );
 
         const capacityInfo =
           m && typeof m.capacity === "object" ? m.capacity : null;
@@ -1003,6 +1035,88 @@ const TennisMatchApp = () => {
             idsMatch(invite.invitee_id, currentUser?.id) ||
             idsMatch(invite.player_id, currentUser?.id),
         );
+        const normalizedUserEmail = currentUser?.email
+          ? currentUser.email.toString().trim().toLowerCase()
+          : "";
+        const normalizedUserPhone = currentUser?.phone
+          ? normalizePhoneValue(currentUser.phone)
+          : "";
+        const userPhoneDigits = currentUser?.phone
+          ? getPhoneDigits(currentUser.phone)
+          : "";
+        const inviteMatchesCurrentUser = (invite) => {
+          if (!invite || typeof invite !== "object") return false;
+          const candidateIds = [
+            invite.invitee_id,
+            invite.inviteeId,
+            invite.player_id,
+            invite.playerId,
+            invite.participant_id,
+            invite.participantId,
+            invite.id,
+            invite.profile?.id,
+            invite.profile?.player_id,
+            invite.profile?.playerId,
+            invite.player?.id,
+            invite.player?.player_id,
+            invite.player?.playerId,
+          ];
+          if (candidateIds.some((value) => idsMatch(value, currentUser?.id))) {
+            return true;
+          }
+          if (normalizedUserEmail) {
+            const candidateEmails = [
+              invite.email,
+              invite.invitee_email,
+              invite.inviteeEmail,
+              invite.profile?.email,
+              invite.player?.email,
+              invite.contact_email,
+              invite.contactEmail,
+            ]
+              .map((value) =>
+                typeof value === "string" ? value.trim().toLowerCase() : "",
+              )
+              .filter(Boolean);
+            if (candidateEmails.some((email) => email === normalizedUserEmail)) {
+              return true;
+            }
+          }
+          if (normalizedUserPhone || userPhoneDigits) {
+            const candidatePhones = [
+              invite.phone,
+              invite.invitee_phone,
+              invite.inviteePhone,
+              invite.profile?.phone,
+              invite.player?.phone,
+              invite.contact_phone,
+              invite.contactPhone,
+            ];
+            if (
+              candidatePhones.some((value) => {
+                const normalized = normalizePhoneValue(value);
+                if (
+                  normalized &&
+                  normalizedUserPhone &&
+                  normalized === normalizedUserPhone
+                ) {
+                  return true;
+                }
+                if (userPhoneDigits) {
+                  const digits = getPhoneDigits(value);
+                  if (digits && digits === userPhoneDigits) {
+                    return true;
+                  }
+                }
+                return false;
+              })
+            ) {
+              return true;
+            }
+          }
+          return false;
+        };
+        const isInvited = !isHost && invitees.some(inviteMatchesCurrentUser);
         const participantRecord = Array.isArray(m.participants)
           ? m.participants.find(
               (participant) =>
@@ -1030,11 +1144,18 @@ const TennisMatchApp = () => {
           !isHost &&
           (hasActiveParticipant || hasAcceptedInvite || joinedTimestampActive);
 
+        const matchPrivacy = getMatchPrivacy(m);
+        const isPrivateMatch = matchPrivacy === "private";
+        if (isPrivateMatch && !isHost && !isJoined && !isInvited) {
+          hiddenPrivateMatches += 1;
+          return null;
+        }
+
         return {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
           status: m.status || "upcoming",
-          privacy: m.match_type || "open",
+          privacy: matchPrivacy,
           dateTime: m.start_date_time,
           location: m.location_text,
           latitude: (() => {
@@ -1090,8 +1211,9 @@ const TennisMatchApp = () => {
               : null;
           })(),
           capacity: capacityInfo,
+          isInvited,
         };
-      });
+      }).filter(Boolean);
       if (activeFilter === "draft") {
         transformed = transformed.filter((m) => m.status === "draft");
       } else if (activeFilter === "archived") {
@@ -1099,6 +1221,25 @@ const TennisMatchApp = () => {
       } else {
         transformed = transformed.filter((m) => m.status !== "archived");
       }
+
+      const normalizedCounts = { ...counts, archived: archivedCount };
+      if (hiddenPrivateMatches > 0) {
+        const countKey = (() => {
+          if (activeFilter === "archived") return "archived";
+          if (activeFilter === "draft") return "draft";
+          return activeFilter;
+        })();
+        if (countKey) {
+          const currentCount = Number(normalizedCounts[countKey]) || 0;
+          normalizedCounts[countKey] = Math.max(
+            currentCount - hiddenPrivateMatches,
+            transformed.length,
+            0,
+          );
+        }
+      }
+
+      setMatchCounts(normalizedCounts);
       setMatches(transformed);
     } catch (err) {
       displayToast(
