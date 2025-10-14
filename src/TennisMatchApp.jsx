@@ -54,7 +54,6 @@ import {
   ArrowRight,
   Zap,
   Trophy,
-  Activity,
   Sparkles,
   Target,
 } from "lucide-react";
@@ -2041,52 +2040,43 @@ const TennisMatchApp = () => {
   const BrowseScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
       {/* Hero Section with Action Button */}
-      <div className="bg-gradient-to-br from-white via-green-50/20 to-emerald-50/30 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 py-10">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-5 h-5 text-green-600" />
-            <span className="text-sm font-bold text-green-600 uppercase tracking-wide">
-              Active Now
-            </span>
-          </div>
-          <h2 className="text-4xl font-black text-gray-900 mb-3">
-            {currentUser
-              ? `Welcome back, ${currentUser.name.split(" ")[0]}!`
-              : "Find Your Next Match"}
-          </h2>
-          <p className="text-lg font-medium text-gray-600 mb-8">
-            {currentUser
-              ? "You have 2 upcoming matches this week"
-              : "Join 500+ players in North County"}
-          </p>
-
-          {/* Prominent Action Button */}
-          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-start">
-            <button
-              type="button"
-              onClick={() => {
-                if (!currentUser) {
-                  setShowSignInModal(true);
-                } else {
-                  navigate("/create");
-                }
-              }}
-              className="group relative inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 bg-size-200 bg-pos-0 px-8 py-4 text-lg font-black text-white shadow-xl transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:bg-pos-100 sm:w-auto"
-            >
-              <div className="absolute inset-0 bg-white/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all"></div>
-              <Sparkles className="w-6 h-6 relative" />
-              <span className="relative">Create New Match</span>
-              <ArrowRight className="w-5 h-5 relative group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/courts")}
-              className="group inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-emerald-100 bg-white px-8 py-4 text-lg font-black text-emerald-700 shadow-xl transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:shadow-2xl sm:w-auto"
-            >
-              <MapPin className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
-              <span>Find Local Courts</span>
-              <ArrowRight className="w-5 h-5 text-emerald-500 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1" />
-            </button>
+      <div className="border-b border-gray-100 bg-white/90 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl sm:text-3xl font-black text-gray-900">
+                {currentUser ? "Browse Local Matches" : "Find Your Next Match"}
+              </h2>
+              <p className="mt-1 text-xs font-semibold text-gray-500 sm:text-base sm:font-medium">
+                {currentUser
+                  ? "See what's nearby and jump back in."
+                  : "Discover active players around North County."}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentUser) {
+                    setShowSignInModal(true);
+                  } else {
+                    navigate("/create");
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-transform hover:-translate-y-0.5 hover:shadow-lg sm:text-base"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span>Create Match</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/courts")}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:text-base"
+              >
+                <MapPin className="h-4 w-4" />
+                <span>Find Courts</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2446,24 +2436,7 @@ const TennisMatchApp = () => {
       </div>
 
       {/* Match Cards */}
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Quick Actions Bar */}
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 mb-8 shadow-xl">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-white">
-              <h3 className="text-xl font-black mb-1">
-                Looking for a quick game?
-              </h3>
-              <p className="text-blue-100 font-medium">
-                3 players near you are ready to play now
-              </p>
-            </div>
-            <button className="w-full rounded-xl bg-white px-6 py-3 text-center font-bold text-blue-600 transition-all hover:scale-105 hover:shadow-lg sm:w-auto">
-              Find Players
-            </button>
-          </div>
-        </div>
-
+      <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8">
         <div className="mb-6">
           <input
             type="search"
@@ -4958,11 +4931,11 @@ const TennisMatchApp = () => {
             <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl">
               <span className="text-white text-3xl">🎾</span>
             </div>
-            <h2 className="text-3xl font-black text-gray-900 mb-2">
-              Welcome to Matchplay
+            <h2 className="text-2xl font-black text-gray-900 mb-2 sm:text-3xl">
+              Sign in to Matchplay
             </h2>
             <p className="text-gray-500 font-semibold">
-              Sign in to create and join matches
+              Create and join matches in your area
             </p>
           </div>
 
