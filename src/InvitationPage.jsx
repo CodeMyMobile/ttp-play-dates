@@ -1583,15 +1583,19 @@ function getActiveParticipants(match, preview) {
   const previewParticipants = Array.isArray(preview?.participants)
     ? preview.participants
     : [];
-  const participantSource = matchParticipants.length
-    ? matchParticipants
-    : previewParticipants;
+  const participantSource = [
+    ...matchParticipants,
+    ...previewParticipants,
+  ];
 
   const matchInvitees = Array.isArray(match?.invitees) ? match.invitees : [];
   const previewInvitees = Array.isArray(preview?.invitees)
     ? preview.invitees
     : [];
-  const inviteeSource = matchInvitees.length ? matchInvitees : previewInvitees;
+  const inviteeSource = [
+    ...matchInvitees,
+    ...previewInvitees,
+  ];
 
   if (!participantSource.length && !inviteeSource.length) {
     return [];
