@@ -1408,9 +1408,32 @@ function mapSignUpError(error) {
   const normalized = (error.data?.error || error.message || "")
     .toString()
     .toLowerCase();
+  const normalizedMessage = (error.data?.message || "")
+    .toString()
+    .toLowerCase();
+  const emailErrors = (() => {
+    const raw = error.data?.errors?.email;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    return [raw];
+  })()
+    .filter((msg) => typeof msg === "string")
+    .map((msg) => msg.toLowerCase());
 
-  if (status === 409 || normalized.includes("email_in_use")) {
-    return "That email is already in use. Try signing in instead.";
+  const hasDuplicateEmailHint = [
+    normalized,
+    normalizedMessage,
+    ...emailErrors,
+  ].some((value) =>
+    value
+      ? /email.*(already|taken|exists|in use)|already.*(account|registered)|account.*exists|user.*exists|duplicate.*email/.test(
+          value,
+        )
+      : false,
+  );
+
+  if (status === 409 || normalized.includes("email_in_use") || hasDuplicateEmailHint) {
+    return "Looks like you already have an account with that email. Try signing in instead.";
   }
   if (status === 422 || normalized.includes("validation")) {
     return (
