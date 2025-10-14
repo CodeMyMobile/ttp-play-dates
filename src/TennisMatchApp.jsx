@@ -63,7 +63,12 @@ import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
 import MatchDetailsModal from "./components/MatchDetailsModal";
 import LandingPage from "./pages/LandingPage.jsx";
-import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
+import {
+  formatPhoneNumber,
+  normalizePhoneValue,
+  formatPhoneDisplay,
+  getPhoneDigits,
+} from "./services/phone";
 import {
   ARCHIVE_FILTER_VALUE,
   MATCH_ARCHIVED_ERROR,
@@ -344,12 +349,95 @@ const TennisMatchApp = () => {
       skillLevel,
       dateOfBirth,
     }) => {
+      const trimmedName = name?.trim() ?? "";
+      const normalizedPhoneDigits = getPhoneDigits(phone);
+
+      const parseSignupError = (error) => {
+        const fieldErrors = {};
+        const assignFieldError = (field, value) => {
+          if (!field || !value) return;
+          const normalizedField = (() => {
+            switch (field) {
+              case "full_name":
+              case "name":
+                return "name";
+              case "phone":
+              case "mobile":
+                return "phone";
+              default:
+                return field;
+            }
+          })();
+          const message = Array.isArray(value) ? value.find(Boolean) : value;
+          if (message) {
+            fieldErrors[normalizedField] = message;
+          }
+        };
+
+        const data = error?.response?.data ?? error?.data ?? {};
+
+        if (error?.response?.data?.err?.constraint === "users_email_unique") {
+          assignFieldError("email", "An account with that email already exists.");
+        }
+
+        const possibleFieldSources = [data?.errors, data?.err?.errors];
+        possibleFieldSources.forEach((source) => {
+          if (!source) return;
+          if (Array.isArray(source)) {
+            source.forEach((entry) => {
+              if (!entry) return;
+              if (typeof entry === "string") {
+                assignFieldError("general", entry);
+                return;
+              }
+              const field = entry.field || entry.name || entry.path || entry.attribute;
+              const message =
+                entry.message || entry.msg || entry.error || entry.detail || entry.title;
+              if (field) {
+                assignFieldError(field, message || entry);
+              } else if (message) {
+                assignFieldError("general", message);
+              }
+            });
+          } else if (typeof source === "object") {
+            Object.entries(source).forEach(([field, value]) => {
+              if (!field) return;
+              assignFieldError(field, value);
+            });
+          }
+        });
+
+        const extractMessage = () => {
+          const candidates = [
+            data?.message,
+            data?.error,
+            data?.err?.message,
+            data?.err?.error,
+            data?.err?.detail,
+          ];
+
+          const firstFieldMessage = Object.values(fieldErrors).find(Boolean);
+          if (firstFieldMessage) candidates.push(firstFieldMessage);
+          candidates.push(error?.message);
+
+          return (
+            candidates.find((value) => typeof value === "string" && value.trim()) ||
+            "Signup failed. Please try again."
+          );
+        };
+
+        return {
+          message: extractMessage(),
+          fieldErrors,
+        };
+      };
+
       try {
         const response = await signup({
           email,
           password,
-          name,
-          phone,
+          name: trimmedName,
+          phone: normalizedPhoneDigits,
         });
         if (response?.access_token) {
           localStorage.setItem("authToken", response.access_token);
@@ -358,26 +446,27 @@ const TennisMatchApp = () => {
           localStorage.setItem("refreshToken", response.refresh_token);
         }
 
-        const normalizedPhone = normalizePhoneValue(phone);
+        const normalizedPhone = normalizedPhoneDigits;
         const signupToken =
           response?.access_token || localStorage.getItem("authToken") || "";
         if (signupToken && response?.user_id) {
           await updatePlayerPersonalDetails({
             player: signupToken,
             id: response.user_id,
-            date_of_birth: dateOfBirth || null,
-            usta_rating: 0,
-            uta_rating: 0,
-            fullName: name,
-            mobile: normalizedPhone || null,
-            about_me: null,
+            ...(dateOfBirth
+              ? {
+                  date_of_birth: dateOfBirth,
+                }
+              : {}),
+            fullName: trimmedName || null,
+            ...(normalizedPhone ? { mobile: normalizedPhone } : {}),
           });
         }
 
         const newUser = buildLocalUser({
           id: response?.user_id,
           type: response?.user_type,
-          name,
+          name: trimmedName,
           email,
           phone,
           skillLevel,
@@ -388,15 +477,7 @@ const TennisMatchApp = () => {
         displayToast(`Welcome to Matchplay, ${safeFirst}! 🎾`, "success");
         return newUser;
       } catch (error) {
-        const fieldErrors = {};
-        if (error?.response?.data?.err?.constraint === "users_email_unique") {
-          fieldErrors.email = "Email already exists";
-        }
-        const message = fieldErrors.email
-          ? "An account with that email already exists."
-          : error?.response?.data?.message ||
-            error?.message ||
-            "Signup failed. Please try again.";
+        const { message, fieldErrors } = parseSignupError(error);
         const normalizedError = new Error(message);
         normalizedError.fieldErrors = fieldErrors;
         normalizedError.cause = error;

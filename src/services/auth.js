@@ -1,5 +1,5 @@
 import api, { unwrap } from "./api";
-import { normalizePhoneValue } from "./phone";
+import { getPhoneDigits } from "./phone";
 
 const AUTH_BASE =
   import.meta.env.VITE_API_URL ||
@@ -22,7 +22,7 @@ export const login = async (email, password) => {
 };
 
 export const signup = async ({ email, password, name, phone, user_type = 2 }) => {
-  const normalizedPhone = normalizePhoneValue(phone);
+  const normalizedPhone = getPhoneDigits(phone);
 
   const payload = {
     email,
