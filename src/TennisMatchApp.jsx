@@ -62,6 +62,7 @@ import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
 import MatchDetailsModal from "./components/MatchDetailsModal";
+import LandingPage from "./pages/LandingPage.jsx";
 import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
 import {
   ARCHIVE_FILTER_VALUE,
@@ -154,6 +155,38 @@ const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
 
   if (!Number.isFinite(distance)) return null;
   return Math.round(distance * 10) / 10;
+};
+
+const createInitials = (name, fallbackEmail) => {
+  const source = (name || fallbackEmail || "").trim();
+  if (!source) return "MP";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "MP";
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const buildLocalUser = ({
+  id,
+  type,
+  name,
+  email,
+  phone,
+  skillLevel,
+}) => {
+  const safeName = (name || email || "Matchplay Player").trim();
+  return {
+    id,
+    type,
+    name: safeName,
+    email,
+    phone: phone || "",
+    skillLevel: skillLevel || "",
+    avatar: createInitials(safeName, email),
+    rating: 4.2,
+  };
 };
 
 const TennisMatchApp = () => {
@@ -301,6 +334,162 @@ const TennisMatchApp = () => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
   }, []);
+
+  const performSignup = useCallback(
+    async ({
+      name,
+      email,
+      phone,
+      password,
+      skillLevel,
+      dateOfBirth,
+    }) => {
+      try {
+        const response = await signup({
+          email,
+          password,
+          name,
+          phone,
+        });
+        if (response?.access_token) {
+          localStorage.setItem("authToken", response.access_token);
+        }
+        if (response?.refresh_token) {
+          localStorage.setItem("refreshToken", response.refresh_token);
+        }
+
+        const digitsOnly = (phone || "").replace(/\D/g, "");
+        const signupToken =
+          response?.access_token || localStorage.getItem("authToken") || "";
+        if (signupToken && response?.user_id) {
+          await updatePlayerPersonalDetails({
+            player: signupToken,
+            id: response.user_id,
+            date_of_birth: dateOfBirth || null,
+            usta_rating: 0,
+            uta_rating: 0,
+            fullName: name,
+            mobile: digitsOnly || null,
+            about_me: null,
+          });
+        }
+
+        const newUser = buildLocalUser({
+          id: response?.user_id,
+          type: response?.user_type,
+          name,
+          email,
+          phone,
+          skillLevel,
+        });
+        localStorage.setItem("user", JSON.stringify(newUser));
+        setCurrentUser(newUser);
+        const safeFirst = (newUser.name || "").split(" ")[0] || "Player";
+        displayToast(`Welcome to Matchplay, ${safeFirst}! 🎾`, "success");
+        return newUser;
+      } catch (error) {
+        const fieldErrors = {};
+        if (error?.response?.data?.err?.constraint === "users_email_unique") {
+          fieldErrors.email = "Email already exists";
+        }
+        const message = fieldErrors.email
+          ? "An account with that email already exists."
+          : error?.response?.data?.message ||
+            error?.message ||
+            "Signup failed. Please try again.";
+        const normalizedError = new Error(message);
+        normalizedError.fieldErrors = fieldErrors;
+        normalizedError.cause = error;
+        throw normalizedError;
+      }
+    },
+    [displayToast, setCurrentUser],
+  );
+
+  const performLogin = useCallback(
+    async ({ email, password }) => {
+      try {
+        const response = await login(email, password);
+        const {
+          access_token,
+          refresh_token,
+          profile,
+          user_id,
+          user_type,
+          token,
+          user: userFromApi,
+        } = response || {};
+
+        let user;
+
+        if (access_token) {
+          localStorage.setItem("authToken", access_token);
+          if (refresh_token) {
+            localStorage.setItem("refreshToken", refresh_token);
+          }
+          const name = profile?.full_name || email;
+          user = buildLocalUser({
+            id: user_id,
+            type: user_type,
+            name,
+            email,
+            phone: profile?.mobile || profile?.phone || "",
+            skillLevel: profile?.usta_rating || profile?.skill_level || "",
+          });
+        } else {
+          if (token) {
+            localStorage.setItem("authToken", token);
+          }
+          const fallbackName =
+            (userFromApi?.full_name || userFromApi?.name || email || "").trim();
+          const baseUser = buildLocalUser({
+            id: userFromApi?.id,
+            type: userFromApi?.user_type,
+            name: fallbackName || email,
+            email: userFromApi?.email || email,
+            phone: userFromApi?.phone,
+            skillLevel:
+              userFromApi?.usta_rating ||
+              userFromApi?.skillLevel ||
+              userFromApi?.skill_level ||
+              "",
+          });
+          user = userFromApi ? { ...userFromApi, ...baseUser } : baseUser;
+        }
+
+        localStorage.setItem("user", JSON.stringify(user));
+        setCurrentUser(user);
+        const safeFirst = (user.name || "").split(" ")[0] || "Player";
+        displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
+        return user;
+      } catch (error) {
+        const statusCode = Number(error?.status ?? error?.response?.status);
+        let message;
+        if ([400, 401, 403].includes(statusCode)) {
+          message =
+            "That email or password doesn't match our records. Double-check your details or reset your password.";
+        } else if (statusCode === 422) {
+          message =
+            error?.response?.data?.message ||
+            error?.data?.message ||
+            "Please double-check your email and password, then try again.";
+        } else if (Number.isFinite(statusCode) && statusCode >= 500) {
+          message =
+            "We're having trouble signing you in right now. Please try again later.";
+        } else {
+          message =
+            error?.response?.data?.message ||
+            error?.data?.message ||
+            error?.message ||
+            "We couldn't sign you in. Please try again.";
+        }
+        const normalizedError = new Error(message);
+        normalizedError.cause = error;
+        throw normalizedError;
+      }
+    },
+    [displayToast, setCurrentUser],
+  );
 
   const fetchPendingInvites = useCallback(async () => {
     if (!currentUser) {
@@ -3563,65 +3752,23 @@ const TennisMatchApp = () => {
 
     const completeSignup = async (pwd) => {
       try {
-        const res = await signup({
-          email: formData.email,
-          password: pwd ?? "0000",
-          name: formData.name,
-          phone: formData.phone,
-        });
-        // Ensure tokens are persisted (services already store them; this is defensive)
-        if (res?.access_token) localStorage.setItem("authToken", res.access_token);
-        if (res?.refresh_token) localStorage.setItem("refreshToken", res.refresh_token);
-        // Update profile details using access token
-        const digits = (formData.phone || "").replace(/\D/g, "");
-        const signupToken =
-          res?.access_token || localStorage.getItem("authToken") || "";
-        if (signupToken && res?.user_id) {
-          await updatePlayerPersonalDetails({
-            player: signupToken,
-            id: res.user_id,
-            date_of_birth: formData.dateOfBirth || null,
-            usta_rating: 0,
-            uta_rating: 0,
-            fullName: formData.name,
-            mobile: digits || null,
-            about_me: null,
-          });
-        }
-        const newUser = {
-          id: res?.user_id,
-          type: res?.user_type,
+        await performSignup({
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
+          password: pwd ?? "matchplay",
           skillLevel: formData.skillLevel,
-          avatar: formData.name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase(),
-          rating: 4.2,
-        };
-        localStorage.setItem("user", JSON.stringify(newUser));
-        setCurrentUser(newUser);
+          dateOfBirth: formData.dateOfBirth,
+        });
         setShowSignInModal(false);
         setSignInStep("initial");
         setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
         setPassword("");
         setSignupErrors({});
-        displayToast(
-          `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
-          "success",
-        );
-      } catch (err) {
-        const data = err?.response?.data;
-        if (data?.err?.constraint === "users_email_unique") {
-          setSignupErrors((prev) => ({ ...prev, email: "Email Already Exists" }));
-          displayToast("Email Already Exists", "error");
-        } else {
-          console.error(err);
-          displayToast("Signup failed", "error");
-        }
+      } catch (error) {
+        const fieldErrors = error?.fieldErrors || {};
+        setSignupErrors(fieldErrors);
+        displayToast(error?.message || "Signup failed", "error");
       }
     };
 
@@ -3633,7 +3780,7 @@ const TennisMatchApp = () => {
             <button
               onClick={() => {
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+                setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -3643,7 +3790,7 @@ const TennisMatchApp = () => {
               onClick={() => {
                 setShowSignInModal(false);
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+                setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -3737,105 +3884,21 @@ const TennisMatchApp = () => {
 
     // Email/password login step
     if (signInStep === "login") {
-      const getLoginErrorMessage = (error) => {
-        if (!error) {
-          return "We couldn't sign you in. Please try again.";
-        }
-        const statusCode = Number(error.status ?? error.response?.status);
-        if ([400, 401, 403].includes(statusCode)) {
-          return "That email or password doesn't match our records. Double-check your details or reset your password.";
-        }
-        if (statusCode === 422) {
-          return (
-            error.response?.data?.message ||
-            error.data?.message ||
-            "Please double-check your email and password, then try again."
-          );
-        }
-        if (Number.isFinite(statusCode) && statusCode >= 500) {
-          return "We're having trouble signing you in right now. Please try again later.";
-        }
-        const fallbackMessage =
-          error.response?.data?.message ||
-          error.data?.message ||
-          error.message;
-        if (fallbackMessage && !["Error", "API_ERROR"].includes(fallbackMessage)) {
-          return fallbackMessage;
-        }
-        return "We couldn't sign you in. Please try again.";
-      };
-
       const handleLogin = () => {
-        login(formData.email, password)
-          .then((res) => {
-            // Support both payload shapes:
-            // 1) { access_token, refresh_token, profile, user_id, user_type }
-            // 2) { token, user: { ... } }
-            const {
-              access_token,
-              refresh_token,
-              profile,
-              user_id,
-              user_type,
-              token,
-              user: userFromApi,
-            } = res || {};
-
-            let user;
-
-            if (access_token) {
-              // Newer shape with profile & tokens
-              localStorage.setItem("authToken", access_token);
-              if (refresh_token) localStorage.setItem("refreshToken", refresh_token);
-
-              const name = profile?.full_name || formData.email;
-              user = {
-                id: user_id,
-                type: user_type,
-                name,
-                email: formData.email,
-                avatar: name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase(),
-                skillLevel: profile?.usta_rating || "",
-              };
-            } else {
-              // Legacy/alternative shape with single token + user object
-              if (token) localStorage.setItem("authToken", token);
-
-              const fallbackName = (userFromApi?.name || formData.email || "").trim();
-              user =
-                userFromApi ||
-                {
-                  name: fallbackName,
-                  email: formData.email,
-                  avatar: fallbackName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase(),
-                };
-            }
-
-            // Persist user for session restore
-            localStorage.setItem("user", JSON.stringify(user));
-
-            setCurrentUser(user);
+        performLogin({ email: formData.email, password })
+          .then(() => {
             setShowSignInModal(false);
             setSignInStep("initial");
-            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
             setPassword("");
-
-            const safeFirst = (user.name || "").split(" ")[0] || "Player";
-            displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
           })
-          .catch((err) => {
-            displayToast(getLoginErrorMessage(err), "error");
+          .catch((error) => {
+            displayToast(
+              error?.message || "We couldn't sign you in. Please try again.",
+              "error",
+            );
           });
       };
-
 
       return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -3969,7 +4032,7 @@ const TennisMatchApp = () => {
             <button
               onClick={() => {
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -3979,7 +4042,7 @@ const TennisMatchApp = () => {
               onClick={() => {
                 setShowSignInModal(false);
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -4135,7 +4198,7 @@ const TennisMatchApp = () => {
             onClick={() => {
               setShowSignInModal(false);
               setSignInStep("initial");
-              setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+              setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
             }}
             className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
@@ -4225,7 +4288,7 @@ const TennisMatchApp = () => {
             onClick={() => {
               setShowSignInModal(false);
               setSignInStep("initial");
-              setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+              setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
             }}
             className="w-full text-gray-500 text-sm hover:text-gray-700 transition-colors mt-3 font-bold"
           >
@@ -4709,45 +4772,62 @@ const TennisMatchApp = () => {
     }
   `;
 
+  const shouldShowLanding = !currentUser && currentScreen === "browse";
+
   return (
     <div className="min-h-screen bg-gray-50">
       <style>{styles}</style>
 
-      <AppHeader
-        currentScreen={currentScreen}
-        currentUser={currentUser}
-        showPreview={showPreview}
-        goToInvites={goToInvites}
-        goToBrowse={() => goToBrowse()}
-        onOpenProfile={() => setShowProfileManager(true)}
-        onLogout={handleLogout}
-        onOpenSignIn={() => setShowSignInModal(true)}
-        setShowPreview={setShowPreview}
-      />
-
-      {currentScreen === "browse" && BrowseScreen()}
-      {currentScreen === "create" && CreateMatchScreen()}
-      {currentScreen === "invite" && (
-        <InviteScreen
-          matchId={inviteMatchId}
-          currentUser={currentUser}
-          matchData={matchData}
-          setMatchData={setMatchData}
-          selectedPlayers={selectedPlayers}
-          setSelectedPlayers={setSelectedPlayers}
-          existingPlayerIds={existingPlayerIds}
-          setExistingPlayerIds={setExistingPlayerIds}
-          onToast={displayToast}
-          onDone={() => {
-            setCurrentScreen("browse");
-            setInviteMatchId(null);
-            fetchMatches();
-          }}
-          formatDateTime={formatDateTime}
+      {shouldShowLanding ? (
+        <LandingPage
+          onSignup={(payload) =>
+            performSignup({
+              ...payload,
+              dateOfBirth: null,
+            })
+          }
+          onLogin={performLogin}
+          onForgotPassword={(email) => forgotPassword(email)}
         />
-      )}
-      {currentScreen === "invites" && (
-        <InvitesList onInviteResponse={handleInviteResponse} />
+      ) : (
+        <>
+          <AppHeader
+            currentScreen={currentScreen}
+            currentUser={currentUser}
+            showPreview={showPreview}
+            goToInvites={goToInvites}
+            goToBrowse={() => goToBrowse()}
+            onOpenProfile={() => setShowProfileManager(true)}
+            onLogout={handleLogout}
+            onOpenSignIn={() => setShowSignInModal(true)}
+            setShowPreview={setShowPreview}
+          />
+
+          {currentScreen === "browse" && BrowseScreen()}
+          {currentScreen === "create" && CreateMatchScreen()}
+          {currentScreen === "invite" && (
+            <InviteScreen
+              matchId={inviteMatchId}
+              currentUser={currentUser}
+              matchData={matchData}
+              setMatchData={setMatchData}
+              selectedPlayers={selectedPlayers}
+              setSelectedPlayers={setSelectedPlayers}
+              existingPlayerIds={existingPlayerIds}
+              setExistingPlayerIds={setExistingPlayerIds}
+              onToast={displayToast}
+              onDone={() => {
+                setCurrentScreen("browse");
+                setInviteMatchId(null);
+                fetchMatches();
+              }}
+              formatDateTime={formatDateTime}
+            />
+          )}
+          {currentScreen === "invites" && (
+            <InvitesList onInviteResponse={handleInviteResponse} />
+          )}
+        </>
       )}
 
       {SignInModal()}
