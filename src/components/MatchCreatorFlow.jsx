@@ -206,7 +206,7 @@ const quickDateOptions = () => {
     return {
       value: `offset-${offset}`,
       label: d.toLocaleDateString("en-US", { weekday: "long" }),
-      date: d.toISOString().slice(0, 10),
+      date: formatLocalDate(d),
     };
   };
   return [makeOption(0), makeOption(1), makeOption(2), makeOption(3)];
@@ -721,9 +721,6 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   onBlur={(e) => handleTimeChange(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                 />
-                <p className="text-xs text-gray-500 mt-2">
-                  Choose a start time between 6:00 AM and 10:00 PM.
-                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">DURATION</label>
