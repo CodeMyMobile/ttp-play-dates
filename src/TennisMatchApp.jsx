@@ -62,7 +62,13 @@ import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
 import MatchDetailsModal from "./components/MatchDetailsModal";
-import { formatPhoneNumber, normalizePhoneValue, formatPhoneDisplay } from "./services/phone";
+import LandingPage from "./pages/LandingPage.jsx";
+import {
+  formatPhoneNumber,
+  normalizePhoneValue,
+  formatPhoneDisplay,
+  getPhoneDigits,
+} from "./services/phone";
 import {
   ARCHIVE_FILTER_VALUE,
   MATCH_ARCHIVED_ERROR,
@@ -154,6 +160,142 @@ const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
 
   if (!Number.isFinite(distance)) return null;
   return Math.round(distance * 10) / 10;
+};
+
+const createInitials = (name, fallbackEmail) => {
+  const source = (name || fallbackEmail || "").trim();
+  if (!source) return "MP";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "MP";
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const buildLocalUser = ({
+  id,
+  type,
+  name,
+  email,
+  phone,
+  skillLevel,
+}) => {
+  const safeName = (name || email || "Matchplay Player").trim();
+  return {
+    id,
+    type,
+    name: safeName,
+    email,
+    phone: phone || "",
+    skillLevel: skillLevel || "",
+    avatar: createInitials(safeName, email),
+    rating: 4.2,
+  };
+};
+
+const resolveAuthSession = (data = {}, fallback = {}) => {
+  const normalizedData = data && typeof data === "object" ? data : {};
+  const fallbackData = fallback && typeof fallback === "object" ? fallback : {};
+
+  const pickString = (...values) => {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+    }
+    return "";
+  };
+
+  const profile =
+    normalizedData?.profile && typeof normalizedData.profile === "object"
+      ? normalizedData.profile
+      : null;
+  const userFromApi =
+    normalizedData?.user && typeof normalizedData.user === "object"
+      ? normalizedData.user
+      : null;
+
+  const deriveId = () => {
+    const candidates = [
+      profile?.id,
+      userFromApi?.id,
+      userFromApi?.user_id,
+      normalizedData?.user_id,
+      fallbackData?.id,
+    ];
+    for (const candidate of candidates) {
+      if (candidate === undefined || candidate === null) continue;
+      if (typeof candidate === "number") return candidate;
+      if (typeof candidate === "string" && candidate.trim()) return candidate;
+    }
+    return null;
+  };
+
+  const derivedId = deriveId();
+  const derivedType =
+    normalizedData?.user_type ??
+    userFromApi?.user_type ??
+    fallbackData?.type ??
+    fallbackData?.user_type ??
+    null;
+
+  const derivedName = pickString(
+    profile?.full_name,
+    userFromApi?.full_name,
+    userFromApi?.name,
+    fallbackData?.name,
+    fallbackData?.email,
+  );
+
+  const derivedEmail = pickString(
+    profile?.email,
+    userFromApi?.email,
+    fallbackData?.email,
+  );
+
+  const derivedPhone = pickString(
+    profile?.mobile,
+    profile?.phone,
+    userFromApi?.mobile,
+    userFromApi?.phone,
+    fallbackData?.phone,
+  );
+
+  const derivedSkill = pickString(
+    profile?.usta_rating,
+    profile?.skill_level,
+    profile?.skillLevel,
+    userFromApi?.usta_rating,
+    userFromApi?.skill_level,
+    userFromApi?.skillLevel,
+    fallbackData?.skillLevel,
+  );
+
+  const user = buildLocalUser({
+    id: derivedId,
+    type: derivedType,
+    name: derivedName,
+    email: derivedEmail,
+    phone: derivedPhone,
+    skillLevel: derivedSkill,
+  });
+
+  return {
+    token: pickString(
+      normalizedData?.access_token,
+      normalizedData?.token,
+      fallbackData?.accessToken,
+      fallbackData?.token,
+    ),
+    refreshToken: pickString(
+      normalizedData?.refresh_token,
+      fallbackData?.refreshToken,
+    ),
+    user,
+    userId: derivedId,
+    userType: derivedType,
+  };
 };
 
 const TennisMatchApp = () => {
@@ -301,6 +443,340 @@ const TennisMatchApp = () => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
   }, []);
+
+  const applyAuthSession = useCallback(
+    (session, fallback = {}) => {
+      if (!session) return null;
+      const { token, refreshToken, user } = session;
+      const safeToken = typeof token === "string" ? token.trim() : "";
+      const safeRefresh = typeof refreshToken === "string" ? refreshToken.trim() : "";
+      const fallbackData = fallback && typeof fallback === "object" ? fallback : {};
+
+      const safeSetItem = (key, value) => {
+        if (!value) return;
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          // ignore storage errors (e.g., private mode)
+        }
+      };
+
+      if (safeToken) {
+        safeSetItem("authToken", safeToken);
+      }
+      if (safeRefresh) {
+        safeSetItem("refreshToken", safeRefresh);
+      }
+
+      if (!safeToken) return null;
+
+      const nextUser =
+        user ||
+        buildLocalUser({
+          id: fallbackData?.id ?? null,
+          type: fallbackData?.user_type ?? fallbackData?.type ?? null,
+          name: fallbackData?.name ?? fallbackData?.email ?? "",
+          email: fallbackData?.email ?? "",
+          phone: fallbackData?.phone ?? "",
+          skillLevel: fallbackData?.skillLevel ?? "",
+        });
+
+      if (nextUser) {
+        try {
+          localStorage.setItem("user", JSON.stringify(nextUser));
+        } catch {
+          // ignore storage errors
+        }
+        setCurrentUser(nextUser);
+      }
+
+      return nextUser;
+    },
+    [setCurrentUser],
+  );
+
+  const performSignup = useCallback(
+    async ({
+      name,
+      email,
+      phone,
+      password,
+      skillLevel,
+      dateOfBirth,
+    }) => {
+      const trimmedName = name?.trim() ?? "";
+      const normalizedPhoneDigits = getPhoneDigits(phone);
+
+      const parseSignupError = (error) => {
+        const fieldErrors = {};
+        const assignFieldError = (field, value) => {
+          if (!field || !value) return;
+          const normalizedField = (() => {
+            switch (field) {
+              case "full_name":
+              case "name":
+                return "name";
+              case "phone":
+              case "mobile":
+                return "phone";
+              default:
+                return field;
+            }
+          })();
+          const message = Array.isArray(value) ? value.find(Boolean) : value;
+          if (message) {
+            fieldErrors[normalizedField] = message;
+          }
+        };
+
+        const data = error?.response?.data ?? error?.data ?? {};
+
+        if (error?.response?.data?.err?.constraint === "users_email_unique") {
+          assignFieldError("email", "An account with that email already exists.");
+        }
+
+        const possibleFieldSources = [data?.errors, data?.err?.errors];
+        possibleFieldSources.forEach((source) => {
+          if (!source) return;
+          if (Array.isArray(source)) {
+            source.forEach((entry) => {
+              if (!entry) return;
+              if (typeof entry === "string") {
+                assignFieldError("general", entry);
+                return;
+              }
+              const field = entry.field || entry.name || entry.path || entry.attribute;
+              const message =
+                entry.message || entry.msg || entry.error || entry.detail || entry.title;
+              if (field) {
+                assignFieldError(field, message || entry);
+              } else if (message) {
+                assignFieldError("general", message);
+              }
+            });
+          } else if (typeof source === "object") {
+            Object.entries(source).forEach(([field, value]) => {
+              if (!field) return;
+              assignFieldError(field, value);
+            });
+          }
+        });
+
+        const extractMessage = () => {
+          const candidates = [
+            data?.message,
+            data?.error,
+            data?.err?.message,
+            data?.err?.error,
+            data?.err?.detail,
+          ];
+
+          const firstFieldMessage = Object.values(fieldErrors).find(Boolean);
+          if (firstFieldMessage) candidates.push(firstFieldMessage);
+          candidates.push(error?.message);
+
+          return (
+            candidates.find((value) => typeof value === "string" && value.trim()) ||
+            "Signup failed. Please try again."
+          );
+        };
+
+        return {
+          message: extractMessage(),
+          fieldErrors,
+        };
+      };
+
+      try {
+        const response = await signup({
+          email,
+          password,
+          name: trimmedName,
+          phone: normalizedPhoneDigits,
+        });
+
+        const fallbackDetails = {
+          email,
+          name: trimmedName,
+          phone: normalizedPhoneDigits,
+          skillLevel,
+          id: response?.user_id ?? null,
+        };
+
+        let authPayload = response;
+        let session = resolveAuthSession(authPayload, fallbackDetails);
+        let persistedUser = applyAuthSession(session, fallbackDetails);
+
+        if (!session.token) {
+          try {
+            const fallbackLogin = await login(email, password);
+            authPayload = { ...authPayload, ...fallbackLogin };
+            session = resolveAuthSession(authPayload, {
+              ...fallbackDetails,
+              id: fallbackLogin?.user_id ?? fallbackDetails.id,
+            });
+            persistedUser = applyAuthSession(session, fallbackDetails) || persistedUser;
+          } catch (fallbackError) {
+            console.error("Automatic login after signup failed", fallbackError);
+          }
+        }
+
+        const signupToken =
+          (typeof session.token === "string" ? session.token.trim() : "") ||
+          localStorage.getItem("authToken") ||
+          "";
+
+        if (!signupToken) {
+          throw new Error(
+            "We created your account but couldn't start your session automatically. Please sign in with your new credentials.",
+          );
+        }
+
+        const userId =
+          session.userId ??
+          authPayload?.user_id ??
+          response?.user_id ??
+          persistedUser?.id ??
+          null;
+
+        const normalizedPhone = normalizedPhoneDigits;
+
+        let profileUpdateError = null;
+        if (userId) {
+          const attemptProfileUpdate = async (tokenForRequest) =>
+            updatePlayerPersonalDetails({
+              player: tokenForRequest,
+              id: userId,
+              ...(dateOfBirth
+                ? {
+                    date_of_birth: dateOfBirth,
+                  }
+                : {}),
+              fullName: trimmedName || null,
+              ...(normalizedPhone ? { mobile: normalizedPhone } : {}),
+            });
+
+          try {
+            await attemptProfileUpdate(signupToken);
+          } catch (profileError) {
+            const status = Number(profileError?.status ?? profileError?.response?.status);
+            const message =
+              profileError?.response?.data?.message ||
+              profileError?.response?.data?.error ||
+              profileError?.data?.message ||
+              profileError?.message ||
+              "";
+            const tokenIssue =
+              [400, 401, 403].includes(status) || /token/i.test(message || "");
+
+            if (tokenIssue) {
+              try {
+                const retryLogin = await login(email, password);
+                authPayload = { ...authPayload, ...retryLogin };
+                session = resolveAuthSession(authPayload, {
+                  ...fallbackDetails,
+                  id:
+                    retryLogin?.user_id ??
+                    session.userId ??
+                    response?.user_id ??
+                    userId,
+                });
+                persistedUser = applyAuthSession(session, fallbackDetails) || persistedUser;
+                const retryToken =
+                  (typeof session.token === "string" ? session.token.trim() : "") ||
+                  localStorage.getItem("authToken") ||
+                  "";
+                if (retryToken) {
+                  await attemptProfileUpdate(retryToken);
+                } else {
+                  profileUpdateError = profileError;
+                }
+              } catch (retryError) {
+                console.error("Retrying profile update after login failed", retryError);
+                profileUpdateError = profileError;
+              }
+            } else {
+              profileUpdateError = profileError;
+            }
+          }
+        }
+
+        if (profileUpdateError) {
+          console.error("Failed to update profile after signup", profileUpdateError);
+        }
+
+        const storedPhone = normalizedPhoneDigits || phone;
+        const finalUser = buildLocalUser({
+          id: userId,
+          type: authPayload?.user_type ?? session.userType ?? persistedUser?.type,
+          name: trimmedName,
+          email,
+          phone: storedPhone,
+          skillLevel,
+        });
+        try {
+          localStorage.setItem("user", JSON.stringify(finalUser));
+        } catch {
+          // ignore storage errors
+        }
+        setCurrentUser(finalUser);
+        const safeFirst = (finalUser.name || "").split(" ")[0] || "Player";
+        displayToast(`Welcome to Matchplay, ${safeFirst}! 🎾`, "success");
+        return finalUser;
+      } catch (error) {
+        const { message, fieldErrors } = parseSignupError(error);
+        const normalizedError = new Error(message);
+        normalizedError.fieldErrors = fieldErrors;
+        normalizedError.cause = error;
+        throw normalizedError;
+      }
+    },
+    [applyAuthSession, displayToast, setCurrentUser],
+  );
+
+  const performLogin = useCallback(
+    async ({ email, password }) => {
+      try {
+        const response = await login(email, password);
+        const session = resolveAuthSession(response, { email });
+        const user = applyAuthSession(session, { email });
+        if (!session.token || !user) {
+          throw new Error(
+            "We couldn't start your session. Please try signing in again.",
+          );
+        }
+        const safeFirst = (user.name || "").split(" ")[0] || "Player";
+        displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
+        return user;
+      } catch (error) {
+        const statusCode = Number(error?.status ?? error?.response?.status);
+        let message;
+        if ([400, 401, 403].includes(statusCode)) {
+          message =
+            "That email or password doesn't match our records. Double-check your details or reset your password.";
+        } else if (statusCode === 422) {
+          message =
+            error?.response?.data?.message ||
+            error?.data?.message ||
+            "Please double-check your email and password, then try again.";
+        } else if (Number.isFinite(statusCode) && statusCode >= 500) {
+          message =
+            "We're having trouble signing you in right now. Please try again later.";
+        } else if (error?.message) {
+          message = error.message;
+        } else {
+          message =
+            error?.response?.data?.message ||
+            error?.data?.message ||
+            "We couldn't sign you in. Please try again.";
+        }
+        const normalizedError = new Error(message);
+        normalizedError.cause = error;
+        throw normalizedError;
+      }
+    },
+    [applyAuthSession, displayToast],
+  );
 
   const fetchPendingInvites = useCallback(async () => {
     if (!currentUser) {
@@ -3563,65 +4039,23 @@ const TennisMatchApp = () => {
 
     const completeSignup = async (pwd) => {
       try {
-        const res = await signup({
-          email: formData.email,
-          password: pwd ?? "0000",
-          name: formData.name,
-          phone: formData.phone,
-        });
-        // Ensure tokens are persisted (services already store them; this is defensive)
-        if (res?.access_token) localStorage.setItem("authToken", res.access_token);
-        if (res?.refresh_token) localStorage.setItem("refreshToken", res.refresh_token);
-        // Update profile details using access token
-        const digits = (formData.phone || "").replace(/\D/g, "");
-        const signupToken =
-          res?.access_token || localStorage.getItem("authToken") || "";
-        if (signupToken && res?.user_id) {
-          await updatePlayerPersonalDetails({
-            player: signupToken,
-            id: res.user_id,
-            date_of_birth: formData.dateOfBirth || null,
-            usta_rating: 0,
-            uta_rating: 0,
-            fullName: formData.name,
-            mobile: digits || null,
-            about_me: null,
-          });
-        }
-        const newUser = {
-          id: res?.user_id,
-          type: res?.user_type,
+        await performSignup({
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
+          password: pwd ?? "matchplay",
           skillLevel: formData.skillLevel,
-          avatar: formData.name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase(),
-          rating: 4.2,
-        };
-        localStorage.setItem("user", JSON.stringify(newUser));
-        setCurrentUser(newUser);
+          dateOfBirth: formData.dateOfBirth,
+        });
         setShowSignInModal(false);
         setSignInStep("initial");
         setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
         setPassword("");
         setSignupErrors({});
-        displayToast(
-          `Welcome to Matchplay, ${formData.name.split(" ")[0]}! 🎾`,
-          "success",
-        );
-      } catch (err) {
-        const data = err?.response?.data;
-        if (data?.err?.constraint === "users_email_unique") {
-          setSignupErrors((prev) => ({ ...prev, email: "Email Already Exists" }));
-          displayToast("Email Already Exists", "error");
-        } else {
-          console.error(err);
-          displayToast("Signup failed", "error");
-        }
+      } catch (error) {
+        const fieldErrors = error?.fieldErrors || {};
+        setSignupErrors(fieldErrors);
+        displayToast(error?.message || "Signup failed", "error");
       }
     };
 
@@ -3633,7 +4067,7 @@ const TennisMatchApp = () => {
             <button
               onClick={() => {
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+                setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -3643,7 +4077,7 @@ const TennisMatchApp = () => {
               onClick={() => {
                 setShowSignInModal(false);
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+                setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -3737,105 +4171,21 @@ const TennisMatchApp = () => {
 
     // Email/password login step
     if (signInStep === "login") {
-      const getLoginErrorMessage = (error) => {
-        if (!error) {
-          return "We couldn't sign you in. Please try again.";
-        }
-        const statusCode = Number(error.status ?? error.response?.status);
-        if ([400, 401, 403].includes(statusCode)) {
-          return "That email or password doesn't match our records. Double-check your details or reset your password.";
-        }
-        if (statusCode === 422) {
-          return (
-            error.response?.data?.message ||
-            error.data?.message ||
-            "Please double-check your email and password, then try again."
-          );
-        }
-        if (Number.isFinite(statusCode) && statusCode >= 500) {
-          return "We're having trouble signing you in right now. Please try again later.";
-        }
-        const fallbackMessage =
-          error.response?.data?.message ||
-          error.data?.message ||
-          error.message;
-        if (fallbackMessage && !["Error", "API_ERROR"].includes(fallbackMessage)) {
-          return fallbackMessage;
-        }
-        return "We couldn't sign you in. Please try again.";
-      };
-
       const handleLogin = () => {
-        login(formData.email, password)
-          .then((res) => {
-            // Support both payload shapes:
-            // 1) { access_token, refresh_token, profile, user_id, user_type }
-            // 2) { token, user: { ... } }
-            const {
-              access_token,
-              refresh_token,
-              profile,
-              user_id,
-              user_type,
-              token,
-              user: userFromApi,
-            } = res || {};
-
-            let user;
-
-            if (access_token) {
-              // Newer shape with profile & tokens
-              localStorage.setItem("authToken", access_token);
-              if (refresh_token) localStorage.setItem("refreshToken", refresh_token);
-
-              const name = profile?.full_name || formData.email;
-              user = {
-                id: user_id,
-                type: user_type,
-                name,
-                email: formData.email,
-                avatar: name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase(),
-                skillLevel: profile?.usta_rating || "",
-              };
-            } else {
-              // Legacy/alternative shape with single token + user object
-              if (token) localStorage.setItem("authToken", token);
-
-              const fallbackName = (userFromApi?.name || formData.email || "").trim();
-              user =
-                userFromApi ||
-                {
-                  name: fallbackName,
-                  email: formData.email,
-                  avatar: fallbackName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase(),
-                };
-            }
-
-            // Persist user for session restore
-            localStorage.setItem("user", JSON.stringify(user));
-
-            setCurrentUser(user);
+        performLogin({ email: formData.email, password })
+          .then(() => {
             setShowSignInModal(false);
             setSignInStep("initial");
-            setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
             setPassword("");
-
-            const safeFirst = (user.name || "").split(" ")[0] || "Player";
-            displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
           })
-          .catch((err) => {
-            displayToast(getLoginErrorMessage(err), "error");
+          .catch((error) => {
+            displayToast(
+              error?.message || "We couldn't sign you in. Please try again.",
+              "error",
+            );
           });
       };
-
 
       return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -3969,7 +4319,7 @@ const TennisMatchApp = () => {
             <button
               onClick={() => {
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -3979,7 +4329,7 @@ const TennisMatchApp = () => {
               onClick={() => {
                 setShowSignInModal(false);
                 setSignInStep("initial");
-                setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+            setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
               }}
               className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
             >
@@ -4135,7 +4485,7 @@ const TennisMatchApp = () => {
             onClick={() => {
               setShowSignInModal(false);
               setSignInStep("initial");
-              setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+              setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
             }}
             className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
           >
@@ -4225,7 +4575,7 @@ const TennisMatchApp = () => {
             onClick={() => {
               setShowSignInModal(false);
               setSignInStep("initial");
-              setFormData({ name: "", email: "", phone: "", skillLevel: "" });
+              setFormData({ name: "", email: "", phone: "", skillLevel: "", dateOfBirth: "" });
             }}
             className="w-full text-gray-500 text-sm hover:text-gray-700 transition-colors mt-3 font-bold"
           >
@@ -4709,45 +5059,62 @@ const TennisMatchApp = () => {
     }
   `;
 
+  const shouldShowLanding = !currentUser && currentScreen === "browse";
+
   return (
     <div className="min-h-screen bg-gray-50">
       <style>{styles}</style>
 
-      <AppHeader
-        currentScreen={currentScreen}
-        currentUser={currentUser}
-        showPreview={showPreview}
-        goToInvites={goToInvites}
-        goToBrowse={() => goToBrowse()}
-        onOpenProfile={() => setShowProfileManager(true)}
-        onLogout={handleLogout}
-        onOpenSignIn={() => setShowSignInModal(true)}
-        setShowPreview={setShowPreview}
-      />
-
-      {currentScreen === "browse" && BrowseScreen()}
-      {currentScreen === "create" && CreateMatchScreen()}
-      {currentScreen === "invite" && (
-        <InviteScreen
-          matchId={inviteMatchId}
-          currentUser={currentUser}
-          matchData={matchData}
-          setMatchData={setMatchData}
-          selectedPlayers={selectedPlayers}
-          setSelectedPlayers={setSelectedPlayers}
-          existingPlayerIds={existingPlayerIds}
-          setExistingPlayerIds={setExistingPlayerIds}
-          onToast={displayToast}
-          onDone={() => {
-            setCurrentScreen("browse");
-            setInviteMatchId(null);
-            fetchMatches();
-          }}
-          formatDateTime={formatDateTime}
+      {shouldShowLanding ? (
+        <LandingPage
+          onSignup={(payload) =>
+            performSignup({
+              ...payload,
+              dateOfBirth: null,
+            })
+          }
+          onLogin={performLogin}
+          onForgotPassword={(email) => forgotPassword(email)}
         />
-      )}
-      {currentScreen === "invites" && (
-        <InvitesList onInviteResponse={handleInviteResponse} />
+      ) : (
+        <>
+          <AppHeader
+            currentScreen={currentScreen}
+            currentUser={currentUser}
+            showPreview={showPreview}
+            goToInvites={goToInvites}
+            goToBrowse={() => goToBrowse()}
+            onOpenProfile={() => setShowProfileManager(true)}
+            onLogout={handleLogout}
+            onOpenSignIn={() => setShowSignInModal(true)}
+            setShowPreview={setShowPreview}
+          />
+
+          {currentScreen === "browse" && BrowseScreen()}
+          {currentScreen === "create" && CreateMatchScreen()}
+          {currentScreen === "invite" && (
+            <InviteScreen
+              matchId={inviteMatchId}
+              currentUser={currentUser}
+              matchData={matchData}
+              setMatchData={setMatchData}
+              selectedPlayers={selectedPlayers}
+              setSelectedPlayers={setSelectedPlayers}
+              existingPlayerIds={existingPlayerIds}
+              setExistingPlayerIds={setExistingPlayerIds}
+              onToast={displayToast}
+              onDone={() => {
+                setCurrentScreen("browse");
+                setInviteMatchId(null);
+                fetchMatches();
+              }}
+              formatDateTime={formatDateTime}
+            />
+          )}
+          {currentScreen === "invites" && (
+            <InvitesList onInviteResponse={handleInviteResponse} />
+          )}
+        </>
       )}
 
       {SignInModal()}

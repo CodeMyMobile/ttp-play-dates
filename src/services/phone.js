@@ -22,6 +22,11 @@ export const normalizePhoneValue = (value) => {
   return `+${digits}`;
 };
 
+export const getPhoneDigits = (value) => {
+  if (!value) return "";
+  return String(value).replace(/\D/g, "");
+};
+
 export const formatPhoneDisplay = (value) => {
   if (!value) return "";
   const digits = String(value).replace(/\D/g, "");

@@ -1,4 +1,5 @@
 import api, { unwrap } from "./api";
+import { getPhoneDigits } from "./phone";
 
 const AUTH_BASE =
   import.meta.env.VITE_API_URL ||
@@ -14,6 +15,9 @@ export const login = async (email, password) => {
   if (data?.access_token) {
     localStorage.setItem("authToken", data.access_token);
   }
+  if (data?.token && !data?.access_token) {
+    localStorage.setItem("authToken", data.token);
+  }
   if (data?.refresh_token) {
     localStorage.setItem("refreshToken", data.refresh_token);
   }
@@ -21,13 +25,15 @@ export const login = async (email, password) => {
 };
 
 export const signup = async ({ email, password, name, phone, user_type = 2 }) => {
+  const normalizedPhone = getPhoneDigits(phone);
+
   const payload = {
     email,
     password,
     user_type,
     // Common backend field names; adjust if your API differs
     full_name: name,
-    phone,
+    ...(normalizedPhone ? { phone: normalizedPhone } : {}),
   };
   const data = await unwrap(
     api(`/auth/signup`, {
@@ -37,6 +43,9 @@ export const signup = async ({ email, password, name, phone, user_type = 2 }) =>
   );
   if (data?.access_token) {
     localStorage.setItem("authToken", data.access_token);
+  }
+  if (data?.token && !data?.access_token) {
+    localStorage.setItem("authToken", data.token);
   }
   if (data?.refresh_token) {
     localStorage.setItem("refreshToken", data.refresh_token);
