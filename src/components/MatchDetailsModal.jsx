@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Autocomplete from "react-google-autocomplete";
 import {
   AlertCircle,
+  Ban,
   Calendar,
   Check,
   CheckCircle2,
@@ -21,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  cancelMatch,
   getShareLink,
   joinMatch,
   leaveMatch,
@@ -522,6 +524,7 @@ const MatchDetailsModal = ({
   const [editForm, setEditForm] = useState(DEFAULT_EDIT_FORM);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [cancellingMatch, setCancellingMatch] = useState(false);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
@@ -758,6 +761,7 @@ const MatchDetailsModal = ({
   const isUpcoming = match?.status === "upcoming";
   const isPrivate = matchPrivacy === "private";
   const isOpenMatch = !isPrivate;
+  const canCancelMatch = isHost && isOpenMatch && !isArchived && !isCancelled;
   const isFull = useMemo(() => {
     if (capacityInfo && typeof capacityInfo.isFull === "boolean") {
       return capacityInfo.isFull;
@@ -993,6 +997,51 @@ const MatchDetailsModal = ({
     setEditForm(originalEditForm);
     setEditError("");
     setIsEditing(false);
+  };
+
+  const handleCancelMatch = async () => {
+    if (!match?.id || !canCancelMatch) {
+      return;
+    }
+    const confirmed = window.confirm(
+      "Cancel this match? We'll notify your players and remove it from open matches.",
+    );
+    if (!confirmed) return;
+    try {
+      setCancellingMatch(true);
+      await cancelMatch(match.id);
+      onToast?.("Match cancelled");
+      setIsEditing(false);
+      setEditError("");
+      await onMatchRefresh?.();
+      if (onReloadMatch && onUpdateMatch) {
+        const updated = await onReloadMatch(match.id, { includeArchived: true });
+        if (updated) {
+          onUpdateMatch(updated);
+        }
+      } else if (onUpdateMatch) {
+        onUpdateMatch((prev) => {
+          if (!prev) return prev;
+          const nextMatch = {
+            ...(prev.match || {}),
+            status: "cancelled",
+          };
+          return { ...prev, match: nextMatch };
+        });
+      }
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        onToast?.("This match has been archived and can't be cancelled.", "error");
+      } else {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "We couldn't cancel the match.";
+        onToast?.(message, "error");
+      }
+    } finally {
+      setCancellingMatch(false);
+    }
   };
 
   const handleEditSubmit = async (event) => {
@@ -1641,22 +1690,35 @@ const MatchDetailsModal = ({
                 <span>{editError}</span>
               </div>
             )}
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                disabled={editSaving}
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={editSaving || !hasEditChanges}
-                className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {editSaving ? "Saving..." : "Save changes"}
-              </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {canCancelMatch && (
+                <button
+                  type="button"
+                  onClick={handleCancelMatch}
+                  disabled={editSaving || cancellingMatch}
+                  className="inline-flex items-center gap-2 self-start rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Ban className="h-4 w-4" />
+                  {cancellingMatch ? "Cancelling..." : "Cancel match"}
+                </button>
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={editSaving || cancellingMatch}
+                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving || cancellingMatch || !hasEditChanges}
+                  className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {editSaving ? "Saving..." : "Save changes"}
+                </button>
+              </div>
             </div>
           </form>
         )}
