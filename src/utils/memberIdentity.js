@@ -8,6 +8,10 @@ const MEMBER_ID_KEYS = [
   "playerId",
   "member_id",
   "memberId",
+  "matchplay_member_id",
+  "matchplayMemberId",
+  "matchplay_player_id",
+  "matchplayPlayerId",
   "account.id",
   "account.user_id",
   "account.userId",
@@ -22,6 +26,10 @@ const MEMBER_ID_KEYS = [
   "profile.playerId",
   "profile.member_id",
   "profile.memberId",
+  "profile.matchplay_member_id",
+  "profile.matchplayMemberId",
+  "profile.matchplay_player_id",
+  "profile.matchplayPlayerId",
   "person.id",
   "person.user_id",
   "person.userId",
@@ -29,6 +37,32 @@ const MEMBER_ID_KEYS = [
   "person.playerId",
   "person.member_id",
   "person.memberId",
+  "person.matchplay_member_id",
+  "person.matchplayMemberId",
+  "person.matchplay_player_id",
+  "person.matchplayPlayerId",
+  "member.id",
+  "member.user_id",
+  "member.userId",
+  "member.player_id",
+  "member.playerId",
+  "member.member_id",
+  "member.memberId",
+  "member.matchplay_member_id",
+  "member.matchplayMemberId",
+  "member.matchplay_player_id",
+  "member.matchplayPlayerId",
+  "user.id",
+  "user.user_id",
+  "user.userId",
+  "user.player_id",
+  "user.playerId",
+  "user.member_id",
+  "user.memberId",
+  "user.matchplay_member_id",
+  "user.matchplayMemberId",
+  "user.matchplay_player_id",
+  "user.matchplayPlayerId",
 ];
 
 const MEMBERSHIP_ID_KEYS = [
@@ -41,6 +75,10 @@ const MEMBERSHIP_ID_KEYS = [
   "playerId",
   "user_id",
   "userId",
+  "matchplay_member_id",
+  "matchplayMemberId",
+  "matchplay_player_id",
+  "matchplayPlayerId",
 ];
 
 const PARTICIPANT_ID_KEYS = [
@@ -110,6 +148,14 @@ const HOST_ID_KEYS = [
   "organizerId",
   "organiser_id",
   "organiserId",
+  "host_identity",
+  "hostIdentity",
+  "host_identity_id",
+  "hostIdentityId",
+  "organizer_identity",
+  "organizerIdentity",
+  "organiser_identity",
+  "organiserIdentity",
   "organizer_user_id",
   "organizerUserId",
   "organizer_player_id",
@@ -120,12 +166,18 @@ const HOST_ID_KEYS = [
   "organizerProfileId",
   "creator_id",
   "creatorId",
+  "creator_identity",
+  "creatorIdentity",
   "created_by",
   "createdBy",
   "created_by_id",
   "createdById",
+  "created_by_identity",
+  "createdByIdentity",
   "owner_id",
   "ownerId",
+  "owner_identity",
+  "ownerIdentity",
   "owner_user_id",
   "ownerUserId",
   "owner_player_id",
@@ -199,6 +251,26 @@ const dedupeValues = (values) => {
   return deduped;
 };
 
+const gatherIdentityHints = (...sources) => {
+  if (!sources || sources.length === 0) return [];
+  const results = [];
+  const visit = (value) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (value && typeof value === "object") {
+      results.push(...collectValues(value, MEMBER_ID_KEYS));
+      results.push(...collectValues(value, MEMBERSHIP_ID_KEYS));
+      return;
+    }
+    results.push(value);
+  };
+  sources.forEach(visit);
+  return dedupeValues(results);
+};
+
 const isHostingParticipant = (participant) => {
   if (!participant || typeof participant !== "object") return false;
   const statusCandidates = [
@@ -218,9 +290,73 @@ const collectValues = (source, keys) => dedupeValues(gatherValues(source, keys))
 
 export const collectMemberIds = (member) => {
   if (!member || typeof member !== "object") return [];
+  if (Array.isArray(member.identityIds) && member.identityIds.length > 0) {
+    return dedupeValues(member.identityIds);
+  }
   const baseValues = collectValues(member, MEMBER_ID_KEYS);
-  const membershipValues = collectValues(member.memberships || [], MEMBERSHIP_ID_KEYS);
-  return dedupeValues([...baseValues, ...membershipValues]);
+  const membershipSources = [
+    member.memberships,
+    member.membership,
+    member.profile?.memberships,
+    member.profile?.membership,
+    member.profile?.member,
+    member.account?.memberships,
+    member.account?.membership,
+    member.account?.member,
+    member.person?.memberships,
+    member.person?.membership,
+    member.person?.member,
+    member.member?.memberships,
+    member.member?.membership,
+    member.user?.memberships,
+    member.user?.membership,
+    member.user?.member,
+    member.userRecord?.memberships,
+    member.userRecord?.membership,
+    member.userRecord?.member,
+  ];
+  const membershipValues = dedupeValues(
+    membershipSources.flatMap((source) => collectValues(source, MEMBERSHIP_ID_KEYS)),
+  );
+  const additionalValues = gatherIdentityHints(
+    member.identityIds,
+    member.identity_ids,
+    member.identity,
+    member.identityId,
+    member.identityHints,
+    member.identities,
+    member.memberIds,
+    member.member_ids,
+    member.matchplayIds,
+    member.matchplay_ids,
+    member.authIds,
+    member.auth_ids,
+    member.profile?.identityIds,
+    member.profile?.identity_ids,
+    member.profile?.identityHints,
+    member.profile?.identities,
+    member.account?.identityIds,
+    member.account?.identity_ids,
+    member.account?.identityHints,
+    member.account?.identities,
+    member.person?.identityIds,
+    member.person?.identity_ids,
+    member.person?.identityHints,
+    member.person?.identities,
+    member.member?.identityIds,
+    member.member?.identity_ids,
+    member.member?.identityHints,
+    member.member?.identities,
+    member.user?.identityIds,
+    member.user?.identity_ids,
+    member.user?.identityHints,
+    member.user?.identities,
+    member.userRecord?.identityIds,
+    member.userRecord?.identity_ids,
+    member.userRecord?.identityHints,
+    member.userRecord?.identities,
+  );
+  return dedupeValues([...baseValues, ...membershipValues, ...additionalValues]);
 };
 
 const ensureMemberIds = (member, precomputedIds) => {
@@ -252,11 +388,29 @@ export const memberMatchesInvite = (member, invite, precomputedIds) => {
 
 export const collectMatchHostIds = (match) => {
   if (!match || typeof match !== "object") return [];
-  const hostIds = collectValues(match, HOST_ID_KEYS);
+  const hostIds = [
+    ...collectValues(match, HOST_ID_KEYS),
+    ...gatherIdentityHints(
+      match.host_identity,
+      match.hostIdentity,
+      match.host_identity_id,
+      match.hostIdentityId,
+      match.organizer_identity,
+      match.organizerIdentity,
+      match.organiser_identity,
+      match.organiserIdentity,
+      match.creator_identity,
+      match.creatorIdentity,
+      match.created_by_identity,
+      match.createdByIdentity,
+      match.owner_identity,
+      match.ownerIdentity,
+    ),
+  ];
   for (const key of HOST_ASSOCIATED_OBJECT_KEYS) {
     const candidate = getValueByPath(match, key);
     if (candidate) {
-      hostIds.push(...collectValues(candidate, MEMBER_ID_KEYS));
+      hostIds.push(...collectMemberIds(candidate));
     }
   }
   if (Array.isArray(match.participants)) {
@@ -264,6 +418,20 @@ export const collectMatchHostIds = (match) => {
     if (hostParticipant) {
       hostIds.push(...collectValues(hostParticipant, PARTICIPANT_ID_KEYS));
       hostIds.push(...collectValues(hostParticipant.profile || {}, MEMBER_ID_KEYS));
+      hostIds.push(
+        ...gatherIdentityHints(
+          hostParticipant.identity,
+          hostParticipant.identityId,
+          hostParticipant.identity_ids,
+          hostParticipant.identityIds,
+          hostParticipant.identityHints,
+          hostParticipant.profile?.identity,
+          hostParticipant.profile?.identityId,
+          hostParticipant.profile?.identity_ids,
+          hostParticipant.profile?.identityIds,
+          hostParticipant.profile?.identityHints,
+        ),
+      );
     }
   }
   return dedupeValues(hostIds);

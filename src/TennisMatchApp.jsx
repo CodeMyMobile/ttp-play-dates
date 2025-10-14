@@ -182,6 +182,52 @@ const createInitials = (name, fallbackEmail) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+const toPlainObject = (value) =>
+  value && typeof value === "object" ? { ...value } : null;
+
+const collectMembershipRecords = (...sources) => {
+  const records = [];
+  const visit = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (value && typeof value === "object") {
+      records.push({ ...value });
+    }
+  };
+  sources.forEach(visit);
+  return records;
+};
+
+const collectIdentityHints = (...sources) => {
+  const hints = [];
+  const visit = (value) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (value && typeof value === "object") {
+      visit(value.id);
+      visit(value.user_id);
+      visit(value.userId);
+      visit(value.player_id);
+      visit(value.playerId);
+      visit(value.member_id);
+      visit(value.memberId);
+      visit(value.identity);
+      visit(value.identity_id);
+      visit(value.identityId);
+      return;
+    }
+    hints.push(value);
+  };
+  sources.forEach(visit);
+  return hints;
+};
+
 const buildLocalUser = ({
   id,
   type,
@@ -189,9 +235,60 @@ const buildLocalUser = ({
   email,
   phone,
   skillLevel,
+  profile,
+  account,
+  person,
+  member,
+  userRecord,
+  memberships,
+  identityHints,
 }) => {
   const safeName = (name || email || "Matchplay Player").trim();
-  return {
+  const normalizedProfile = toPlainObject(profile);
+  const normalizedAccount = toPlainObject(account);
+  const normalizedPerson = toPlainObject(person);
+  const normalizedMember = toPlainObject(member);
+  const normalizedUserRecord = toPlainObject(userRecord);
+
+  const membershipRecords = collectMembershipRecords(
+    memberships,
+    normalizedProfile?.memberships,
+    normalizedProfile?.membership,
+    normalizedAccount?.memberships,
+    normalizedAccount?.membership,
+    normalizedPerson?.memberships,
+    normalizedPerson?.membership,
+    normalizedMember?.memberships,
+    normalizedMember?.membership,
+    normalizedUserRecord?.memberships,
+    normalizedUserRecord?.membership,
+  );
+
+  const identityHintsList = collectIdentityHints(
+    identityHints,
+    normalizedProfile?.identity,
+    normalizedProfile?.identity_id,
+    normalizedProfile?.identityId,
+    normalizedProfile?.identities,
+    normalizedAccount?.identity,
+    normalizedAccount?.identity_id,
+    normalizedAccount?.identityId,
+    normalizedAccount?.identities,
+    normalizedPerson?.identity,
+    normalizedPerson?.identity_id,
+    normalizedPerson?.identityId,
+    normalizedPerson?.identities,
+    normalizedMember?.identity,
+    normalizedMember?.identity_id,
+    normalizedMember?.identityId,
+    normalizedMember?.identities,
+    normalizedUserRecord?.identity,
+    normalizedUserRecord?.identity_id,
+    normalizedUserRecord?.identityId,
+    normalizedUserRecord?.identities,
+  );
+
+  const baseUser = {
     id,
     type,
     name: safeName,
@@ -200,6 +297,18 @@ const buildLocalUser = ({
     skillLevel: skillLevel || "",
     avatar: createInitials(safeName, email),
     rating: 4.2,
+    profile: normalizedProfile,
+    account: normalizedAccount,
+    person: normalizedPerson,
+    member: normalizedMember,
+    userRecord: normalizedUserRecord,
+    memberships: membershipRecords,
+    identityHints: identityHintsList,
+  };
+
+  return {
+    ...baseUser,
+    identityIds: collectMemberIds(baseUser),
   };
 };
 
@@ -288,6 +397,68 @@ const resolveAuthSession = (data = {}, fallback = {}) => {
     email: derivedEmail,
     phone: derivedPhone,
     skillLevel: derivedSkill,
+    profile,
+    account:
+      normalizedData?.account ?? userFromApi?.account ?? profile?.account ?? null,
+    person:
+      normalizedData?.person ?? userFromApi?.person ?? profile?.person ?? null,
+    member:
+      normalizedData?.member ?? userFromApi?.member ?? profile?.member ?? null,
+    userRecord: userFromApi,
+    memberships: [
+      normalizedData?.memberships,
+      normalizedData?.membership,
+      normalizedData?.member?.memberships,
+      normalizedData?.member?.membership,
+      normalizedData?.account?.memberships,
+      normalizedData?.account?.membership,
+      normalizedData?.person?.memberships,
+      normalizedData?.person?.membership,
+      profile?.memberships,
+      profile?.membership,
+      profile?.account?.memberships,
+      profile?.account?.membership,
+      profile?.person?.memberships,
+      profile?.person?.membership,
+      userFromApi?.memberships,
+      userFromApi?.membership,
+    ],
+    identityHints: [
+      normalizedData?.identity,
+      normalizedData?.identity_id,
+      normalizedData?.identityId,
+      normalizedData?.identity_ids,
+      normalizedData?.identityIds,
+      normalizedData?.identities,
+      normalizedData?.matchplay_member_id,
+      normalizedData?.matchplayMemberId,
+      normalizedData?.matchplay_player_id,
+      normalizedData?.matchplayPlayerId,
+      normalizedData?.member_id,
+      normalizedData?.memberId,
+      normalizedData?.player_id,
+      normalizedData?.playerId,
+      userFromApi?.identity,
+      userFromApi?.identity_id,
+      userFromApi?.identityId,
+      userFromApi?.identity_ids,
+      userFromApi?.identityIds,
+      userFromApi?.identities,
+      userFromApi?.matchplay_member_id,
+      userFromApi?.matchplayMemberId,
+      userFromApi?.matchplay_player_id,
+      userFromApi?.matchplayPlayerId,
+      userFromApi?.member_id,
+      userFromApi?.memberId,
+      userFromApi?.player_id,
+      userFromApi?.playerId,
+      profile?.identity,
+      profile?.identity_id,
+      profile?.identityId,
+      profile?.identity_ids,
+      profile?.identityIds,
+      profile?.identities,
+    ],
   });
 
   return {
@@ -448,7 +619,17 @@ const TennisMatchApp = () => {
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setCurrentUser(JSON.parse(storedUser));
+      try {
+        const parsed = JSON.parse(storedUser);
+        if (parsed && typeof parsed === "object") {
+          const withIdentity = Array.isArray(parsed.identityIds)
+            ? parsed
+            : { ...parsed, identityIds: collectMemberIds(parsed) };
+          setCurrentUser(withIdentity);
+        }
+      } catch (error) {
+        console.warn("Failed to parse stored user", error);
+      }
     }
   }, []);
 
