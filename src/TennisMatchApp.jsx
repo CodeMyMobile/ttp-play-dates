@@ -1025,7 +1025,7 @@ const TennisMatchApp = () => {
             : fallbackOccupied;
 
         const matchId = m.match_id || m.id;
-        const isHost = m.host_id === currentUser?.id;
+        const isHost = idsMatch(m.host_id, currentUser?.id);
 
         const hasActiveParticipant = activeParticipants.some((p) =>
           idsMatch(p.player_id, currentUser?.id),
@@ -1402,7 +1402,7 @@ const TennisMatchApp = () => {
             user_id: pid,
             full_name: profile.full_name || `Player ${pid}`,
             email: profile.email,
-            hosting: p.status === "hosting" || pid === match.host_id,
+            hosting: p.status === "hosting" || idsMatch(pid, match.host_id),
           });
         });
 
