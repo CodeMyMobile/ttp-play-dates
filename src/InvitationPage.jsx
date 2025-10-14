@@ -21,7 +21,11 @@ import {
 import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
-import { uniqueMatchOccupants } from "./utils/participants";
+import {
+  uniqueInvitees,
+  uniqueMatchOccupants,
+  uniqueParticipants,
+} from "./utils/participants";
 import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
 
@@ -708,7 +712,8 @@ export default function InvitationPage() {
     ? `${match.match_format} Match`
     : "Private Match";
 
-  const participants = getActiveParticipants(match, preview);
+  const activeParticipants = getActiveParticipants(match, preview);
+  const rosterParticipants = getRosterParticipants(match, preview);
   const playerLimit =
     asNumber(match.player_limit) ?? asNumber(match.playerLimit);
   const occupancyFromMatch =
@@ -716,13 +721,13 @@ export default function InvitationPage() {
     asNumber(match.current_players) ??
     asNumber(match.currentPlayers);
   const avatarPlayers =
-    participants.length > 0
-      ? participants
+    rosterParticipants.length > 0
+      ? rosterParticipants
       : preview?.inviter
         ? [{ profile: { full_name: preview.inviter.full_name } }]
         : [];
-  const effectivePlayers = participants.length
-    ? participants.length
+  const effectivePlayers = activeParticipants.length
+    ? activeParticipants.length
     : occupancyFromMatch ?? null;
   const occupancyLabel = playerLimit
     ? `${effectivePlayers ?? avatarPlayers.length}/${playerLimit}`
@@ -1246,6 +1251,10 @@ export default function InvitationPage() {
                         player?.participantStatus ??
                         player?.invite_status ??
                         player?.inviteStatus ??
+                        player?.invitation_status ??
+                        player?.invitationStatus ??
+                        player?.status_label ??
+                        player?.statusLabel ??
                         null;
                       const statusLabel = statusRaw
                         ? statusRaw.toString().replace(/_/g, " ")
@@ -1623,14 +1632,89 @@ function getActiveParticipants(match, preview) {
   return uniqueMatchOccupants(participantSource, inviteeSource);
 }
 
+function getRosterParticipants(match, preview) {
+  const matchParticipants = Array.isArray(match?.participants)
+    ? match.participants
+    : [];
+  const previewParticipants = Array.isArray(preview?.participants)
+    ? preview.participants
+    : [];
+  const participantSource = uniqueParticipants([
+    ...matchParticipants,
+    ...previewParticipants,
+  ]);
+
+  const matchInvitees = Array.isArray(match?.invitees) ? match.invitees : [];
+  const previewInvitees = Array.isArray(preview?.invitees)
+    ? preview.invitees
+    : [];
+  const inviteeSource = uniqueInvitees([
+    ...matchInvitees,
+    ...previewInvitees,
+  ]);
+
+  if (!participantSource.length && !inviteeSource.length) {
+    return [];
+  }
+
+  if (!inviteeSource.length) {
+    return participantSource;
+  }
+
+  if (!participantSource.length) {
+    return inviteeSource;
+  }
+
+  return uniqueParticipants([
+    ...participantSource,
+    ...inviteeSource,
+  ]);
+}
+
 function participantDisplayName(participant) {
   if (!participant) return "";
-  return (
-    participant.profile?.full_name ||
-    participant.full_name ||
-    participant.profile?.name ||
-    (participant.player_id ? `Player ${participant.player_id}` : "") ||
-    (participant.invitee_id ? `Invitee ${participant.invitee_id}` : "")
+  const joinNames = (first, last) => {
+    const parts = [first, last]
+      .map((part) =>
+        typeof part === "string" ? part.trim() : part ? String(part) : "",
+      )
+      .filter((part) => part.length > 0);
+    return parts.length ? parts.join(" ") : "";
+  };
+
+  const candidates = [
+    participant.profile?.full_name,
+    participant.full_name,
+    joinNames(participant.profile?.first_name, participant.profile?.last_name),
+    joinNames(participant.first_name, participant.last_name),
+    participant.name,
+    participant.profile?.name,
+    participant.invitee?.full_name,
+    participant.invitee?.name,
+    participant.invitee_full_name,
+    participant.invitee_name,
+    participant.inviteeFullName,
+    participant.inviteeName,
+    participant.contact_name,
+    participant.contactName,
+  ];
+
+  const resolvedName = candidates.find(
+    (value) => typeof value === "string" && value.trim().length > 0,
   );
+
+  if (resolvedName) {
+    return resolvedName.trim();
+  }
+
+  if (participant.player_id) {
+    return `Player ${participant.player_id}`;
+  }
+
+  if (participant.invitee_id) {
+    return `Invitee ${participant.invitee_id}`;
+  }
+
+  return "Player";
 }
 
