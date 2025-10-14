@@ -14,7 +14,7 @@ const AppHeader = ({
 }) => {
   return (
     <div className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/95">
-      <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-3 sm:py-4">
         {currentScreen === "browse" ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
@@ -26,7 +26,7 @@ const AppHeader = ({
               </h1>
             </div>
             {currentUser ? (
-              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-3">
+              <div className="flex w-full flex-col items-end gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                 <button
                   onClick={goToInvites}
                   className="relative rounded-xl p-2.5 transition-colors hover:bg-gray-50"
