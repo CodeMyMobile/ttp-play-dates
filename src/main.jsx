@@ -9,6 +9,7 @@ import CreateMatchPage from "./pages/CreateMatchPage.jsx";
 import TennisMatchApp from "./TennisMatchApp.jsx"; // keep your existing home/app
 import MatchSuccessPreview from "./pages/MatchSuccessPreview.jsx";
 import CourtFinder from "./pages/CourtFinder.jsx";
+import CoachesPage from "./pages/CoachesPage.jsx";
 
 const routes = [
   // App home
@@ -17,6 +18,7 @@ const routes = [
   { path: "/matches/:id/invite", element: <TennisMatchApp /> },
   { path: "/create", element: <CreateMatchPage /> },
   { path: "/courts", element: <CourtFinder /> },
+  { path: "/coaches", element: <CoachesPage /> },
 
   // Match details (direct link)
   { path: "/matches/:id", element: <MatchPage /> },
