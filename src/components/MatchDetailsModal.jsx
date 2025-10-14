@@ -761,6 +761,7 @@ const MatchDetailsModal = ({
   const isUpcoming = match?.status === "upcoming";
   const isPrivate = matchPrivacy === "private";
   const isOpenMatch = !isPrivate;
+  const canCancelMatch = isHost && isOpenMatch && !isArchived && !isCancelled;
   const isFull = useMemo(() => {
     if (capacityInfo && typeof capacityInfo.isFull === "boolean") {
       return capacityInfo.isFull;
@@ -998,8 +999,8 @@ const MatchDetailsModal = ({
     setIsEditing(false);
   };
 
-  const handleCancelMatch = async () => {
-    if (!match?.id || !isHost || isArchived || isCancelled || !isOpenMatch) {
+  const handleCancelMatch = useCallback(async () => {
+    if (!matchId || !canCancelMatch) {
       return;
     }
     const confirmed = window.confirm(
@@ -1008,13 +1009,13 @@ const MatchDetailsModal = ({
     if (!confirmed) return;
     try {
       setCancellingMatch(true);
-      await cancelMatch(match.id);
+      await cancelMatch(matchId);
       onToast?.("Match cancelled");
       setIsEditing(false);
       setEditError("");
       await onMatchRefresh?.();
       if (onReloadMatch && onUpdateMatch) {
-        const updated = await onReloadMatch(match.id, { includeArchived: true });
+        const updated = await onReloadMatch(matchId, { includeArchived: true });
         if (updated) {
           onUpdateMatch(updated);
         }
@@ -1041,7 +1042,14 @@ const MatchDetailsModal = ({
     } finally {
       setCancellingMatch(false);
     }
-  };
+  }, [
+    canCancelMatch,
+    matchId,
+    onMatchRefresh,
+    onReloadMatch,
+    onToast,
+    onUpdateMatch,
+  ]);
 
   const handleEditSubmit = async (event) => {
     event.preventDefault();
@@ -1690,15 +1698,17 @@ const MatchDetailsModal = ({
               </div>
             )}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={handleCancelMatch}
-                disabled={editSaving || cancellingMatch}
-                className="inline-flex items-center gap-2 self-start rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Ban className="h-4 w-4" />
-                {cancellingMatch ? "Cancelling..." : "Cancel match"}
-              </button>
+              {canCancelMatch && (
+                <button
+                  type="button"
+                  onClick={handleCancelMatch}
+                  disabled={editSaving || cancellingMatch}
+                  className="inline-flex items-center gap-2 self-start rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Ban className="h-4 w-4" />
+                  {cancellingMatch ? "Cancelling..." : "Cancel match"}
+                </button>
+              )}
               <div className="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
                 <button
                   type="button"
