@@ -999,11 +999,11 @@ const MatchDetailsModal = ({
   };
 
   const handleCancelMatch = async () => {
-    if (!match?.id || !isHost || isArchived || isCancelled || !isOpenMatch) {
+    if (!match?.id || !isHost || isArchived || isCancelled) {
       return;
     }
     const confirmed = window.confirm(
-      "Cancel this match? We'll notify your players and remove it from open matches.",
+      "Cancel this match? We'll notify your players and remove it from match listings.",
     );
     if (!confirmed) return;
     try {
