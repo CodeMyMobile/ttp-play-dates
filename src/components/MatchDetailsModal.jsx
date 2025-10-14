@@ -999,8 +999,8 @@ const MatchDetailsModal = ({
     setIsEditing(false);
   };
 
-  const handleCancelMatch = async () => {
-    if (!match?.id || !canCancelMatch) {
+  const handleCancelMatch = useCallback(async () => {
+    if (!matchId || !canCancelMatch) {
       return;
     }
     const confirmed = window.confirm(
@@ -1009,13 +1009,13 @@ const MatchDetailsModal = ({
     if (!confirmed) return;
     try {
       setCancellingMatch(true);
-      await cancelMatch(match.id);
+      await cancelMatch(matchId);
       onToast?.("Match cancelled");
       setIsEditing(false);
       setEditError("");
       await onMatchRefresh?.();
       if (onReloadMatch && onUpdateMatch) {
-        const updated = await onReloadMatch(match.id, { includeArchived: true });
+        const updated = await onReloadMatch(matchId, { includeArchived: true });
         if (updated) {
           onUpdateMatch(updated);
         }
@@ -1042,7 +1042,14 @@ const MatchDetailsModal = ({
     } finally {
       setCancellingMatch(false);
     }
-  };
+  }, [
+    canCancelMatch,
+    matchId,
+    onMatchRefresh,
+    onReloadMatch,
+    onToast,
+    onUpdateMatch,
+  ]);
 
   const handleEditSubmit = async (event) => {
     event.preventDefault();
