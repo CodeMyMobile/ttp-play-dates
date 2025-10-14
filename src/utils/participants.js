@@ -325,7 +325,15 @@ export const idsMatch = (a, b) => {
   return left === right;
 };
 
-const pruneItemsByIdentity = (items, memberId) => {
+const matchesMemberIdentity = (value, memberIdentity) => {
+  if (memberIdentity === null || memberIdentity === undefined) return false;
+  if (Array.isArray(memberIdentity)) {
+    return memberIdentity.some((candidate) => idsMatch(value, candidate));
+  }
+  return idsMatch(value, memberIdentity);
+};
+
+const pruneItemsByIdentity = (items, memberIdentity) => {
   if (!Array.isArray(items)) return items;
   return items.filter((item) => {
     if (!item || typeof item !== "object") return true;
@@ -343,7 +351,7 @@ const pruneItemsByIdentity = (items, memberId) => {
       item.profile?.player_id,
       item.profile?.playerId,
     ];
-    return !candidates.some((value) => idsMatch(value, memberId));
+    return !candidates.some((value) => matchesMemberIdentity(value, memberIdentity));
   });
 };
 
@@ -373,7 +381,7 @@ const clearJoinMetadata = (target) => {
   return target;
 };
 
-const pruneParticipantCollections = (target, memberId, seen) => {
+const pruneParticipantCollections = (target, memberIdentity, seen) => {
   if (!target || typeof target !== "object") return target;
   if (seen.has(target)) return target;
   seen.add(target);
@@ -381,24 +389,25 @@ const pruneParticipantCollections = (target, memberId, seen) => {
   const next = clearJoinMetadata({ ...target });
 
   if (Array.isArray(next.participants)) {
-    next.participants = pruneItemsByIdentity(next.participants, memberId);
+    next.participants = pruneItemsByIdentity(next.participants, memberIdentity);
   }
 
   if (Array.isArray(next.invitees)) {
-    next.invitees = pruneItemsByIdentity(next.invitees, memberId);
+    next.invitees = pruneItemsByIdentity(next.invitees, memberIdentity);
   }
 
   if (next.match && typeof next.match === "object") {
-    next.match = pruneParticipantCollections(next.match, memberId, seen);
+    next.match = pruneParticipantCollections(next.match, memberIdentity, seen);
     clearJoinMetadata(next.match);
   }
 
   return next;
 };
 
-export const pruneParticipantFromMatchData = (data, memberId) => {
-  if (memberId === null || memberId === undefined) return data;
+export const pruneParticipantFromMatchData = (data, memberIdentity) => {
+  if (memberIdentity === null || memberIdentity === undefined) return data;
+  if (Array.isArray(memberIdentity) && memberIdentity.length === 0) return data;
   if (!data || typeof data !== "object") return data;
   const seen = new WeakSet();
-  return pruneParticipantCollections(data, memberId, seen);
+  return pruneParticipantCollections(data, memberIdentity, seen);
 };

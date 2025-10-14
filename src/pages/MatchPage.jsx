@@ -27,6 +27,10 @@ import {
   uniqueActiveParticipants,
 } from "../utils/participants";
 import {
+  collectMemberIds,
+  memberIsMatchHost,
+} from "../utils/memberIdentity";
+import {
   getMatch,
   getShareLink,
   removeParticipant,
@@ -173,11 +177,16 @@ export default function MatchPage() {
     if (shareLink) setShareCopied(false);
   }, [shareLink]);
 
+  const memberIdentities = useMemo(
+    () => collectMemberIds(currentUser),
+    [currentUser],
+  );
+
   const archived = match?.status === "archived";
   const cancelled = match?.status === "cancelled";
   const isPrivate = isPrivateMatch(match);
   const isOpenMatch = Boolean(match) && !isPrivate;
-  const isHost = Boolean(match?.host_id) && idsMatch(currentUser?.id, match.host_id);
+  const isHost = memberIsMatchHost(currentUser, match, memberIdentities);
   const canEdit = isHost && !archived && !cancelled;
 
   const hasChanges = useMemo(() => {

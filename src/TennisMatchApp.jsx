@@ -82,6 +82,13 @@ import {
   uniqueActiveParticipants,
   uniqueInvitees,
 } from "./utils/participants";
+import {
+  collectMemberIds,
+  memberIsMatchHost,
+  memberMatchesAnyId,
+  memberMatchesInvite,
+  memberMatchesParticipant,
+} from "./utils/memberIdentity";
 import { getMatchPrivacy } from "./utils/matchPrivacy";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
@@ -305,6 +312,10 @@ const TennisMatchApp = () => {
   const location = useLocation();
   const initialPath = getInitialPath();
   const [currentUser, setCurrentUser] = useState(null);
+  const memberIdentityIds = useMemo(
+    () => collectMemberIds(currentUser),
+    [currentUser],
+  );
   const [currentScreen, setCurrentScreen] = useState(() =>
     deriveScreenFromPath(initialPath),
   );
@@ -996,6 +1007,8 @@ const TennisMatchApp = () => {
       };
 
       let hiddenPrivateMatches = 0;
+      const memberIds = memberIdentityIds;
+
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
         const acceptedInvitees = uniqueAcceptedInvitees(m.invitees);
@@ -1025,15 +1038,13 @@ const TennisMatchApp = () => {
             : fallbackOccupied;
 
         const matchId = m.match_id || m.id;
-        const isHost = idsMatch(m.host_id, currentUser?.id);
+        const isHost = memberIsMatchHost(currentUser, m, memberIds);
 
-        const hasActiveParticipant = activeParticipants.some((p) =>
-          idsMatch(p.player_id, currentUser?.id),
+        const hasActiveParticipant = activeParticipants.some((participant) =>
+          memberMatchesParticipant(currentUser, participant, memberIds),
         );
-        const hasAcceptedInvite = acceptedInvitees.some(
-          (invite) =>
-            idsMatch(invite.invitee_id, currentUser?.id) ||
-            idsMatch(invite.player_id, currentUser?.id),
+        const hasAcceptedInvite = acceptedInvitees.some((invite) =>
+          memberMatchesInvite(currentUser, invite, memberIds),
         );
         const normalizedUserEmail = currentUser?.email
           ? currentUser.email.toString().trim().toLowerCase()
@@ -1046,22 +1057,7 @@ const TennisMatchApp = () => {
           : "";
         const inviteMatchesCurrentUser = (invite) => {
           if (!invite || typeof invite !== "object") return false;
-          const candidateIds = [
-            invite.invitee_id,
-            invite.inviteeId,
-            invite.player_id,
-            invite.playerId,
-            invite.participant_id,
-            invite.participantId,
-            invite.id,
-            invite.profile?.id,
-            invite.profile?.player_id,
-            invite.profile?.playerId,
-            invite.player?.id,
-            invite.player?.player_id,
-            invite.player?.playerId,
-          ];
-          if (candidateIds.some((value) => idsMatch(value, currentUser?.id))) {
+          if (memberMatchesInvite(currentUser, invite, memberIds)) {
             return true;
           }
           if (normalizedUserEmail) {
@@ -1118,10 +1114,8 @@ const TennisMatchApp = () => {
         };
         const isInvited = !isHost && invitees.some(inviteMatchesCurrentUser);
         const participantRecord = Array.isArray(m.participants)
-          ? m.participants.find(
-              (participant) =>
-                idsMatch(participant?.player_id, currentUser?.id) ||
-                idsMatch(participant?.invitee_id, currentUser?.id),
+          ? m.participants.find((participant) =>
+              memberMatchesParticipant(currentUser, participant, memberIds),
             )
           : null;
         const joinedTimestamp =
@@ -1249,12 +1243,13 @@ const TennisMatchApp = () => {
     }
   }, [
     activeFilter,
-    currentUser,
     distanceFilter,
     displayToast,
     locationFilter,
     matchPage,
     matchSearch,
+    memberIdentityIds,
+    currentUser,
   ]);
 
   useEffect(() => {
@@ -2634,7 +2629,7 @@ const TennisMatchApp = () => {
                       }
                       const pruned = pruneParticipantFromMatchData(
                         match,
-                        currentUser?.id,
+                        memberIdentityIds,
                       );
                       const participants = Array.isArray(pruned?.participants)
                         ? pruned.participants
@@ -3639,9 +3634,27 @@ const TennisMatchApp = () => {
       input.focus();
     }, []);
 
+    const participantIsHost = (participant) => {
+      if (!participant) return false;
+      if (hostId) {
+        const candidates = [
+          participant.player_id,
+          participant.playerId,
+          participant.id,
+          participant.match_participant_id,
+          participant.matchParticipantId,
+        ];
+        return candidates.some((value) => idsMatch(value, hostId));
+      }
+      return memberMatchesParticipant(currentUser, participant, memberIdentityIds);
+    };
+
     const canRemove = (pid) => {
-      const host = hostId ?? currentUser?.id;
-      return currentUser?.id && host && currentUser.id === host && pid !== host;
+      const host = hostId ?? currentUser?.id ?? null;
+      if (!host) return false;
+      const isHost = memberMatchesAnyId(currentUser, host, memberIdentityIds);
+      if (!isHost) return false;
+      return !memberMatchesAnyId(currentUser, pid, memberIdentityIds);
     };
 
     const handleRemoveParticipant = async (playerId) => {
@@ -3724,7 +3737,7 @@ const TennisMatchApp = () => {
                     <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
                       <span className="text-gray-800">
                         {p.profile?.full_name || `Player ${p.player_id}`}
-                        {(p.player_id === (hostId ?? currentUser?.id)) && (
+                        {participantIsHost(p) && (
                           <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
                         )}
                       </span>
@@ -4763,8 +4776,40 @@ const TennisMatchApp = () => {
       };
     }, [isOpen, matchId]);
 
-    const isHost =
-      currentUser?.id && hostId ? idsMatch(currentUser.id, hostId) : false;
+    const participantIsHost = (participant) => {
+      if (!participant) return false;
+      if (hostId) {
+        const candidates = [
+          participant.player_id,
+          participant.playerId,
+          participant.id,
+          participant.match_participant_id,
+          participant.matchParticipantId,
+        ];
+        return candidates.some((value) => idsMatch(value, hostId));
+      }
+      const status =
+        participant.status ||
+        participant.participant_status ||
+        participant.participantStatus ||
+        participant.role ||
+        "";
+      return (
+        typeof status === "string" && status.trim().toLowerCase() === "hosting"
+      );
+    };
+
+    const isHost = (() => {
+      if (hostId) {
+        return memberMatchesAnyId(currentUser, hostId, memberIdentityIds);
+      }
+      if (!participants.length) return false;
+      return participants.some(
+        (participant) =>
+          participantIsHost(participant) &&
+          memberMatchesParticipant(currentUser, participant, memberIdentityIds),
+      );
+    })();
 
     const handleRemoveParticipant = async (playerId) => {
       if (!matchId) return;
@@ -4818,13 +4863,13 @@ const TennisMatchApp = () => {
                     >
                       <span className="text-gray-800">
                         {p.profile?.full_name || `Player ${p.player_id}`}
-                        {idsMatch(p.player_id, hostId) && (
+                        {participantIsHost(p) && (
                           <span className="ml-2 text-blue-700 text-xs font-bold">
                             Host
                           </span>
                         )}
                       </span>
-                      {isHost && !idsMatch(p.player_id, hostId) ? (
+                      {isHost && !participantIsHost(p) ? (
                         <button
                           onClick={() => handleRemoveParticipant(p.player_id)}
                           className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
@@ -4896,8 +4941,40 @@ const TennisMatchApp = () => {
       };
     }, [isOpen, matchToEdit?.id]);
 
-    const isHost =
-      currentUser?.id && hostId ? idsMatch(currentUser.id, hostId) : false;
+    const participantIsHost = (participant) => {
+      if (!participant) return false;
+      if (hostId) {
+        const candidates = [
+          participant.player_id,
+          participant.playerId,
+          participant.id,
+          participant.match_participant_id,
+          participant.matchParticipantId,
+        ];
+        return candidates.some((value) => idsMatch(value, hostId));
+      }
+      const status =
+        participant.status ||
+        participant.participant_status ||
+        participant.participantStatus ||
+        participant.role ||
+        "";
+      return (
+        typeof status === "string" && status.trim().toLowerCase() === "hosting"
+      );
+    };
+
+    const isHost = (() => {
+      if (hostId) {
+        return memberMatchesAnyId(currentUser, hostId, memberIdentityIds);
+      }
+      if (!participants.length) return false;
+      return participants.some(
+        (participant) =>
+          participantIsHost(participant) &&
+          memberMatchesParticipant(currentUser, participant, memberIdentityIds),
+      );
+    })();
 
     const handleRemoveParticipant = async (playerId) => {
       if (!window.confirm("Remove this participant from the match?")) return;
@@ -5078,13 +5155,13 @@ const TennisMatchApp = () => {
                       >
                         <span className="text-gray-800">
                           {p.profile?.full_name || `Player ${p.player_id}`}
-                          {idsMatch(p.player_id, hostId) && (
+                          {participantIsHost(p) && (
                             <span className="ml-2 text-blue-700 text-xs font-bold">
                               Host
                             </span>
                           )}
                         </span>
-                        {!idsMatch(p.player_id, hostId) && (
+                        {!participantIsHost(p) && (
                           <button
                             onClick={() => handleRemoveParticipant(p.player_id)}
                             className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
