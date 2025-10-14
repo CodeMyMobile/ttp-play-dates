@@ -1412,14 +1412,23 @@ function mapSignUpError(error) {
     .toString()
     .toLowerCase();
 
-  const collectErrorStrings = (value) => {
-    if (!value) return [];
+  const collectErrorStrings = (value, seen = new Set()) => {
+    if (!value || seen.has(value)) return [];
     if (typeof value === "string") return [value.toLowerCase()];
+    if (typeof value === "number" || typeof value === "boolean") {
+      return [String(value).toLowerCase()];
+    }
     if (Array.isArray(value)) {
-      return value.flatMap((item) => collectErrorStrings(item));
+      seen.add(value);
+      return value.flatMap((item) => collectErrorStrings(item, seen));
     }
     if (typeof value === "object") {
-      return Object.values(value).flatMap((item) => collectErrorStrings(item));
+      seen.add(value);
+      const objectStrings = Object.keys(value).map((key) => key.toLowerCase());
+      return [
+        ...objectStrings,
+        ...Object.values(value).flatMap((item) => collectErrorStrings(item, seen)),
+      ];
     }
     return [];
   };
@@ -1427,12 +1436,16 @@ function mapSignUpError(error) {
   const duplicateHintValues = [
     normalized,
     normalizedMessage,
+    ...(error.statusText ? [error.statusText.toLowerCase()] : []),
     ...collectErrorStrings(error.data?.errors),
+    ...collectErrorStrings(error.data?.error),
+    ...collectErrorStrings(error.data),
+    ...collectErrorStrings(error.response?.data),
   ];
 
   const hasDuplicateEmailHint = duplicateHintValues.some((value) =>
     value
-      ? /email.*(already|taken|exists|in use)|already.*(account|registered)|account.*exists|user.*exists|duplicate.*email/.test(
+      ? /email.*(already|taken|exists|in use)|already.*(account|registered)|account.*exists|user.*exists|duplicate.*(email|entry)|users?_email/.test(
           value,
         )
       : false,
