@@ -25,10 +25,12 @@ import {
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 import {
+  cancelMatch,
   createMatch,
   getShareLink,
   searchPlayers,
   sendInvites,
+  updateMatch,
 } from "../services/matches";
 import { downloadICSFile, openGoogleCalendar, openOutlookCalendar } from "../utils/calendar";
 import {
@@ -320,6 +322,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [searchError, setSearchError] = useState("");
   const [shareLink, setShareLink] = useState("");
   const [creating, setCreating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [createdMatchId, setCreatedMatchId] = useState(null);
+  const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [toast, setToast] = useState(null);
   const [quickDates] = useState(() => quickDateOptions());
   const [contactName, setContactName] = useState("");
@@ -341,6 +346,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setSearchQuery("");
     setSearchResults([]);
     setShareLink("");
+    setCreatedMatchId(null);
+    setIsEditingExisting(false);
     setCurrentStep(1);
     setContactName("");
     setContactPhone("");
@@ -512,6 +519,24 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setCreating(true);
     let inviteMessage = "";
     try {
+      if (createdMatchId && isEditingExisting) {
+        await updateMatch(createdMatchId, payload);
+        let link = shareLink;
+        if (!link) {
+          try {
+            const { shareUrl } = await getShareLink(createdMatchId);
+            link = shareUrl || "";
+          } catch (error) {
+            console.warn("Failed to refresh share link", error);
+          }
+        }
+        if (link) setShareLink(link);
+        setCurrentStep(5);
+        setIsEditingExisting(false);
+        showToast("Match updated");
+        return;
+      }
+
       const result = await createMatch(payload);
       const created = result?.match || result;
       const matchId = created?.id || created?.match_id;
@@ -557,6 +582,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       if (!link) link = `${window.location.origin}/#/matches/${matchId}`;
 
       setShareLink(link);
+      setCreatedMatchId(matchId);
       setCurrentStep(4);
       onMatchCreated?.(matchId);
       const successMessage = inviteMessage
@@ -568,6 +594,37 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       showToast(error.message || "Failed to create match", "error");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleEditMatch = () => {
+    if (!createdMatchId) {
+      showToast("Create the match before editing", "error");
+      return;
+    }
+    setIsEditingExisting(true);
+    setCurrentStep(1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleCancelMatch = async () => {
+    if (!createdMatchId) {
+      showToast("No match to cancel", "error");
+      return;
+    }
+    const confirmed = window.confirm("Are you sure you want to cancel this match?");
+    if (!confirmed) return;
+    setCancelling(true);
+    try {
+      await cancelMatch(createdMatchId);
+      showToast("Match cancelled");
+      resetFlow();
+      onReturnHome?.();
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "Failed to cancel match", "error");
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -1426,7 +1483,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   : "bg-green-600 hover:bg-green-700"
               } ${creating ? "opacity-70 cursor-not-allowed" : ""}`}
             >
-              {creating ? "Saving..." : matchData.type === "private" ? "Create Match" : "Publish"}
+              {creating
+                ? "Saving..."
+                : createdMatchId && isEditingExisting
+                  ? "Save Changes"
+                  : matchData.type === "private"
+                    ? "Create Match"
+                    : "Publish"}
               {!creating && <Check size={20} />}
             </button>
           </div>
@@ -1718,13 +1781,20 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">Host Controls</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors">
+                <button
+                  onClick={handleEditMatch}
+                  className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                >
                   <Edit size={16} className="text-gray-600" />
                   <span className="text-sm font-medium">Edit Match</span>
                 </button>
-                <button className="flex items-center justify-center gap-2 p-3 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition-colors">
+                <button
+                  onClick={handleCancelMatch}
+                  disabled={cancelling}
+                  className="flex items-center justify-center gap-2 p-3 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
                   <X size={16} />
-                  <span className="text-sm font-medium">Cancel Match</span>
+                  <span className="text-sm font-medium">{cancelling ? "Cancelling..." : "Cancel Match"}</span>
                 </button>
               </div>
               {matchData.type !== "private" && (
