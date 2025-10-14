@@ -20,14 +20,23 @@ export const login = async (email, password) => {
   return data;
 };
 
+const sanitizePhone = (value) => {
+  if (!value) return undefined;
+  const digits = String(value).replace(/\D/g, "");
+  if (!digits) return undefined;
+  return digits;
+};
+
 export const signup = async ({ email, password, name, phone, user_type = 2 }) => {
+  const sanitizedPhone = sanitizePhone(phone);
+
   const payload = {
     email,
     password,
     user_type,
     // Common backend field names; adjust if your API differs
     full_name: name,
-    phone,
+    ...(sanitizedPhone ? { phone: sanitizedPhone } : {}),
   };
   const data = await unwrap(
     api(`/auth/signup`, {
