@@ -157,6 +157,20 @@ export default function MatchPage() {
     [data?.participants],
   );
 
+  const matchWithParticipants = useMemo(() => {
+    if (!match) return null;
+    const existingParticipants = Array.isArray(match.participants)
+      ? match.participants
+      : null;
+    if (existingParticipants && existingParticipants.length > 0) {
+      return match;
+    }
+    if (!participants || participants.length === 0) {
+      return match;
+    }
+    return { ...match, participants };
+  }, [match, participants]);
+
   const originalForm = useMemo(() => buildInitialForm(match), [match]);
 
   const availableMatchFormats = useMemo(
@@ -184,9 +198,13 @@ export default function MatchPage() {
 
   const archived = match?.status === "archived";
   const cancelled = match?.status === "cancelled";
-  const isPrivate = isPrivateMatch(match);
-  const isOpenMatch = Boolean(match) && !isPrivate;
-  const isHost = memberIsMatchHost(currentUser, match, memberIdentities);
+  const isPrivate = isPrivateMatch(matchWithParticipants || match);
+  const isOpenMatch = Boolean(matchWithParticipants || match) && !isPrivate;
+  const isHost = memberIsMatchHost(
+    currentUser,
+    matchWithParticipants || match,
+    memberIdentities,
+  );
   const canEdit = isHost && !archived && !cancelled;
 
   const hasChanges = useMemo(() => {
