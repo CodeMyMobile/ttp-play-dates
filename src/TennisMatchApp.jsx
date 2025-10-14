@@ -171,6 +171,112 @@ const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
   return Math.round(distance * 10) / 10;
 };
 
+const collectHostContactDetails = (match) => {
+  const emails = new Set();
+  const normalizedPhones = new Set();
+  const phoneDigits = new Set();
+
+  const addEmail = (value) => {
+    if (typeof value !== "string") return;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized || !normalized.includes("@")) return;
+    emails.add(normalized);
+  };
+
+  const addPhone = (value) => {
+    if (typeof value !== "string" && typeof value !== "number") return;
+    const stringValue = value.toString().trim();
+    if (!stringValue) return;
+    const normalized = normalizePhoneValue(stringValue);
+    const digits = getPhoneDigits(stringValue);
+    if (normalized) normalizedPhones.add(normalized);
+    if (digits) phoneDigits.add(digits);
+  };
+
+  const visitContactRecord = (record) => {
+    if (!record) return;
+    if (Array.isArray(record)) {
+      record.forEach(visitContactRecord);
+      return;
+    }
+    if (typeof record === "object") {
+      visitContactRecord(record.email);
+      visitContactRecord(record.contact_email);
+      visitContactRecord(record.contactEmail);
+      visitContactRecord(record.profile);
+      visitContactRecord(record.user);
+      visitContactRecord(record.person);
+      visitContactRecord(record.member);
+      visitContactRecord(record.account);
+      visitContactRecord(record.details);
+      visitContactRecord(record.contact);
+      return;
+    }
+    const stringValue = record.toString().trim();
+    if (!stringValue) return;
+    if (stringValue.includes("@")) {
+      addEmail(stringValue);
+    } else {
+      addPhone(stringValue);
+    }
+  };
+
+  const directSources = [
+    match?.host_email,
+    match?.hostEmail,
+    match?.organizer_email,
+    match?.organiser_email,
+    match?.organizerEmail,
+    match?.organiserEmail,
+    match?.owner_email,
+    match?.ownerEmail,
+    match?.created_by_email,
+    match?.createdByEmail,
+    match?.creator_email,
+    match?.creatorEmail,
+    match?.host_phone,
+    match?.hostPhone,
+    match?.organizer_phone,
+    match?.organiser_phone,
+    match?.organizerPhone,
+    match?.organiserPhone,
+    match?.owner_phone,
+    match?.ownerPhone,
+    match?.created_by_phone,
+    match?.createdByPhone,
+    match?.creator_phone,
+    match?.creatorPhone,
+  ];
+
+  directSources.forEach(visitContactRecord);
+
+  const nestedSources = [
+    match?.host,
+    match?.host_profile,
+    match?.hostProfile,
+    match?.host_contact,
+    match?.hostContact,
+    match?.organizer,
+    match?.organiser,
+    match?.organizer_profile,
+    match?.organizerProfile,
+    match?.organiser_profile,
+    match?.organiserProfile,
+    match?.organized_by,
+    match?.organizedBy,
+    match?.organised_by,
+    match?.organisedBy,
+    match?.creator,
+    match?.created_by,
+    match?.createdBy,
+    match?.owner,
+  ];
+
+  nestedSources.forEach(visitContactRecord);
+
+  return { emails, normalizedPhones, phoneDigits };
+};
+
 const createInitials = (name, fallbackEmail) => {
   const source = (name || fallbackEmail || "").trim();
   if (!source) return "MP";
@@ -1219,14 +1325,6 @@ const TennisMatchApp = () => {
             : fallbackOccupied;
 
         const matchId = m.match_id || m.id;
-        const isHost = memberIsMatchHost(currentUser, m, memberIds);
-
-        const hasActiveParticipant = activeParticipants.some((participant) =>
-          memberMatchesParticipant(currentUser, participant, memberIds),
-        );
-        const hasAcceptedInvite = acceptedInvitees.some((invite) =>
-          memberMatchesInvite(currentUser, invite, memberIds),
-        );
         const normalizedUserEmail = currentUser?.email
           ? currentUser.email.toString().trim().toLowerCase()
           : "";
@@ -1236,11 +1334,40 @@ const TennisMatchApp = () => {
         const userPhoneDigits = currentUser?.phone
           ? getPhoneDigits(currentUser.phone)
           : "";
-        const inviteMatchesCurrentUser = (invite) => {
-          if (!invite || typeof invite !== "object") return false;
-          if (memberMatchesInvite(currentUser, invite, memberIds)) {
+        const hostContactDetails = collectHostContactDetails(m);
+        const hostMatchByIds = memberIsMatchHost(currentUser, m, memberIds);
+        const matchesHostEmail = normalizedUserEmail
+          ? hostContactDetails.emails.has(normalizedUserEmail)
+          : false;
+        const matchesHostPhone = (() => {
+          if (!normalizedUserPhone && !userPhoneDigits) return false;
+          if (
+            normalizedUserPhone &&
+            hostContactDetails.normalizedPhones.has(normalizedUserPhone)
+          ) {
             return true;
           }
+          if (
+            userPhoneDigits &&
+            hostContactDetails.phoneDigits.has(userPhoneDigits)
+          ) {
+            return true;
+          }
+          return false;
+        })();
+        const isHost = hostMatchByIds || matchesHostEmail || matchesHostPhone;
+
+          const hasActiveParticipant = activeParticipants.some((participant) =>
+            memberMatchesParticipant(currentUser, participant, memberIds),
+          );
+          const hasAcceptedInvite = acceptedInvitees.some((invite) =>
+            memberMatchesInvite(currentUser, invite, memberIds),
+          );
+          const inviteMatchesCurrentUser = (invite) => {
+            if (!invite || typeof invite !== "object") return false;
+            if (memberMatchesInvite(currentUser, invite, memberIds)) {
+              return true;
+            }
           if (normalizedUserEmail) {
             const candidateEmails = [
               invite.email,
