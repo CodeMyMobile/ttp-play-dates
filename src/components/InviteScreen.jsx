@@ -20,6 +20,11 @@ import {
 } from "../services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
 import { idsMatch, uniqueActiveParticipants } from "../utils/participants";
+import {
+  collectMemberIds,
+  memberMatchesAnyId,
+  memberMatchesParticipant,
+} from "../utils/memberIdentity";
 
 const InviteScreen = ({
   matchId,
@@ -47,6 +52,11 @@ const InviteScreen = ({
   const [participantsError, setParticipantsError] = useState("");
   const [hostId, setHostId] = useState(null);
   const [isArchived, setIsArchived] = useState(false);
+
+  const memberIdentities = useMemo(
+    () => collectMemberIds(currentUser),
+    [currentUser],
+  );
 
   // Local state for manual phone invites (isolated from search input)
   const totalSelectedInvitees = useMemo(
@@ -157,10 +167,39 @@ const InviteScreen = ({
     input.focus();
   }, []);
 
+  const participantIsHost = (participant) => {
+    if (!participant) return false;
+    if (hostId) {
+      const candidates = [
+        participant.player_id,
+        participant.playerId,
+        participant.id,
+        participant.match_participant_id,
+        participant.matchParticipantId,
+      ];
+      return candidates.some((value) => idsMatch(value, hostId));
+    }
+    const status =
+      participant.status ||
+      participant.participant_status ||
+      participant.participantStatus ||
+      participant.role ||
+      "";
+    return typeof status === "string" && status.trim().toLowerCase() === "hosting";
+  };
+
   const canRemove = (pid) => {
-    const host = hostId ?? currentUser?.id;
-    if (!host || !currentUser?.id || isArchived) return false;
-    return idsMatch(currentUser.id, host) && !idsMatch(pid, host);
+    if (isArchived) return false;
+    const host = hostId ?? null;
+    const isHost = host
+      ? memberMatchesAnyId(currentUser, host, memberIdentities)
+      : participants.some(
+          (participant) =>
+            participantIsHost(participant) &&
+            memberMatchesParticipant(currentUser, participant, memberIdentities),
+        );
+    if (!isHost) return false;
+    return !memberMatchesAnyId(currentUser, pid, memberIdentities);
   };
 
   const handleRemoveParticipant = async (playerId) => {
@@ -315,7 +354,7 @@ const InviteScreen = ({
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                     <span className="text-gray-800">
                       {p.profile?.full_name || `Player ${p.player_id}`}
-                      {(p.player_id === (hostId ?? currentUser?.id)) && (
+                      {participantIsHost(p) && (
                         <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
                       )}
                     </span>

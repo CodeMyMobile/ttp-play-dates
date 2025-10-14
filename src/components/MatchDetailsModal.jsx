@@ -36,6 +36,7 @@ import {
   uniqueActiveParticipants,
   uniqueParticipants,
 } from "../utils/participants";
+import { collectMemberIds, memberIsMatchHost } from "../utils/memberIdentity";
 import {
   DEFAULT_EVENT_DURATION_MINUTES,
   downloadICSFile,
@@ -454,10 +455,17 @@ const getParticipantPlayerId = (participant) => {
   ]);
 };
 
-const participantMatchesMember = (participant, memberId) => {
-  if (memberId === null || memberId === undefined) return false;
+const participantMatchesMember = (participant, memberIdentity) => {
+  if (!participant || typeof participant !== "object") return false;
+  if (Array.isArray(memberIdentity)) {
+    if (memberIdentity.length === 0) return false;
+    return getParticipantIdentityCandidates(participant).some((candidate) =>
+      memberIdentity.some((id) => idsMatch(candidate, id)),
+    );
+  }
+  if (memberIdentity === null || memberIdentity === undefined) return false;
   return getParticipantIdentityCandidates(participant).some((candidate) =>
-    idsMatch(candidate, memberId),
+    idsMatch(candidate, memberIdentity),
   );
 };
 
@@ -656,21 +664,26 @@ const MatchDetailsModal = ({
     return Math.max(capacityLimit - committedCount, 0);
   }, [capacityInfo, capacityLimit, committedCount]);
 
+  const memberIdentities = useMemo(
+    () => collectMemberIds(currentUser),
+    [currentUser],
+  );
+
   const isHost =
-    currentUser?.id && match?.host_id
-      ? idsMatch(currentUser.id, match.host_id)
+    memberIdentities.length > 0
+      ? memberIsMatchHost(currentUser, match, memberIdentities)
       : false;
   const isParticipant = committedParticipants.some((participant) =>
-    participantMatchesMember(participant, currentUser?.id),
+    participantMatchesMember(participant, memberIdentities),
   );
   const hasAcceptedInvite = acceptedInvitees.some((invite) =>
-    participantMatchesMember(invite, currentUser?.id),
+    participantMatchesMember(invite, memberIdentities),
   );
 
   const metadataIndicatesJoined = useMemo(() => {
-    if (!currentUser?.id) return false;
+    if (memberIdentities.length === 0) return false;
     const identityMatchesCurrentUser = (value) =>
-      idsMatch(value, currentUser.id);
+      memberIdentities.some((id) => idsMatch(value, id));
 
     const sources = [matchData, matchData?.match, match];
     const truthyStatuses = new Set([
@@ -733,7 +746,7 @@ const MatchDetailsModal = ({
     }
 
     return false;
-  }, [currentUser?.id, match, matchData]);
+  }, [match, matchData, memberIdentities]);
 
   const isJoined = useMemo(
     () => isHost || isParticipant || hasAcceptedInvite || metadataIndicatesJoined,
