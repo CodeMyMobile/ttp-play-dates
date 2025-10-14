@@ -3631,6 +3631,7 @@ const TennisMatchApp = () => {
     const [participantsLoading, setParticipantsLoading] = useState(false);
     const [participantsError, setParticipantsError] = useState("");
     const [hostId, setHostId] = useState(null);
+    const [isContactPickerAvailable, setIsContactPickerAvailable] = useState(false);
 
     // Local state for manual phone invites (isolated from search input)
     const [localContactName, setLocalContactName] = useState("");
@@ -3672,6 +3673,13 @@ const TennisMatchApp = () => {
       });
     };
 
+    useEffect(() => {
+      if (typeof navigator === "undefined") return;
+      if (navigator.contacts?.select) {
+        setIsContactPickerAvailable(true);
+      }
+    }, []);
+
     const buildShareMessage = () => {
       const parts = [];
       const host = matchData.hostName || currentUser?.name || currentUser?.email || "";
@@ -3693,6 +3701,20 @@ const TennisMatchApp = () => {
       return `Tennis Match Invite${when}`;
     };
 
+    const getFirstPhoneNumber = (contact) => {
+      if (!contact) return "";
+      const entries = Array.isArray(contact.tel) ? contact.tel : [];
+      for (const entry of entries) {
+        if (typeof entry === "string" && entry.trim()) {
+          return entry.trim();
+        }
+        if (entry && typeof entry === "object" && entry.value && entry.value.trim()) {
+          return entry.value.trim();
+        }
+      }
+      return "";
+    };
+
     const openWhatsApp = () => {
       if (!shareLink) return;
       const text = encodeURIComponent(buildShareMessage());
@@ -3701,13 +3723,44 @@ const TennisMatchApp = () => {
       window.open(url, "_blank");
     };
 
-    const openSMS = () => {
+    const openSMS = (phoneNumber = "") => {
       if (!shareLink) return;
       const body = encodeURIComponent(buildShareMessage());
-      // Using query parameter form to maximize cross-platform support
-      const url = `sms:?body=${body}`;
+      const normalizedNumber = typeof phoneNumber === "string"
+        ? phoneNumber.replace(/[^\d+]/g, "")
+        : "";
+      const url = normalizedNumber
+        ? `sms:${normalizedNumber}?body=${body}`
+        : `sms:?body=${body}`;
       onToast("Opening messages...");
       window.location.href = url;
+    };
+
+    const openContactPickerForSMS = async () => {
+      if (!shareLink) return;
+      if (!isContactPickerAvailable) {
+        openSMS();
+        return;
+      }
+      try {
+        const contacts = await navigator.contacts.select(["name", "tel"], {
+          multiple: false,
+        });
+        if (!contacts || !contacts.length) return;
+        const phoneNumber = getFirstPhoneNumber(contacts[0]);
+        if (!phoneNumber) {
+          onToast("Selected contact has no phone number", "error");
+          return;
+        }
+        openSMS(phoneNumber);
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          return;
+        }
+        console.error("Contact picker failed", error);
+        onToast("Unable to access contacts. Opening messages instead.", "error");
+        openSMS();
+      }
     };
 
     const openEmail = () => {
@@ -3985,7 +4038,11 @@ const TennisMatchApp = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div
+                className={`grid grid-cols-1 gap-3 ${
+                  isContactPickerAvailable ? "sm:grid-cols-2 md:grid-cols-4" : "sm:grid-cols-2 md:grid-cols-3"
+                }`}
+              >
                 <button
                   onClick={openWhatsApp}
                   disabled={!shareLink}
@@ -3998,7 +4055,7 @@ const TennisMatchApp = () => {
                   WHATSAPP
                 </button>
                 <button
-                  onClick={openSMS}
+                  onClick={() => openSMS()}
                   disabled={!shareLink}
                   className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
                     shareLink
@@ -4008,6 +4065,19 @@ const TennisMatchApp = () => {
                 >
                   SMS
                 </button>
+                {isContactPickerAvailable && (
+                  <button
+                    onClick={openContactPickerForSMS}
+                    disabled={!shareLink}
+                    className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                      shareLink
+                        ? "bg-gradient-to-r from-sky-50 to-cyan-50 text-sky-700 border-sky-300 hover:shadow-lg hover:scale-105"
+                        : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                    }`}
+                  >
+                    CONTACTS
+                  </button>
+                )}
                 <button
                   onClick={openEmail}
                   disabled={!shareLink}
