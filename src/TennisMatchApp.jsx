@@ -439,20 +439,44 @@ const TennisMatchApp = () => {
           name: trimmedName,
           phone: normalizedPhoneDigits,
         });
-        if (response?.access_token) {
-          localStorage.setItem("authToken", response.access_token);
+
+        let authPayload = response;
+        if (!authPayload?.access_token && !authPayload?.token) {
+          try {
+            const fallbackLogin = await login(email, password);
+            authPayload = { ...authPayload, ...fallbackLogin };
+          } catch (fallbackError) {
+            console.error("Automatic login after signup failed", fallbackError);
+          }
         }
-        if (response?.refresh_token) {
-          localStorage.setItem("refreshToken", response.refresh_token);
+
+        if (authPayload?.access_token) {
+          localStorage.setItem("authToken", authPayload.access_token);
+        } else if (authPayload?.token) {
+          localStorage.setItem("authToken", authPayload.token);
+        }
+        if (authPayload?.refresh_token) {
+          localStorage.setItem("refreshToken", authPayload.refresh_token);
         }
 
         const normalizedPhone = normalizedPhoneDigits;
         const signupToken =
-          response?.access_token || localStorage.getItem("authToken") || "";
-        if (signupToken && response?.user_id) {
+          authPayload?.access_token ||
+          authPayload?.token ||
+          localStorage.getItem("authToken") ||
+          "";
+
+        if (!signupToken) {
+          throw new Error(
+            "We created your account but couldn't start your session automatically. Please sign in with your new credentials.",
+          );
+        }
+
+        const userId = authPayload?.user_id ?? response?.user_id;
+        if (signupToken && userId) {
           await updatePlayerPersonalDetails({
             player: signupToken,
-            id: response.user_id,
+            id: userId,
             ...(dateOfBirth
               ? {
                   date_of_birth: dateOfBirth,
@@ -464,8 +488,8 @@ const TennisMatchApp = () => {
         }
 
         const newUser = buildLocalUser({
-          id: response?.user_id,
-          type: response?.user_type,
+          id: userId,
+          type: authPayload?.user_type ?? response?.user_type,
           name: trimmedName,
           email,
           phone,
