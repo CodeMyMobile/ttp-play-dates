@@ -1,4 +1,5 @@
 import api, { unwrap } from "./api";
+import { normalizePhoneValue } from "./phone";
 
 const AUTH_BASE =
   import.meta.env.VITE_API_URL ||
@@ -20,15 +21,8 @@ export const login = async (email, password) => {
   return data;
 };
 
-const sanitizePhone = (value) => {
-  if (!value) return undefined;
-  const digits = String(value).replace(/\D/g, "");
-  if (!digits) return undefined;
-  return digits;
-};
-
 export const signup = async ({ email, password, name, phone, user_type = 2 }) => {
-  const sanitizedPhone = sanitizePhone(phone);
+  const normalizedPhone = normalizePhoneValue(phone);
 
   const payload = {
     email,
@@ -36,7 +30,7 @@ export const signup = async ({ email, password, name, phone, user_type = 2 }) =>
     user_type,
     // Common backend field names; adjust if your API differs
     full_name: name,
-    ...(sanitizedPhone ? { phone: sanitizedPhone } : {}),
+    ...(normalizedPhone ? { phone: normalizedPhone } : {}),
   };
   const data = await unwrap(
     api(`/auth/signup`, {

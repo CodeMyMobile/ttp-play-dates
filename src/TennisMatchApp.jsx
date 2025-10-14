@@ -358,7 +358,7 @@ const TennisMatchApp = () => {
           localStorage.setItem("refreshToken", response.refresh_token);
         }
 
-        const digitsOnly = (phone || "").replace(/\D/g, "");
+        const normalizedPhone = normalizePhoneValue(phone);
         const signupToken =
           response?.access_token || localStorage.getItem("authToken") || "";
         if (signupToken && response?.user_id) {
@@ -369,7 +369,7 @@ const TennisMatchApp = () => {
             usta_rating: 0,
             uta_rating: 0,
             fullName: name,
-            mobile: digitsOnly || null,
+            mobile: normalizedPhone || null,
             about_me: null,
           });
         }
