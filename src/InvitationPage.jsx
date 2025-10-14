@@ -66,6 +66,7 @@ export default function InvitationPage() {
   });
   const [successModal, setSuccessModal] = useState(null);
   const [toast, setToast] = useState(null);
+  const [matchDetails, setMatchDetails] = useState(null);
 
   const successDateFormatter = useMemo(
     () =>
@@ -102,6 +103,80 @@ export default function InvitationPage() {
   }, [inviteeEmail]);
 
   const isArchivedMatch = (preview?.match?.status === "archived") || archivedNotice;
+
+  const previewWithRoster = useMemo(() => {
+    if (!preview) return preview;
+
+    const participantsFromDetails = Array.isArray(matchDetails?.participants)
+      ? matchDetails.participants
+      : Array.isArray(matchDetails?.match?.participants)
+      ? matchDetails.match.participants
+      : undefined;
+    const inviteesFromDetails = Array.isArray(matchDetails?.invitees)
+      ? matchDetails.invitees
+      : Array.isArray(matchDetails?.match?.invitees)
+      ? matchDetails.match.invitees
+      : undefined;
+
+    if (
+      participantsFromDetails === undefined &&
+      inviteesFromDetails === undefined
+    ) {
+      return preview;
+    }
+
+    const nextParticipants =
+      participantsFromDetails !== undefined
+        ? participantsFromDetails
+        : preview.participants;
+    const nextInvitees =
+      inviteesFromDetails !== undefined
+        ? inviteesFromDetails
+        : preview.invitees;
+
+    if (
+      nextParticipants === preview.participants &&
+      nextInvitees === preview.invitees
+    ) {
+      return preview;
+    }
+
+    return {
+      ...preview,
+      ...(nextParticipants !== undefined
+        ? { participants: nextParticipants }
+        : {}),
+      ...(nextInvitees !== undefined ? { invitees: nextInvitees } : {}),
+    };
+  }, [matchDetails, preview]);
+
+  const match = useMemo(() => {
+    const sourceMatch = previewWithRoster?.match || {};
+    const detailsMatch = matchDetails?.match || {};
+
+    const participantsFromDetails = Array.isArray(matchDetails?.participants)
+      ? matchDetails.participants
+      : Array.isArray(detailsMatch.participants)
+      ? detailsMatch.participants
+      : Array.isArray(sourceMatch.participants)
+      ? sourceMatch.participants
+      : [];
+
+    const inviteesFromDetails = Array.isArray(matchDetails?.invitees)
+      ? matchDetails.invitees
+      : Array.isArray(detailsMatch.invitees)
+      ? detailsMatch.invitees
+      : Array.isArray(sourceMatch.invitees)
+      ? sourceMatch.invitees
+      : [];
+
+    return {
+      ...sourceMatch,
+      ...detailsMatch,
+      participants: participantsFromDetails,
+      invitees: inviteesFromDetails,
+    };
+  }, [matchDetails, previewWithRoster]);
 
   // Load minimal invite preview
   useEffect(() => {
@@ -375,6 +450,84 @@ export default function InvitationPage() {
     },
     [],
   );
+
+  const previewMatchId =
+    preview?.match?.id ||
+    preview?.match?.match_id ||
+    preview?.matchId ||
+    null;
+  const previewMatchStatus = preview?.match?.status || null;
+
+  useEffect(() => {
+    if (!previewMatchId) {
+      setMatchDetails(null);
+      return;
+    }
+
+    const hasMatchingDetails =
+      matchDetails?.match?.id === previewMatchId ||
+      matchDetails?.match?.match_id === previewMatchId;
+    if (hasMatchingDetails) {
+      if (
+        Array.isArray(matchDetails?.participants) ||
+        Array.isArray(matchDetails?.match?.participants)
+      ) {
+        return;
+      }
+    } else if (matchDetails) {
+      setMatchDetails(null);
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const includeArchived =
+          (previewMatchStatus === "archived") || archivedNotice;
+        const data = await loadSuccessMatch(previewMatchId, {
+          includeArchived,
+        });
+        if (!cancelled) {
+          if (!data) {
+            setMatchDetails(null);
+            return;
+          }
+          const normalizedParticipants = Array.isArray(data.participants)
+            ? data.participants
+            : Array.isArray(data.match?.participants)
+            ? data.match.participants
+            : [];
+          const normalizedInvitees = Array.isArray(data.invitees)
+            ? data.invitees
+            : Array.isArray(data.match?.invitees)
+            ? data.match.invitees
+            : [];
+          const normalizedMatch = data.match
+            ? {
+                ...data.match,
+                participants: Array.isArray(data.match.participants)
+                  ? data.match.participants
+                  : normalizedParticipants,
+                invitees: Array.isArray(data.match.invitees)
+                  ? data.match.invitees
+                  : normalizedInvitees,
+              }
+            : data.match;
+          setMatchDetails({
+            ...data,
+            match: normalizedMatch,
+            participants: normalizedParticipants,
+            invitees: normalizedInvitees,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load match roster for invite preview", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [archivedNotice, loadSuccessMatch, matchDetails, previewMatchId, previewMatchStatus]);
 
   const handleJoinSuccess = useCallback(
     async (destination) => {
@@ -691,7 +844,6 @@ export default function InvitationPage() {
       </InvitationLayout>
     );
 
-  const match = preview.match || {};
   const startDate = match.start_date_time
     ? new Date(match.start_date_time)
     : null;
@@ -712,8 +864,8 @@ export default function InvitationPage() {
     ? `${match.match_format} Match`
     : "Private Match";
 
-  const activeParticipants = getActiveParticipants(match, preview);
-  const rosterParticipants = getRosterParticipants(match, preview);
+  const activeParticipants = getActiveParticipants(match, previewWithRoster);
+  const rosterParticipants = getRosterParticipants(match, previewWithRoster);
   const playerLimit =
     asNumber(match.player_limit) ?? asNumber(match.playerLimit);
   const occupancyFromMatch =
