@@ -10,7 +10,6 @@ import {
   Globe,
   Home,
   Lock,
-  Mail,
   MapPin,
   MessageSquare,
   Phone,
@@ -181,6 +180,59 @@ const formatPhoneDisplay = (value) => {
   return value;
 };
 
+const PROFILE_IMAGE_KEYS = [
+  "profile_picture",
+  "profilePicture",
+  "profile_picture_url",
+  "profilePictureUrl",
+  "profile_photo",
+  "profilePhoto",
+  "profile_image",
+  "profileImage",
+  "profile_image_url",
+  "profileImageUrl",
+  "photo_url",
+  "photoUrl",
+  "image_url",
+  "imageUrl",
+  "avatar_url",
+  "avatarUrl",
+  "avatar",
+  "host_avatar",
+  "hostAvatar",
+  "picture",
+  "photo",
+];
+
+const getProfileImageFromSource = (source) => {
+  if (!source || typeof source !== "object") return "";
+  for (const key of PROFILE_IMAGE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = source[key];
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length < 5) continue;
+    const looksLikeUrl =
+      /^https?:\/\//i.test(trimmed) ||
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("/") ||
+      trimmed.includes("/") ||
+      trimmed.includes(".");
+    if (looksLikeUrl) return trimmed;
+  }
+  return "";
+};
+
+const getAvatarUrlFromPlayer = (player) => {
+  if (!player || typeof player !== "object") return "";
+  const sources = [player.profile, player.player, player.user, player];
+  for (const source of sources) {
+    const url = getProfileImageFromSource(source);
+    if (url) return url;
+  }
+  return "";
+};
+
 const normalizePlayer = (player) => {
   const id = Number(player?.user_id ?? player?.id);
   const name = player?.full_name || player?.name || player?.email || "Player";
@@ -193,6 +245,7 @@ const normalizePlayer = (player) => {
     email: player?.email || "",
     ntrp,
     avatar: name.charAt(0).toUpperCase(),
+    avatarUrl: getAvatarUrlFromPlayer(player),
     lastPlayed: formatRelativeDate(lastPlayed),
     raw: player,
   };
@@ -232,6 +285,32 @@ const ProgressBar = ({ currentStep }) => (
   </div>
 );
 
+const Avatar = ({
+  name,
+  imageUrl,
+  fallback,
+  className = "w-10 h-10",
+  fallbackClassName = "bg-blue-500 text-white font-bold",
+  alt,
+}) => {
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt={alt || `${name || "Player"} avatar`}
+        className={`rounded-full object-cover ${className}`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`rounded-full flex items-center justify-center ${fallbackClassName} ${className}`}
+    >
+      {fallback || (name ? name.charAt(0).toUpperCase() : "?")}
+    </div>
+  );
+};
+
 const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [matchData, setMatchData] = useState(initialMatchData);
@@ -246,6 +325,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
+
+  const currentUserAvatarUrl = useMemo(
+    () => getAvatarUrlFromPlayer(currentUser),
+    [currentUser],
+  );
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -280,6 +364,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         id: player.id,
         name: player.name,
         avatar: player.avatar,
+        avatarUrl: player.avatarUrl,
         subtitle: [
           player.ntrp ? `NTRP ${player.ntrp}` : "",
           player.lastPlayed ? `Played ${player.lastPlayed}` : "",
@@ -959,28 +1044,35 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               </div>
             </div>
             <div className="space-y-3 mb-4">
-              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
-                <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center text-white font-bold">
-                  {(currentUser?.name || "You").charAt(0).toUpperCase()}
-                </div>
+              <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
+                <Avatar
+                  name={currentUser?.name || "You"}
+                  imageUrl={currentUserAvatarUrl}
+                  fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
+                  className="w-10 h-10"
+                  fallbackClassName="bg-green-600 text-white font-bold"
+                />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900">You (Host)</div>
-                  <div className="text-sm text-green-600">Organizer</div>
+                  <div className="text-sm text-gray-500">Organizer</div>
                 </div>
               </div>
               {combinedInvitees.map((invitee) => (
                 <div
                   key={invitee.id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
+                  className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl"
                 >
                   {invitee.type === "contact" ? (
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
                       <Phone size={18} />
                     </div>
                   ) : (
-                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
-                      {invitee.avatar}
-                    </div>
+                    <Avatar
+                      name={invitee.name}
+                      imageUrl={invitee.avatarUrl}
+                      fallback={invitee.avatar}
+                      className="w-10 h-10"
+                    />
                   )}
                   <div className="flex-1">
                     <div className="font-medium text-gray-900">{invitee.name}</div>
@@ -1082,9 +1174,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                           onClick={() => handleAddPlayer(player)}
                           className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-left"
                         >
-                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                            {player.avatar}
-                          </div>
+                          <Avatar
+                            name={player.name}
+                            imageUrl={player.avatarUrl}
+                            fallback={player.avatar}
+                            className="w-10 h-10"
+                          />
                           <div className="flex-1">
                             <div className="font-medium text-gray-900">{player.name}</div>
                             <div className="text-sm text-gray-600">
@@ -1103,9 +1198,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   )}
                 </div>
               )}
-              <div className="bg-white border-2 border-dashed border-blue-200 rounded-xl p-4 space-y-3">
+              <div className="border border-gray-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center">
                     <Phone size={18} />
                   </div>
                   <div className="text-sm text-gray-600">
@@ -1156,49 +1251,6 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               </div>
             </div>
           )}
-
-          <div>
-            <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-2">
-              Share Invitation Link
-            </h3>
-            <p className="text-xs text-gray-500 mb-4">
-              📤 Share this link - first {totalPlayers - 1} to confirm get spots, others join waitlist
-            </p>
-            <div className="bg-gray-50 rounded-xl p-4 mb-4">
-              <div className="flex items-center gap-3 mb-3">
-                <Lock size={16} className="text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Private Match Link</span>
-              </div>
-              <div className="bg-white rounded-lg p-3 border border-gray-200">
-                <div className="text-sm text-gray-600 break-all">
-                  {shareLink || "Link available after creating the match"}
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button
-                onClick={() => handleShare("copy")}
-                className="flex flex-col items-center gap-2 p-4 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                <Copy size={20} className="text-gray-600" />
-                <span className="text-sm font-medium">Copy Link</span>
-              </button>
-              <button
-                onClick={() => handleShare("sms")}
-                className="flex flex-col items-center gap-2 p-4 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                <MessageSquare size={20} className="text-gray-600" />
-                <span className="text-sm font-medium">Text/SMS</span>
-              </button>
-              <button
-                onClick={() => handleShare("email")}
-                className="flex flex-col items-center gap-2 p-4 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                <Mail size={20} className="text-gray-600" />
-                <span className="text-sm font-medium">Email</span>
-              </button>
-            </div>
-          </div>
 
           <div>
             <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-4">
@@ -1294,20 +1346,27 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
           </div>
 
           {matchData.type === "private" && invitedCount > 0 && (
-            <div className="bg-blue-50 rounded-xl p-6">
+            <div className="border border-gray-200 rounded-xl p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">INVITED PLAYERS</h3>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                    {(currentUser?.name || "You").charAt(0).toUpperCase()}
-                  </div>
+                  <Avatar
+                    name={currentUser?.name || "You"}
+                    imageUrl={currentUserAvatarUrl}
+                    fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
+                    className="w-6 h-6 text-[10px]"
+                    fallbackClassName="bg-green-600 text-white font-bold"
+                  />
                   <span className="text-gray-700 font-medium">You (Host)</span>
                 </div>
                 {invitedPlayers.map((player) => (
                   <div key={player.id} className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                      {player.avatar}
-                    </div>
+                    <Avatar
+                      name={player.name}
+                      imageUrl={player.avatarUrl}
+                      fallback={player.avatar}
+                      className="w-6 h-6 text-[10px]"
+                    />
                     <span className="text-gray-700">{player.name}</span>
                   </div>
                 ))}
@@ -1428,45 +1487,37 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
           </div>
 
           <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">
-                {matchData.type === "private" ? "Share Private Link" : "Share Match"}
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  onClick={handleNavigatorShare}
-                  className="flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
-                >
-                  <Share2 size={16} />
-                  <span className="text-sm font-medium">Share Link</span>
-                </button>
-                <button
-                  onClick={() => handleShare("copy")}
-                  className="flex items-center justify-center gap-2 p-3 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
-                >
-                  <Copy size={16} />
-                  <span className="text-sm font-medium">Copy Link</span>
-                </button>
+            {matchData.type === "private" ? (
+              <div className="border border-gray-200 rounded-xl p-4 text-left">
+                <div className="flex items-center gap-2 text-gray-700 font-medium mb-1">
+                  <MessageSquare size={16} className="text-blue-500" />
+                  <span>Invites sent via SMS</span>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Selected players receive a private link in their text message. No public share link is available for private matches.
+                </p>
               </div>
-              {matchData.type === "private" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            ) : (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">Share Match</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
-                    onClick={() => handleShare("sms")}
-                    className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                    onClick={handleNavigatorShare}
+                    className="flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
                   >
-                    <MessageSquare size={16} />
-                    <span className="text-sm font-medium">Send SMS</span>
+                    <Share2 size={16} />
+                    <span className="text-sm font-medium">Share Link</span>
                   </button>
                   <button
-                    onClick={() => handleShare("email")}
-                    className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                    onClick={() => handleShare("copy")}
+                    className="flex items-center justify-center gap-2 p-3 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
                   >
-                    <Mail size={16} />
-                    <span className="text-sm font-medium">Send Email</span>
+                    <Copy size={16} />
+                    <span className="text-sm font-medium">Copy Link</span>
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div>
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">
@@ -1542,9 +1593,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 <ArrowLeft size={20} className="text-gray-600" />
               </button>
               <h1 className="text-lg font-semibold text-gray-900">Match Details</h1>
-              <button onClick={handleNavigatorShare} className="p-2 hover:bg-gray-100 rounded-lg">
-                <Share2 size={20} className="text-gray-600" />
-              </button>
+              {matchData.type !== "private" ? (
+                <button onClick={handleNavigatorShare} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <Share2 size={20} className="text-gray-600" />
+                </button>
+              ) : (
+                <span className="w-9" />
+              )}
             </div>
           </div>
 
@@ -1611,11 +1666,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
-                      <span className="font-bold text-white text-sm">
-                        {(currentUser?.name || "You").charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <Avatar
+                      name={currentUser?.name || "You"}
+                      imageUrl={currentUserAvatarUrl}
+                      fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
+                      className="w-10 h-10"
+                      fallbackClassName="bg-green-600 text-white font-bold"
+                    />
                     <div>
                       <p className="font-medium text-gray-800">You</p>
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Host</span>
@@ -1626,9 +1683,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 {invitedPlayers.map((player) => (
                   <div key={player.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                        <span className="font-medium text-white text-sm">{player.avatar}</span>
-                      </div>
+                      <Avatar
+                        name={player.name}
+                        imageUrl={player.avatarUrl}
+                        fallback={player.avatar}
+                        className="w-10 h-10"
+                      />
                       <div>
                         <p className="font-medium text-gray-800">{player.name}</p>
                         {player.ntrp && <p className="text-sm text-gray-600">NTRP {player.ntrp}</p>}
@@ -1667,13 +1727,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   <span className="text-sm font-medium">Cancel Match</span>
                 </button>
               </div>
-              <button
-                onClick={handleNavigatorShare}
-                className="w-full flex items-center justify-center gap-2 p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
-              >
-                <Share2 size={16} />
-                <span className="text-sm font-medium">Share Match</span>
-              </button>
+              {matchData.type !== "private" && (
+                <button
+                  onClick={handleNavigatorShare}
+                  className="w-full flex items-center justify-center gap-2 p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+                >
+                  <Share2 size={16} />
+                  <span className="text-sm font-medium">Share Match</span>
+                </button>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -1686,13 +1748,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   <Calendar size={16} className="text-gray-600" />
                   <span className="text-sm font-medium">Add to Calendar</span>
                 </button>
-                <button
-                  onClick={() => handleShare("copy")}
-                  className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <Copy size={16} className="text-gray-600" />
-                  <span className="text-sm font-medium">Copy Link</span>
-                </button>
+                {matchData.type !== "private" && (
+                  <button
+                    onClick={() => handleShare("copy")}
+                    className="flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                  >
+                    <Copy size={16} className="text-gray-600" />
+                    <span className="text-sm font-medium">Copy Link</span>
+                  </button>
+                )}
               </div>
             </div>
 
