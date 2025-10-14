@@ -21,7 +21,11 @@ import {
 import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
-import { uniqueMatchOccupants } from "./utils/participants";
+import {
+  uniqueInvitees,
+  uniqueMatchOccupants,
+  uniqueParticipants,
+} from "./utils/participants";
 import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
 
@@ -708,7 +712,8 @@ export default function InvitationPage() {
     ? `${match.match_format} Match`
     : "Private Match";
 
-  const participants = getActiveParticipants(match, preview);
+  const activeParticipants = getActiveParticipants(match, preview);
+  const rosterParticipants = getRosterParticipants(match, preview);
   const playerLimit =
     asNumber(match.player_limit) ?? asNumber(match.playerLimit);
   const occupancyFromMatch =
@@ -716,13 +721,13 @@ export default function InvitationPage() {
     asNumber(match.current_players) ??
     asNumber(match.currentPlayers);
   const avatarPlayers =
-    participants.length > 0
-      ? participants
+    rosterParticipants.length > 0
+      ? rosterParticipants
       : preview?.inviter
         ? [{ profile: { full_name: preview.inviter.full_name } }]
         : [];
-  const effectivePlayers = participants.length
-    ? participants.length
+  const effectivePlayers = activeParticipants.length
+    ? activeParticipants.length
     : occupancyFromMatch ?? null;
   const occupancyLabel = playerLimit
     ? `${effectivePlayers ?? avatarPlayers.length}/${playerLimit}`
@@ -1123,9 +1128,6 @@ export default function InvitationPage() {
     "bg-purple-500",
     "bg-amber-500",
   ];
-  const extraPlayers =
-    avatarPlayers.length > 4 ? avatarPlayers.length - 4 : 0;
-
   return (
     <InvitationLayout>
       {toast && (
@@ -1230,40 +1232,66 @@ export default function InvitationPage() {
                         : "Be the first to lock in a spot."}
                     </p>
                   </div>
-                  <div className="flex items-center -space-x-3">
-                    {avatarPlayers.length ? (
-                      avatarPlayers.slice(0, 4).map((player, index) => {
-                        const name = participantDisplayName(player) || "Player";
-                        const initials = getInitials(name) || "P";
-                        const color =
-                          avatarPalette[index % avatarPalette.length];
-                        const key =
-                          player?.player_id ||
-                          player?.id ||
-                          player?.invitee_id ||
-                          `${name}-${index}`;
-                        return (
+                </div>
+                {avatarPlayers.length ? (
+                  <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {avatarPlayers.map((player, index) => {
+                      const name = participantDisplayName(player) || "Player";
+                      const initials = getInitials(name) || "P";
+                      const color =
+                        avatarPalette[index % avatarPalette.length];
+                      const key =
+                        player?.player_id ||
+                        player?.id ||
+                        player?.invitee_id ||
+                        `${name}-${index}`;
+                      const statusRaw =
+                        player?.status ??
+                        player?.participant_status ??
+                        player?.participantStatus ??
+                        player?.invite_status ??
+                        player?.inviteStatus ??
+                        player?.invitation_status ??
+                        player?.invitationStatus ??
+                        player?.status_label ??
+                        player?.statusLabel ??
+                        null;
+                      const statusLabel = statusRaw
+                        ? statusRaw.toString().replace(/_/g, " ")
+                        : "";
+                      return (
+                        <li
+                          key={key}
+                          title={name}
+                          className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-sm"
+                        >
                           <div
-                            key={key}
-                            title={name}
-                            className={`flex h-10 w-10 items-center justify-center rounded-full border-2 border-white text-sm font-semibold text-white shadow ${color}`}
+                            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow ${color}`}
                           >
                             {initials}
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-400">
-                        +
-                      </div>
-                    )}
-                    {extraPlayers > 0 && (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-slate-900/80 text-sm font-semibold text-white shadow">
-                        +{extraPlayers}
-                      </div>
-                    )}
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {name}
+                            </p>
+                            {statusLabel && (
+                              <p className="text-xs capitalize text-slate-500">
+                                {statusLabel}
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-400">
+                      +
+                    </div>
+                    <span>Share the link to fill the remaining spots.</span>
                   </div>
-                </div>
+                )}
               </div>
             </div>
             <div className="mt-6 space-y-4">
@@ -1604,14 +1632,89 @@ function getActiveParticipants(match, preview) {
   return uniqueMatchOccupants(participantSource, inviteeSource);
 }
 
+function getRosterParticipants(match, preview) {
+  const matchParticipants = Array.isArray(match?.participants)
+    ? match.participants
+    : [];
+  const previewParticipants = Array.isArray(preview?.participants)
+    ? preview.participants
+    : [];
+  const participantSource = uniqueParticipants([
+    ...matchParticipants,
+    ...previewParticipants,
+  ]);
+
+  const matchInvitees = Array.isArray(match?.invitees) ? match.invitees : [];
+  const previewInvitees = Array.isArray(preview?.invitees)
+    ? preview.invitees
+    : [];
+  const inviteeSource = uniqueInvitees([
+    ...matchInvitees,
+    ...previewInvitees,
+  ]);
+
+  if (!participantSource.length && !inviteeSource.length) {
+    return [];
+  }
+
+  if (!inviteeSource.length) {
+    return participantSource;
+  }
+
+  if (!participantSource.length) {
+    return inviteeSource;
+  }
+
+  return uniqueParticipants([
+    ...participantSource,
+    ...inviteeSource,
+  ]);
+}
+
 function participantDisplayName(participant) {
   if (!participant) return "";
-  return (
-    participant.profile?.full_name ||
-    participant.full_name ||
-    participant.profile?.name ||
-    (participant.player_id ? `Player ${participant.player_id}` : "") ||
-    (participant.invitee_id ? `Invitee ${participant.invitee_id}` : "")
+  const joinNames = (first, last) => {
+    const parts = [first, last]
+      .map((part) =>
+        typeof part === "string" ? part.trim() : part ? String(part) : "",
+      )
+      .filter((part) => part.length > 0);
+    return parts.length ? parts.join(" ") : "";
+  };
+
+  const candidates = [
+    participant.profile?.full_name,
+    participant.full_name,
+    joinNames(participant.profile?.first_name, participant.profile?.last_name),
+    joinNames(participant.first_name, participant.last_name),
+    participant.name,
+    participant.profile?.name,
+    participant.invitee?.full_name,
+    participant.invitee?.name,
+    participant.invitee_full_name,
+    participant.invitee_name,
+    participant.inviteeFullName,
+    participant.inviteeName,
+    participant.contact_name,
+    participant.contactName,
+  ];
+
+  const resolvedName = candidates.find(
+    (value) => typeof value === "string" && value.trim().length > 0,
   );
+
+  if (resolvedName) {
+    return resolvedName.trim();
+  }
+
+  if (participant.player_id) {
+    return `Player ${participant.player_id}`;
+  }
+
+  if (participant.invitee_id) {
+    return `Invitee ${participant.invitee_id}`;
+  }
+
+  return "Player";
 }
 
