@@ -1123,9 +1123,6 @@ export default function InvitationPage() {
     "bg-purple-500",
     "bg-amber-500",
   ];
-  const extraPlayers =
-    avatarPlayers.length > 4 ? avatarPlayers.length - 4 : 0;
-
   return (
     <InvitationLayout>
       {toast && (
@@ -1230,40 +1227,62 @@ export default function InvitationPage() {
                         : "Be the first to lock in a spot."}
                     </p>
                   </div>
-                  <div className="flex items-center -space-x-3">
-                    {avatarPlayers.length ? (
-                      avatarPlayers.slice(0, 4).map((player, index) => {
-                        const name = participantDisplayName(player) || "Player";
-                        const initials = getInitials(name) || "P";
-                        const color =
-                          avatarPalette[index % avatarPalette.length];
-                        const key =
-                          player?.player_id ||
-                          player?.id ||
-                          player?.invitee_id ||
-                          `${name}-${index}`;
-                        return (
+                </div>
+                {avatarPlayers.length ? (
+                  <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {avatarPlayers.map((player, index) => {
+                      const name = participantDisplayName(player) || "Player";
+                      const initials = getInitials(name) || "P";
+                      const color =
+                        avatarPalette[index % avatarPalette.length];
+                      const key =
+                        player?.player_id ||
+                        player?.id ||
+                        player?.invitee_id ||
+                        `${name}-${index}`;
+                      const statusRaw =
+                        player?.status ??
+                        player?.participant_status ??
+                        player?.participantStatus ??
+                        player?.invite_status ??
+                        player?.inviteStatus ??
+                        null;
+                      const statusLabel = statusRaw
+                        ? statusRaw.toString().replace(/_/g, " ")
+                        : "";
+                      return (
+                        <li
+                          key={key}
+                          title={name}
+                          className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-sm"
+                        >
                           <div
-                            key={key}
-                            title={name}
-                            className={`flex h-10 w-10 items-center justify-center rounded-full border-2 border-white text-sm font-semibold text-white shadow ${color}`}
+                            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow ${color}`}
                           >
                             {initials}
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-400">
-                        +
-                      </div>
-                    )}
-                    {extraPlayers > 0 && (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-slate-900/80 text-sm font-semibold text-white shadow">
-                        +{extraPlayers}
-                      </div>
-                    )}
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {name}
+                            </p>
+                            {statusLabel && (
+                              <p className="text-xs capitalize text-slate-500">
+                                {statusLabel}
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-400">
+                      +
+                    </div>
+                    <span>Share the link to fill the remaining spots.</span>
                   </div>
-                </div>
+                )}
               </div>
             </div>
             <div className="mt-6 space-y-4">
