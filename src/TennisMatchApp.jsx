@@ -194,6 +194,110 @@ const buildLocalUser = ({
   };
 };
 
+const resolveAuthSession = (data = {}, fallback = {}) => {
+  const normalizedData = data && typeof data === "object" ? data : {};
+  const fallbackData = fallback && typeof fallback === "object" ? fallback : {};
+
+  const pickString = (...values) => {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+    }
+    return "";
+  };
+
+  const profile =
+    normalizedData?.profile && typeof normalizedData.profile === "object"
+      ? normalizedData.profile
+      : null;
+  const userFromApi =
+    normalizedData?.user && typeof normalizedData.user === "object"
+      ? normalizedData.user
+      : null;
+
+  const deriveId = () => {
+    const candidates = [
+      profile?.id,
+      userFromApi?.id,
+      userFromApi?.user_id,
+      normalizedData?.user_id,
+      fallbackData?.id,
+    ];
+    for (const candidate of candidates) {
+      if (candidate === undefined || candidate === null) continue;
+      if (typeof candidate === "number") return candidate;
+      if (typeof candidate === "string" && candidate.trim()) return candidate;
+    }
+    return null;
+  };
+
+  const derivedId = deriveId();
+  const derivedType =
+    normalizedData?.user_type ??
+    userFromApi?.user_type ??
+    fallbackData?.type ??
+    fallbackData?.user_type ??
+    null;
+
+  const derivedName = pickString(
+    profile?.full_name,
+    userFromApi?.full_name,
+    userFromApi?.name,
+    fallbackData?.name,
+    fallbackData?.email,
+  );
+
+  const derivedEmail = pickString(
+    profile?.email,
+    userFromApi?.email,
+    fallbackData?.email,
+  );
+
+  const derivedPhone = pickString(
+    profile?.mobile,
+    profile?.phone,
+    userFromApi?.mobile,
+    userFromApi?.phone,
+    fallbackData?.phone,
+  );
+
+  const derivedSkill = pickString(
+    profile?.usta_rating,
+    profile?.skill_level,
+    profile?.skillLevel,
+    userFromApi?.usta_rating,
+    userFromApi?.skill_level,
+    userFromApi?.skillLevel,
+    fallbackData?.skillLevel,
+  );
+
+  const user = buildLocalUser({
+    id: derivedId,
+    type: derivedType,
+    name: derivedName,
+    email: derivedEmail,
+    phone: derivedPhone,
+    skillLevel: derivedSkill,
+  });
+
+  return {
+    token: pickString(
+      normalizedData?.access_token,
+      normalizedData?.token,
+      fallbackData?.accessToken,
+      fallbackData?.token,
+    ),
+    refreshToken: pickString(
+      normalizedData?.refresh_token,
+      fallbackData?.refreshToken,
+    ),
+    user,
+    userId: derivedId,
+    userType: derivedType,
+  };
+};
+
 const TennisMatchApp = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -340,6 +444,57 @@ const TennisMatchApp = () => {
     setTimeout(() => setShowToast(null), 3000);
   }, []);
 
+  const applyAuthSession = useCallback(
+    (session, fallback = {}) => {
+      if (!session) return null;
+      const { token, refreshToken, user } = session;
+      const safeToken = typeof token === "string" ? token.trim() : "";
+      const safeRefresh = typeof refreshToken === "string" ? refreshToken.trim() : "";
+      const fallbackData = fallback && typeof fallback === "object" ? fallback : {};
+
+      const safeSetItem = (key, value) => {
+        if (!value) return;
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          // ignore storage errors (e.g., private mode)
+        }
+      };
+
+      if (safeToken) {
+        safeSetItem("authToken", safeToken);
+      }
+      if (safeRefresh) {
+        safeSetItem("refreshToken", safeRefresh);
+      }
+
+      if (!safeToken) return null;
+
+      const nextUser =
+        user ||
+        buildLocalUser({
+          id: fallbackData?.id ?? null,
+          type: fallbackData?.user_type ?? fallbackData?.type ?? null,
+          name: fallbackData?.name ?? fallbackData?.email ?? "",
+          email: fallbackData?.email ?? "",
+          phone: fallbackData?.phone ?? "",
+          skillLevel: fallbackData?.skillLevel ?? "",
+        });
+
+      if (nextUser) {
+        try {
+          localStorage.setItem("user", JSON.stringify(nextUser));
+        } catch {
+          // ignore storage errors
+        }
+        setCurrentUser(nextUser);
+      }
+
+      return nextUser;
+    },
+    [setCurrentUser],
+  );
+
   const performSignup = useCallback(
     async ({
       name,
@@ -440,29 +595,34 @@ const TennisMatchApp = () => {
           phone: normalizedPhoneDigits,
         });
 
+        const fallbackDetails = {
+          email,
+          name: trimmedName,
+          phone: normalizedPhoneDigits,
+          skillLevel,
+          id: response?.user_id ?? null,
+        };
+
         let authPayload = response;
-        if (!authPayload?.access_token && !authPayload?.token) {
+        let session = resolveAuthSession(authPayload, fallbackDetails);
+        let persistedUser = applyAuthSession(session, fallbackDetails);
+
+        if (!session.token) {
           try {
             const fallbackLogin = await login(email, password);
             authPayload = { ...authPayload, ...fallbackLogin };
+            session = resolveAuthSession(authPayload, {
+              ...fallbackDetails,
+              id: fallbackLogin?.user_id ?? fallbackDetails.id,
+            });
+            persistedUser = applyAuthSession(session, fallbackDetails) || persistedUser;
           } catch (fallbackError) {
             console.error("Automatic login after signup failed", fallbackError);
           }
         }
 
-        if (authPayload?.access_token) {
-          localStorage.setItem("authToken", authPayload.access_token);
-        } else if (authPayload?.token) {
-          localStorage.setItem("authToken", authPayload.token);
-        }
-        if (authPayload?.refresh_token) {
-          localStorage.setItem("refreshToken", authPayload.refresh_token);
-        }
-
-        const normalizedPhone = normalizedPhoneDigits;
         const signupToken =
-          authPayload?.access_token ||
-          authPayload?.token ||
+          (typeof session.token === "string" ? session.token.trim() : "") ||
           localStorage.getItem("authToken") ||
           "";
 
@@ -472,34 +632,97 @@ const TennisMatchApp = () => {
           );
         }
 
-        const userId = authPayload?.user_id ?? response?.user_id;
-        if (signupToken && userId) {
-          await updatePlayerPersonalDetails({
-            player: signupToken,
-            id: userId,
-            ...(dateOfBirth
-              ? {
-                  date_of_birth: dateOfBirth,
+        const userId =
+          session.userId ??
+          authPayload?.user_id ??
+          response?.user_id ??
+          persistedUser?.id ??
+          null;
+
+        const normalizedPhone = normalizedPhoneDigits;
+
+        let profileUpdateError = null;
+        if (userId) {
+          const attemptProfileUpdate = async (tokenForRequest) =>
+            updatePlayerPersonalDetails({
+              player: tokenForRequest,
+              id: userId,
+              ...(dateOfBirth
+                ? {
+                    date_of_birth: dateOfBirth,
+                  }
+                : {}),
+              fullName: trimmedName || null,
+              ...(normalizedPhone ? { mobile: normalizedPhone } : {}),
+            });
+
+          try {
+            await attemptProfileUpdate(signupToken);
+          } catch (profileError) {
+            const status = Number(profileError?.status ?? profileError?.response?.status);
+            const message =
+              profileError?.response?.data?.message ||
+              profileError?.response?.data?.error ||
+              profileError?.data?.message ||
+              profileError?.message ||
+              "";
+            const tokenIssue =
+              [400, 401, 403].includes(status) || /token/i.test(message || "");
+
+            if (tokenIssue) {
+              try {
+                const retryLogin = await login(email, password);
+                authPayload = { ...authPayload, ...retryLogin };
+                session = resolveAuthSession(authPayload, {
+                  ...fallbackDetails,
+                  id:
+                    retryLogin?.user_id ??
+                    session.userId ??
+                    response?.user_id ??
+                    userId,
+                });
+                persistedUser = applyAuthSession(session, fallbackDetails) || persistedUser;
+                const retryToken =
+                  (typeof session.token === "string" ? session.token.trim() : "") ||
+                  localStorage.getItem("authToken") ||
+                  "";
+                if (retryToken) {
+                  await attemptProfileUpdate(retryToken);
+                } else {
+                  profileUpdateError = profileError;
                 }
-              : {}),
-            fullName: trimmedName || null,
-            ...(normalizedPhone ? { mobile: normalizedPhone } : {}),
-          });
+              } catch (retryError) {
+                console.error("Retrying profile update after login failed", retryError);
+                profileUpdateError = profileError;
+              }
+            } else {
+              profileUpdateError = profileError;
+            }
+          }
         }
 
-        const newUser = buildLocalUser({
+        if (profileUpdateError) {
+          console.error("Failed to update profile after signup", profileUpdateError);
+        }
+
+        const storedPhone = normalizedPhoneDigits || phone;
+        const finalUser = buildLocalUser({
           id: userId,
-          type: authPayload?.user_type ?? response?.user_type,
+          type: authPayload?.user_type ?? session.userType ?? persistedUser?.type,
           name: trimmedName,
           email,
-          phone,
+          phone: storedPhone,
           skillLevel,
         });
-        localStorage.setItem("user", JSON.stringify(newUser));
-        setCurrentUser(newUser);
-        const safeFirst = (newUser.name || "").split(" ")[0] || "Player";
+        try {
+          localStorage.setItem("user", JSON.stringify(finalUser));
+        } catch {
+          // ignore storage errors
+        }
+        setCurrentUser(finalUser);
+        const safeFirst = (finalUser.name || "").split(" ")[0] || "Player";
         displayToast(`Welcome to Matchplay, ${safeFirst}! 🎾`, "success");
-        return newUser;
+        return finalUser;
       } catch (error) {
         const { message, fieldErrors } = parseSignupError(error);
         const normalizedError = new Error(message);
@@ -508,62 +731,20 @@ const TennisMatchApp = () => {
         throw normalizedError;
       }
     },
-    [displayToast, setCurrentUser],
+    [applyAuthSession, displayToast, setCurrentUser],
   );
 
   const performLogin = useCallback(
     async ({ email, password }) => {
       try {
         const response = await login(email, password);
-        const {
-          access_token,
-          refresh_token,
-          profile,
-          user_id,
-          user_type,
-          token,
-          user: userFromApi,
-        } = response || {};
-
-        let user;
-
-        if (access_token) {
-          localStorage.setItem("authToken", access_token);
-          if (refresh_token) {
-            localStorage.setItem("refreshToken", refresh_token);
-          }
-          const name = profile?.full_name || email;
-          user = buildLocalUser({
-            id: user_id,
-            type: user_type,
-            name,
-            email,
-            phone: profile?.mobile || profile?.phone || "",
-            skillLevel: profile?.usta_rating || profile?.skill_level || "",
-          });
-        } else {
-          if (token) {
-            localStorage.setItem("authToken", token);
-          }
-          const fallbackName =
-            (userFromApi?.full_name || userFromApi?.name || email || "").trim();
-          const baseUser = buildLocalUser({
-            id: userFromApi?.id,
-            type: userFromApi?.user_type,
-            name: fallbackName || email,
-            email: userFromApi?.email || email,
-            phone: userFromApi?.phone,
-            skillLevel:
-              userFromApi?.usta_rating ||
-              userFromApi?.skillLevel ||
-              userFromApi?.skill_level ||
-              "",
-          });
-          user = userFromApi ? { ...userFromApi, ...baseUser } : baseUser;
+        const session = resolveAuthSession(response, { email });
+        const user = applyAuthSession(session, { email });
+        if (!session.token || !user) {
+          throw new Error(
+            "We couldn't start your session. Please try signing in again.",
+          );
         }
-
-        localStorage.setItem("user", JSON.stringify(user));
-        setCurrentUser(user);
         const safeFirst = (user.name || "").split(" ")[0] || "Player";
         displayToast(`Welcome back, ${safeFirst}! 🎾`, "success");
         return user;
@@ -581,11 +762,12 @@ const TennisMatchApp = () => {
         } else if (Number.isFinite(statusCode) && statusCode >= 500) {
           message =
             "We're having trouble signing you in right now. Please try again later.";
+        } else if (error?.message) {
+          message = error.message;
         } else {
           message =
             error?.response?.data?.message ||
             error?.data?.message ||
-            error?.message ||
             "We couldn't sign you in. Please try again.";
         }
         const normalizedError = new Error(message);
@@ -593,7 +775,7 @@ const TennisMatchApp = () => {
         throw normalizedError;
       }
     },
-    [displayToast, setCurrentUser],
+    [applyAuthSession, displayToast],
   );
 
   const fetchPendingInvites = useCallback(async () => {
