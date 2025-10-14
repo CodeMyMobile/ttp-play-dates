@@ -911,7 +911,6 @@ const TennisMatchApp = () => {
       const counts = data.counts || {};
       const archivedCount =
         counts.archived ?? counts.archieve ?? counts.archive ?? 0;
-      setMatchCounts({ ...counts, archived: archivedCount });
       setMatchPagination(data.pagination);
 
       const DEPARTURE_KEYS = [
@@ -996,6 +995,7 @@ const TennisMatchApp = () => {
         return true;
       };
 
+      let hiddenPrivateMatches = 0;
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
         const acceptedInvitees = uniqueAcceptedInvitees(m.invitees);
@@ -1147,6 +1147,7 @@ const TennisMatchApp = () => {
         const matchPrivacy = getMatchPrivacy(m);
         const isPrivateMatch = matchPrivacy === "private";
         if (isPrivateMatch && !isHost && !isJoined && !isInvited) {
+          hiddenPrivateMatches += 1;
           return null;
         }
 
@@ -1220,6 +1221,25 @@ const TennisMatchApp = () => {
       } else {
         transformed = transformed.filter((m) => m.status !== "archived");
       }
+
+      const normalizedCounts = { ...counts, archived: archivedCount };
+      if (hiddenPrivateMatches > 0) {
+        const countKey = (() => {
+          if (activeFilter === "archived") return "archived";
+          if (activeFilter === "draft") return "draft";
+          return activeFilter;
+        })();
+        if (countKey) {
+          const currentCount = Number(normalizedCounts[countKey]) || 0;
+          normalizedCounts[countKey] = Math.max(
+            currentCount - hiddenPrivateMatches,
+            transformed.length,
+            0,
+          );
+        }
+      }
+
+      setMatchCounts(normalizedCounts);
       setMatches(transformed);
     } catch (err) {
       displayToast(
