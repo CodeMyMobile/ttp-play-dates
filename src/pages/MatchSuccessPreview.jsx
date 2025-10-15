@@ -28,7 +28,6 @@ const previewParticipants = [
     profile: {
       full_name: "Avery Morgan",
       avatar_url: "https://i.pravatar.cc/120?img=5",
-      profile_url: "https://matchplay.app/players/1001",
       usta_rating: "4.0",
     },
   },
@@ -39,7 +38,6 @@ const previewParticipants = [
     profile: {
       full_name: "Jordan Lee",
       avatar_url: "https://i.pravatar.cc/120?img=12",
-      profile_url: "https://matchplay.app/players/2042",
       usta_rating: "3.5",
     },
   },

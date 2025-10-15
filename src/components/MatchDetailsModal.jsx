@@ -109,200 +109,6 @@ const skillLevelNumeric = (value) => {
   return null;
 };
 
-const asNonEmptyString = (value) => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed || null;
-  }
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value.toString() : null;
-  }
-  if (typeof value === "bigint") {
-    return value.toString();
-  }
-  return null;
-};
-
-const sanitizeBaseUrl = (value) => {
-  const str = asNonEmptyString(value);
-  if (!str) return null;
-  const normalized = /^https?:\/\//i.test(str)
-    ? str
-    : `https://${str.replace(/^\/+/, "")}`;
-  try {
-    const url = new URL(normalized);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return null;
-    }
-    url.hash = "";
-    url.search = "";
-    return url.toString().replace(/\/+$/, "");
-  } catch {
-    return null;
-  }
-};
-
-const ENV_PROFILE_BASE_URL = (() => {
-  const candidates = [
-    import.meta.env.VITE_PLAYER_PROFILE_BASE_URL,
-    import.meta.env.VITE_PLAYER_PORTAL_URL,
-    import.meta.env.VITE_PLAYER_APP_URL,
-    import.meta.env.VITE_APP_BASE_URL,
-    import.meta.env.VITE_APP_URL,
-  ];
-  for (const candidate of candidates) {
-    const sanitized = sanitizeBaseUrl(candidate);
-    if (sanitized) return sanitized;
-  }
-  return null;
-})();
-
-const getProfileBaseUrl = () => {
-  if (ENV_PROFILE_BASE_URL) return ENV_PROFILE_BASE_URL;
-  if (typeof window !== "undefined") {
-    const overrides = [
-      window.__TTP_PLAYER_PROFILE_BASE_URL__,
-      window.__PLAYER_PROFILE_BASE_URL__,
-      window.__MATCH_PLAYER_PROFILE_BASE_URL__,
-      window.location?.origin,
-    ];
-    for (const override of overrides) {
-      const sanitized = sanitizeBaseUrl(override);
-      if (sanitized) return sanitized;
-    }
-  }
-  return null;
-};
-
-const buildProfileUrlFromString = (value) => {
-  const str = asNonEmptyString(value);
-  if (!str) return null;
-  if (/^https?:\/\//i.test(str)) {
-    return str;
-  }
-  if (/^www\./i.test(str)) {
-    return `https://${str}`;
-  }
-  const baseUrl = getProfileBaseUrl();
-  if (!baseUrl) return null;
-  try {
-    const url = new URL(str, `${baseUrl}/`);
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      return url.toString();
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-
-const buildProfileUrlFromPlayerId = (playerId) => {
-  const idString = asNonEmptyString(playerId);
-  if (!idString || !ENV_PROFILE_BASE_URL) return null;
-  try {
-    const url = new URL(
-      encodeURIComponent(idString),
-      `${ENV_PROFILE_BASE_URL}/`,
-    );
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      return url.toString();
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-
-const getProfileImageFromSource = (source) => {
-  if (!source || typeof source !== "object") return null;
-  const keys = [
-    "profile_picture",
-    "profilePicture",
-    "profile_picture_url",
-    "profilePictureUrl",
-    "profile_photo",
-    "profilePhoto",
-    "profile_image",
-    "profileImage",
-    "profile_image_url",
-    "profileImageUrl",
-    "photo_url",
-    "photoUrl",
-    "image_url",
-    "imageUrl",
-    "avatar_url",
-    "avatarUrl",
-    "avatar",
-    "host_avatar",
-    "hostAvatar",
-    "picture",
-    "photo",
-  ];
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = asNonEmptyString(source[key]);
-    if (value) return value;
-  }
-  return null;
-};
-
-const getProfileUrlFromSource = (source) => {
-  if (!source || typeof source !== "object") return null;
-  const keys = [
-    "profile_url",
-    "profileUrl",
-    "profile_link",
-    "profileLink",
-    "profile_page",
-    "profilePage",
-    "profile_path",
-    "profilePath",
-    "profile_handle",
-    "profileHandle",
-    "permalink",
-    "url",
-    "link",
-    "slug",
-    "handle",
-  ];
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const candidate = source[key];
-    const url = buildProfileUrlFromString(candidate);
-    if (url) return url;
-  }
-  return null;
-};
-
-const getParticipantProfileImage = (participant) => {
-  if (!participant || typeof participant !== "object") return null;
-  return (
-    getProfileImageFromSource(participant.profile) ||
-    getProfileImageFromSource(participant.player) ||
-    getProfileImageFromSource(participant) ||
-    null
-  );
-};
-
-const getParticipantProfileUrl = (participant, playerId) => {
-  if (!participant || typeof participant !== "object") {
-    return buildProfileUrlFromPlayerId(playerId);
-  }
-
-  const profileUrl =
-    getProfileUrlFromSource(participant.profile) ||
-    getProfileUrlFromSource(participant.player) ||
-    getProfileUrlFromSource(participant);
-  if (profileUrl) {
-    return profileUrl;
-  }
-
-  return buildProfileUrlFromPlayerId(playerId);
-};
-
 const getSkillLevelDisplay = (match) => {
   if (!match) return "";
 
@@ -509,7 +315,6 @@ const MatchDetailsModal = ({
   formatDateTime,
   onManageInvites,
   initialStatus,
-  onViewPlayerProfile,
 }) => {
   const normalizedInitialStatus = initialStatus || "details";
   const [status, setStatus] = useState(normalizedInitialStatus);
@@ -603,11 +408,7 @@ const MatchDetailsModal = ({
     hostParticipant?.profile?.name ||
     "Match Organizer";
 
-  const hostAvatar =
-    getProfileImageFromSource(hostProfile) ||
-    getParticipantProfileImage(hostParticipant) ||
-    getProfileImageFromSource(match) ||
-    null;
+  const hostAvatar = hostProfile?.avatar_url || hostProfile?.avatar || null;
 
   const committedParticipants = useMemo(
     () => uniqueActiveParticipants(participants),
@@ -1201,23 +1002,6 @@ const MatchDetailsModal = ({
     requestShareLink({ silent: false });
   };
 
-  const handlePlayerProfileClick = useCallback(
-    (player) => {
-      if (!player) return;
-      if (typeof onViewPlayerProfile === "function") {
-        onViewPlayerProfile(player);
-        return;
-      }
-      if (!player.profileUrl) return;
-      try {
-        window.open(player.profileUrl, "_blank", "noopener,noreferrer");
-      } catch (error) {
-        console.error(error);
-      }
-    },
-    [onViewPlayerProfile],
-  );
-
   const matchDistanceLabel = useMemo(
     () =>
       distanceLabel(
@@ -1231,8 +1015,6 @@ const MatchDetailsModal = ({
       const profile = participant.profile || {};
       const playerId = getParticipantPlayerId(participant);
       const id = getParticipantIdentity(participant, `participant-${index}`);
-      const avatar = getParticipantProfileImage(participant);
-      const profileUrl = getParticipantProfileUrl(participant, playerId);
       return {
         id,
         playerId,
@@ -1246,7 +1028,12 @@ const MatchDetailsModal = ({
           profile.name ||
           participant.name ||
           (playerId ? `Player ${playerId}` : `Player ${index + 1}`),
-        avatar,
+        avatar:
+          profile.avatar_url ||
+          profile.avatar ||
+          participant.avatar_url ||
+          participant.avatar ||
+          null,
         isHost: match?.host_id ? idsMatch(playerId, match.host_id) : false,
         rating:
           profile.usta_rating ||
@@ -1255,8 +1042,6 @@ const MatchDetailsModal = ({
           profile.ntrp_rating ||
           participant.rating ||
           null,
-        profileUrl,
-        participant,
       };
     });
 
@@ -1461,53 +1246,35 @@ const MatchDetailsModal = ({
             </div>
           );
         }
-        const canViewProfile =
-          typeof onViewPlayerProfile === "function" || Boolean(player.profileUrl);
         return (
           <div
             key={player.id}
             className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"
           >
-            <button
-              type="button"
-              onClick={() => handlePlayerProfileClick(player)}
-              disabled={!canViewProfile}
-              className={`flex flex-1 items-center gap-3 rounded-2xl bg-transparent p-0 text-left focus:outline-none transition-colors ${
-                canViewProfile
-                  ? "cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 hover:bg-white/70"
-                  : "cursor-default"
-              }`}
-              title={
-                canViewProfile ? `View ${player.name}'s profile` : undefined
-              }
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-sm font-bold text-indigo-700">
-                {player.avatar ? (
-                  <img
-                    src={player.avatar}
-                    alt={player.name}
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                ) : (
-                  buildAvatarLabel(player.name)
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-sm font-bold text-indigo-700">
+              {player.avatar ? (
+                <img
+                  src={player.avatar}
+                  alt={player.name}
+                  className="h-10 w-10 rounded-full object-cover"
+                />
+              ) : (
+                buildAvatarLabel(player.name)
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-black text-gray-900">
+                {player.name}
+                {player.isHost && (
+                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                    Host
+                  </span>
                 )}
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-black text-gray-900">
-                  {player.name}
-                  {player.isHost && (
-                    <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
-                      Host
-                    </span>
-                  )}
-                </p>
-                {player.rating && (
-                  <p className="text-xs font-semibold text-gray-500">
-                    Rating {player.rating}
-                  </p>
-                )}
-              </div>
-            </button>
+              </p>
+              {player.rating && (
+                <p className="text-xs font-semibold text-gray-500">Rating {player.rating}</p>
+              )}
+            </div>
             {isHost &&
               !player.placeholder &&
               !player.isHost &&
