@@ -1805,7 +1805,7 @@ function getRosterParticipants(match, preview) {
   const previewParticipants = Array.isArray(preview?.participants)
     ? preview.participants
     : [];
-  const participantSource = uniqueParticipants([
+  const participantSource = uniqueActiveParticipants([
     ...matchParticipants,
     ...previewParticipants,
   ]);
@@ -1814,7 +1814,7 @@ function getRosterParticipants(match, preview) {
   const previewInvitees = Array.isArray(preview?.invitees)
     ? preview.invitees
     : [];
-  const inviteeSource = uniqueInvitees([
+  const inviteeSource = uniqueAcceptedInvitees([
     ...matchInvitees,
     ...previewInvitees,
   ]);
