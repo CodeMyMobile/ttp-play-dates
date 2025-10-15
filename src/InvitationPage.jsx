@@ -23,6 +23,7 @@ import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import {
   uniqueAcceptedInvitees,
+  uniqueActiveParticipants,
   uniqueInvitees,
   uniqueMatchOccupants,
   uniqueParticipants,
