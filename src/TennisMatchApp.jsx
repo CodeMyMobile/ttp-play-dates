@@ -2725,15 +2725,14 @@ const TennisMatchApp = () => {
                 You're all caught up on invites. 🎉
               </div>
             )}
+            {hostMatchAlerts.length > 0 && (
+              <HostMatchAlerts
+                alerts={hostMatchAlerts}
+                onInvite={openInviteScreen}
+                formatDateTime={formatDateTime}
+              />
+            )}
           </div>
-
-          {hostMatchAlerts.length > 0 && (
-            <HostMatchAlerts
-              alerts={hostMatchAlerts}
-              onInvite={openInviteScreen}
-              formatDateTime={formatDateTime}
-            />
-          )}
 
       {/* Filter Tabs */}
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">

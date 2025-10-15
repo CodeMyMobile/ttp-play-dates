@@ -147,8 +147,8 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
     });
   };
 
-  return (
-    <section className="bg-gradient-to-r from-amber-50 via-white to-orange-50 border border-amber-200 rounded-3xl shadow-sm p-5 space-y-4">
+    return (
+      <section className="w-full bg-gradient-to-r from-amber-50 via-white to-orange-50 border border-amber-200 rounded-3xl shadow-sm p-5 space-y-4">
       <div className="flex items-start gap-3">
         <div className="rounded-full bg-amber-100 p-2 text-amber-600">
           <AlertTriangle className="w-5 h-5" />
