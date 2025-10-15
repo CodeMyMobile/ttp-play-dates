@@ -12,6 +12,11 @@ import {
   CheckCircle2,
   Send,
 } from "lucide-react";
+import {
+  formatPhoneDisplay,
+  getPhoneDigits,
+  normalizePhoneValue,
+} from "../services/phone";
 
 const formatTimeUntil = (milliseconds) => {
   if (!Number.isFinite(milliseconds)) return "";
@@ -68,6 +73,118 @@ const formatRelativePast = (timestamp) => {
   return `${diffYears} year${diffYears === 1 ? "" : "s"} ago`;
 };
 
+const deriveRecommendationIdentifiers = (player) => {
+  if (!player || typeof player !== "object") {
+    return {
+      candidateId: null,
+      normalizedPhone: "",
+      phoneDisplay: "",
+      selectionKey: null,
+    };
+  }
+
+  const idCandidate =
+    player.playerId ??
+    player.id ??
+    player.user_id ??
+    player.userId ??
+    player.player_id;
+  const numericId = Number(idCandidate);
+  const candidateId =
+    Number.isFinite(numericId) && numericId > 0 ? numericId : null;
+
+  const phoneCandidates = [
+    player.phone,
+    player.contactPhone,
+    player.phoneNumber,
+    player.phone_number,
+    player.phoneDigits,
+    player.phone_digits,
+    player.phoneDisplay,
+    player.phone_display,
+  ];
+
+  let normalizedPhone = "";
+  for (const candidate of phoneCandidates) {
+    normalizedPhone = normalizePhoneValue(candidate);
+    if (normalizedPhone) break;
+  }
+
+  const digitSource = normalizedPhone || phoneCandidates.find(Boolean) || "";
+  const phoneDigits = getPhoneDigits(digitSource);
+  const phoneDisplay =
+    player.phoneDisplay ||
+    player.phone_display ||
+    (normalizedPhone
+      ? formatPhoneDisplay(normalizedPhone)
+      : phoneDigits
+      ? formatPhoneDisplay(phoneDigits)
+      : "");
+
+  const selectionKey = (() => {
+    if (candidateId) {
+      return `id:${candidateId}`;
+    }
+    if (phoneDigits) {
+      return `phone:${phoneDigits}`;
+    }
+    if (typeof player.key === "string" && player.key.trim()) {
+      return `key:${player.key.trim()}`;
+    }
+    const emailCandidate =
+      player.email || player.contactEmail || player.profileEmail;
+    if (typeof emailCandidate === "string" && emailCandidate.trim()) {
+      return `email:${emailCandidate.trim().toLowerCase()}`;
+    }
+    return null;
+  })();
+
+  return {
+    candidateId,
+    normalizedPhone,
+    phoneDisplay,
+    selectionKey,
+  };
+};
+
+const buildRecommendationPayload = (player) => {
+  const { candidateId, normalizedPhone, phoneDisplay, selectionKey } =
+    deriveRecommendationIdentifiers(player);
+
+  if (!selectionKey) {
+    return null;
+  }
+
+  const normalizedName =
+    player.name ||
+    player.fullName ||
+    player.full_name ||
+    player.displayName ||
+    "";
+  const trimmedName =
+    typeof normalizedName === "string" ? normalizedName.trim() : "";
+  const computedPhone =
+    normalizedPhone || normalizePhoneValue(player.phoneDigits || "");
+
+  if (!candidateId && !computedPhone) {
+    return null;
+  }
+
+  return {
+    selectionKey,
+    playerId: candidateId || null,
+    type: candidateId ? "member" : "contact",
+    name:
+      trimmedName ||
+      (candidateId
+        ? `Player ${candidateId}`
+        : phoneDisplay || (computedPhone ? formatPhoneDisplay(computedPhone) : "")),
+    email: player.email || player.contactEmail || "",
+    phone: computedPhone || "",
+    phoneDisplay: phoneDisplay || "",
+  };
+};
+
 const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
   const [expandedMatchId, setExpandedMatchId] = useState(null);
   const [selectedByMatch, setSelectedByMatch] = useState(new Map());
@@ -94,30 +211,19 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
   };
 
   const toggleRecommendation = (matchId, player) => {
-    if (!player) return;
     const numericMatchId = Number(matchId);
     if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) return;
 
-    const candidateId = Number(
-      player.playerId ?? player.id ?? player.user_id ?? player.userId,
-    );
-    if (!Number.isFinite(candidateId) || candidateId <= 0) return;
-
-    const normalized = {
-      playerId: candidateId,
-      name: player.name || player.fullName || player.full_name || "",
-      email: player.email || player.contactEmail || "",
-      phone: player.phone || player.contactPhone || "",
-      phoneDisplay: player.phoneDisplay || player.phone_display || "",
-    };
+    const payload = buildRecommendationPayload(player);
+    if (!payload) return;
 
     setSelectedByMatch((prev) => {
       const next = new Map(prev);
       const existingSelections = new Map(next.get(numericMatchId) || []);
-      if (existingSelections.has(candidateId)) {
-        existingSelections.delete(candidateId);
+      if (existingSelections.has(payload.selectionKey)) {
+        existingSelections.delete(payload.selectionKey);
       } else {
-        existingSelections.set(candidateId, normalized);
+        existingSelections.set(payload.selectionKey, payload);
       }
       if (existingSelections.size === 0) {
         next.delete(numericMatchId);
@@ -147,8 +253,8 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
     });
   };
 
-    return (
-      <section className="w-full bg-gradient-to-r from-amber-50 via-white to-orange-50 border border-amber-200 rounded-3xl shadow-sm p-5 space-y-4">
+  return (
+    <section className="w-full bg-gradient-to-r from-amber-50 via-white to-orange-50 border border-amber-200 rounded-3xl shadow-sm p-5 space-y-4">
       <div className="flex items-start gap-3">
         <div className="rounded-full bg-amber-100 p-2 text-amber-600">
           <AlertTriangle className="w-5 h-5" />
@@ -251,14 +357,11 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
                   {recommendations.length > 0 ? (
                     <ul className="space-y-3">
                       {recommendations.map((player) => {
-                        const candidateId = Number(
-                          player.playerId ??
-                            player.id ??
-                            player.user_id ??
-                            player.userId,
-                        );
-                        const canSelect = Number.isFinite(candidateId) && candidateId > 0;
-                        const isSelected = selections.has(candidateId);
+                        const payload = buildRecommendationPayload(player);
+                        const canSelect = Boolean(payload);
+                        const selectionKey = payload?.selectionKey || null;
+                        const isSelected =
+                          selectionKey !== null && selections.has(selectionKey);
                         return (
                           <li
                             key={player.key}
@@ -283,7 +386,9 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
                             <div className="flex flex-col gap-2 sm:items-end">
                               <div className="text-xs font-semibold text-gray-600 space-y-1 text-left sm:text-right">
                                 {player.email && <p>{player.email}</p>}
-                                {player.phoneDisplay && <p>{player.phoneDisplay}</p>}
+                                {(player.phoneDisplay || payload?.phoneDisplay) && (
+                                  <p>{player.phoneDisplay || payload?.phoneDisplay}</p>
+                                )}
                               </div>
                               <button
                                 type="button"
@@ -329,10 +434,20 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
                       <div className="flex flex-wrap gap-2">
                         {Array.from(selections.values()).map((player) => (
                           <span
-                            key={player.playerId}
+                            key={player.selectionKey}
                             className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-200"
                           >
-                            {player.name || `Player ${player.playerId}`}
+                            {player.name ||
+                              (player.type === "contact"
+                                ? player.phoneDisplay || "SMS contact"
+                                : player.playerId
+                                ? `Player ${player.playerId}`
+                                : "Player")}
+                            {player.type === "contact" && (
+                              <span className="text-[10px] font-black uppercase text-emerald-500">
+                                SMS
+                              </span>
+                            )}
                           </span>
                         ))}
                       </div>

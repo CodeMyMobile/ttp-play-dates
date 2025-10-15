@@ -1935,6 +1935,7 @@ const TennisMatchApp = () => {
           .filter((id) => Number.isFinite(id) && id > 0);
 
         const initial = new Map();
+        const initialManualContacts = new Map();
         const pendingPreselects = Array.isArray(preselectPlayers)
           ? preselectPlayers
           : [];
@@ -1999,28 +2000,63 @@ const TennisMatchApp = () => {
               player.userId ??
               player.player_id,
           );
-          if (!Number.isFinite(candidateId) || candidateId <= 0) return;
-          if (initial.has(candidateId)) return;
+
           const nameCandidate =
             player.name ||
             player.full_name ||
             player.fullName ||
             player.displayName ||
-            `Player ${candidateId}`;
-          initial.set(candidateId, {
-            user_id: candidateId,
-            full_name: nameCandidate,
-            email:
-              player.email ||
-              player.contactEmail ||
-              player.profileEmail ||
-              "",
-            hosting: false,
+            (Number.isFinite(candidateId) && candidateId > 0
+              ? `Player ${candidateId}`
+              : "");
+
+          if (Number.isFinite(candidateId) && candidateId > 0) {
+            if (initial.has(candidateId)) return;
+            initial.set(candidateId, {
+              user_id: candidateId,
+              full_name: nameCandidate || `Player ${candidateId}`,
+              email:
+                player.email ||
+                player.contactEmail ||
+                player.profileEmail ||
+                "",
+              hosting: false,
+            });
+            return;
+          }
+
+          const phoneCandidates = [
+            player.phone,
+            player.contactPhone,
+            player.phoneNumber,
+            player.phone_digits,
+            player.phoneDigits,
+            player.phone_display,
+            player.phoneDisplay,
+          ];
+          let normalizedPhone = "";
+          for (const candidate of phoneCandidates) {
+            normalizedPhone = normalizePhoneValue(candidate);
+            if (normalizedPhone) break;
+          }
+          if (!normalizedPhone) return;
+          if (initialManualContacts.has(normalizedPhone)) return;
+
+          const contactName =
+            nameCandidate ||
+            player.phoneDisplay ||
+            player.phone_display ||
+            formatPhoneDisplay(normalizedPhone);
+
+          initialManualContacts.set(normalizedPhone, {
+            key: normalizedPhone,
+            phone: normalizedPhone,
+            name: contactName,
           });
         });
 
         setSelectedPlayers(initial);
-        setManualContacts(new Map());
+        setManualContacts(initialManualContacts);
         setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
         lastInviteLoadRef.current = numericMatchId;
         setMatchData((prev) => {
