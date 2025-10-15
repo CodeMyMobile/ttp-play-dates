@@ -236,6 +236,8 @@ const isInactiveStatus = (value) => {
     "rejected",
     "withdrawn",
     "expired",
+    "pending",
+    "invited",
   ].includes(normalized);
 };
 
