@@ -23,7 +23,7 @@ import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import {
   uniqueAcceptedInvitees,
-  uniqueActiveParticipants,
+  uniqueInvitees,
   uniqueMatchOccupants,
   uniqueParticipants,
 } from "./utils/participants";
@@ -1782,7 +1782,20 @@ function getActiveParticipants(match, preview) {
     return [];
   }
 
-  return uniqueMatchOccupants(participantSource, inviteeSource);
+  if (!isOpenMatchInvite(match, preview)) {
+    return uniqueMatchOccupants(participantSource, inviteeSource);
+  }
+
+  const filteredParticipants = uniqueParticipants(participantSource).filter(
+    (participant) => !participantLooksPendingForOpenMatch(participant, match),
+  );
+  const acceptedInvitees = uniqueAcceptedInvitees(inviteeSource);
+
+  if (!filteredParticipants.length && !acceptedInvitees.length) {
+    return [];
+  }
+
+  return uniqueMatchOccupants(filteredParticipants, acceptedInvitees);
 }
 
 function getRosterParticipants(match, preview) {
@@ -1810,18 +1823,355 @@ function getRosterParticipants(match, preview) {
     return [];
   }
 
-  if (!inviteeSource.length) {
-    return participantSource;
+  if (!isOpenMatchInvite(match, preview)) {
+    if (!inviteeSource.length) {
+      return participantSource;
+    }
+
+    if (!participantSource.length) {
+      return inviteeSource;
+    }
+
+    return uniqueParticipants([
+      ...participantSource,
+      ...inviteeSource,
+    ]);
   }
 
-  if (!participantSource.length) {
-    return inviteeSource;
+  const filteredParticipants = participantSource.filter(
+    (participant) => !participantLooksPendingForOpenMatch(participant, match),
+  );
+  const acceptedInvitees = uniqueAcceptedInvitees([
+    ...matchInvitees,
+    ...previewInvitees,
+  ]);
+
+  if (!filteredParticipants.length && !acceptedInvitees.length) {
+    return [];
+  }
+
+  if (!acceptedInvitees.length) {
+    return filteredParticipants;
+  }
+
+  if (!filteredParticipants.length) {
+    return acceptedInvitees;
   }
 
   return uniqueParticipants([
-    ...participantSource,
-    ...inviteeSource,
+    ...filteredParticipants,
+    ...acceptedInvitees,
   ]);
+}
+
+const OPEN_MATCH_PENDING_STATUS_VALUES = new Set([
+  "pending",
+  "invited",
+  "invite_pending",
+  "invitation_pending",
+  "awaiting",
+  "awaiting_response",
+  "awaiting-response",
+  "awaiting rsvp",
+  "awaiting_rsvp",
+  "waiting",
+  "waitlisted",
+  "wait_list",
+  "wait-list",
+  "wait list",
+  "standby",
+  "hold",
+  "holding",
+  "tentative",
+  "unconfirmed",
+  "requested",
+  "request_pending",
+  "requesting",
+]);
+
+const OPEN_MATCH_JOINED_STATUS_VALUES = new Set([
+  "confirmed",
+  "accepted",
+  "joined",
+  "committed",
+  "on_roster",
+  "on-roster",
+  "on roster",
+  "hosting",
+  "host",
+  "active",
+  "playing",
+  "attending",
+  "registered",
+  "participant",
+  "organizer",
+  "organiser",
+  "owner",
+  "creator",
+]);
+
+const OPEN_MATCH_JOIN_INDICATOR_KEYS = [
+  "joined_at",
+  "joinedAt",
+  "joined_on",
+  "joinedOn",
+  "joined",
+  "is_joined",
+  "isJoined",
+  "has_joined",
+  "hasJoined",
+  "accepted",
+  "is_accepted",
+  "isAccepted",
+  "accepted_at",
+  "acceptedAt",
+  "confirmed",
+  "is_confirmed",
+  "isConfirmed",
+  "confirmed_at",
+  "confirmedAt",
+  "rsvp_status",
+  "rsvpStatus",
+  "rsvp_at",
+  "rsvpAt",
+  "checked_in",
+  "checkedIn",
+  "checked_in_at",
+  "checkedInAt",
+];
+
+function isOpenMatchInvite(match, preview) {
+  const resolvedType = resolveMatchType(match, preview);
+  if (resolvedType) {
+    if (
+      resolvedType === "open" ||
+      resolvedType === "available" ||
+      resolvedType === "public" ||
+      resolvedType === "anyone"
+    ) {
+      return true;
+    }
+    if (
+      resolvedType === "private" ||
+      resolvedType === "closed" ||
+      resolvedType === "invite_only" ||
+      resolvedType === "invite-only" ||
+      resolvedType === "locked"
+    ) {
+      return false;
+    }
+  }
+
+  const booleanCandidates = [
+    match?.is_open,
+    match?.isOpen,
+    preview?.match?.is_open,
+    preview?.match?.isOpen,
+    preview?.is_open,
+    preview?.isOpen,
+  ];
+
+  if (booleanCandidates.some((value) => value === true)) {
+    return true;
+  }
+
+  if (booleanCandidates.some((value) => value === false)) {
+    return false;
+  }
+
+  return false;
+}
+
+function resolveMatchType(match, preview) {
+  const candidates = [
+    match?.match_type,
+    match?.matchType,
+    match?.type,
+    match?.privacy,
+    match?.match_privacy,
+    match?.matchPrivacy,
+    preview?.match?.match_type,
+    preview?.match?.matchType,
+    preview?.match?.type,
+    preview?.match?.privacy,
+    preview?.match?.match_privacy,
+    preview?.match?.matchPrivacy,
+    preview?.match_type,
+    preview?.matchType,
+    preview?.type,
+    preview?.privacy,
+    preview?.match_privacy,
+    preview?.matchPrivacy,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function participantLooksPendingForOpenMatch(participant, match) {
+  if (!participant || typeof participant !== "object") {
+    return false;
+  }
+
+  if (participant.is_host === true || participant.hosting === true) {
+    return false;
+  }
+
+  const statusCandidates = [
+    participant.status,
+    participant.participant_status,
+    participant.participantStatus,
+    participant.status_reason,
+    participant.statusReason,
+    participant.role,
+    participant.invite_status,
+    participant.inviteStatus,
+    participant.rsvp_status,
+    participant.rsvpStatus,
+  ];
+
+  let hasJoinedSignal = false;
+
+  for (const candidate of statusCandidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim().toLowerCase();
+    if (!normalized) continue;
+    if (OPEN_MATCH_PENDING_STATUS_VALUES.has(normalized)) {
+      return true;
+    }
+    if (OPEN_MATCH_JOINED_STATUS_VALUES.has(normalized)) {
+      hasJoinedSignal = true;
+    }
+  }
+
+  const pendingFlags = [
+    participant.pending,
+    participant.is_pending,
+    participant.isPending,
+    participant.awaiting_response,
+    participant.awaitingResponse,
+    participant.awaiting_rsvp,
+    participant.awaitingRsvp,
+    participant.waitlisted,
+    participant.is_waitlisted,
+    participant.isWaitlisted,
+    participant.wait_listed,
+    participant.waitListed,
+  ];
+
+  if (pendingFlags.some((value) => value === true)) {
+    return true;
+  }
+
+  if (hasJoinedSignal) {
+    return false;
+  }
+
+  for (const key of OPEN_MATCH_JOIN_INDICATOR_KEYS) {
+    if (hasTruthyValue(participant[key])) {
+      return false;
+    }
+  }
+
+  const matchHostId =
+    match?.host_id ??
+    match?.hostId ??
+    match?.host?.id ??
+    match?.host?.player_id ??
+    match?.host?.playerId ??
+    null;
+
+  if (matchHostId) {
+    const participantIds = [
+      participant.player_id,
+      participant.playerId,
+      participant.match_participant_id,
+      participant.matchParticipantId,
+      participant.participant_id,
+      participant.participantId,
+      participant.id,
+      participant.profile?.id,
+      participant.profile?.player_id,
+      participant.profile?.playerId,
+    ];
+
+    if (participantIds.some((value) => valuesMatchIgnoreCase(value, matchHostId))) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function hasTruthyValue(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return false;
+    }
+    const normalized = trimmed.toLowerCase();
+    if (normalized === "false" || normalized === "no" || normalized === "0") {
+      return false;
+    }
+    if (OPEN_MATCH_PENDING_STATUS_VALUES.has(normalized)) {
+      return false;
+    }
+    return true;
+  }
+  if (value instanceof Date) {
+    return !Number.isNaN(value.getTime());
+  }
+  return true;
+}
+
+function valuesMatchIgnoreCase(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) {
+    return false;
+  }
+
+  const normalize = (value) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+      return trimmed.toLowerCase();
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? String(value) : null;
+    }
+    if (typeof value === "bigint") {
+      return value.toString().toLowerCase();
+    }
+    return value;
+  };
+
+  const left = normalize(a);
+  const right = normalize(b);
+
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return false;
+  }
+
+  if (typeof left === "string" && typeof right === "string") {
+    return left === right;
+  }
+
+  return left === right;
 }
 
 function participantDisplayName(participant) {
