@@ -23,6 +23,7 @@ import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import {
   uniqueAcceptedInvitees,
+  uniqueActiveParticipants,
   uniqueInvitees,
   uniqueMatchOccupants,
   uniqueParticipants,
@@ -1783,7 +1784,9 @@ function getActiveParticipants(match, preview) {
   }
 
   if (!isOpenMatchInvite(match, preview)) {
-    return uniqueMatchOccupants(participantSource, inviteeSource);
+    return filterDisplayableParticipants(
+      uniqueMatchOccupants(participantSource, inviteeSource),
+    );
   }
 
   const filteredParticipants = uniqueParticipants(participantSource).filter(
@@ -1795,7 +1798,9 @@ function getActiveParticipants(match, preview) {
     return [];
   }
 
-  return uniqueMatchOccupants(filteredParticipants, acceptedInvitees);
+  return filterDisplayableParticipants(
+    uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
+  );
 }
 
 function getRosterParticipants(match, preview) {
@@ -1825,17 +1830,19 @@ function getRosterParticipants(match, preview) {
 
   if (!isOpenMatchInvite(match, preview)) {
     if (!inviteeSource.length) {
-      return participantSource;
+      return filterDisplayableParticipants(participantSource);
     }
 
     if (!participantSource.length) {
-      return inviteeSource;
+      return filterDisplayableParticipants(inviteeSource);
     }
 
-    return uniqueParticipants([
-      ...participantSource,
-      ...inviteeSource,
-    ]);
+    return filterDisplayableParticipants(
+      uniqueParticipants([
+        ...participantSource,
+        ...inviteeSource,
+      ]),
+    );
   }
 
   const filteredParticipants = participantSource.filter(
@@ -1851,17 +1858,19 @@ function getRosterParticipants(match, preview) {
   }
 
   if (!acceptedInvitees.length) {
-    return filteredParticipants;
+    return filterDisplayableParticipants(filteredParticipants);
   }
 
   if (!filteredParticipants.length) {
-    return acceptedInvitees;
+    return filterDisplayableParticipants(acceptedInvitees);
   }
 
-  return uniqueParticipants([
-    ...filteredParticipants,
-    ...acceptedInvitees,
-  ]);
+  return filterDisplayableParticipants(
+    uniqueParticipants([
+      ...filteredParticipants,
+      ...acceptedInvitees,
+    ]),
+  );
 }
 
 const OPEN_MATCH_PENDING_STATUS_VALUES = new Set([
@@ -2219,5 +2228,70 @@ function participantDisplayName(participant) {
   }
 
   return "Player";
+}
+
+function filterDisplayableParticipants(list) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list.filter(shouldDisplayParticipant);
+}
+
+function shouldDisplayParticipant(participant) {
+  if (!participant || typeof participant !== "object") {
+    return false;
+  }
+
+  const name = participantDisplayName(participant);
+  if (name && name !== "Player") {
+    return true;
+  }
+
+  return participantHasIdentifier(participant);
+}
+
+function participantHasIdentifier(participant) {
+  const identifiers = [
+    participant.match_participant_id,
+    participant.matchParticipantId,
+    participant.participant_id,
+    participant.participantId,
+    participant.player_id,
+    participant.playerId,
+    participant.invitee_id,
+    participant.inviteeId,
+    participant.id,
+    participant.profile?.id,
+    participant.profile?.player_id,
+    participant.profile?.playerId,
+    participant.invitee?.id,
+    participant.invitee?.player_id,
+    participant.invitee?.playerId,
+  ];
+
+  return identifiers.some((value) => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+
+    if (typeof value === "bigint") {
+      return true;
+    }
+
+    if (value instanceof Date) {
+      return !Number.isNaN(value.getTime());
+    }
+
+    return true;
+  });
 }
 
