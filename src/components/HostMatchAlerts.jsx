@@ -8,6 +8,9 @@ import {
   ChevronDown,
   ChevronUp,
   UserPlus,
+  PlusCircle,
+  CheckCircle2,
+  Send,
 } from "lucide-react";
 
 const formatTimeUntil = (milliseconds) => {
@@ -67,6 +70,7 @@ const formatRelativePast = (timestamp) => {
 
 const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
   const [expandedMatchId, setExpandedMatchId] = useState(null);
+  const [selectedByMatch, setSelectedByMatch] = useState(new Map());
 
   const sortedAlerts = useMemo(() => {
     if (!Array.isArray(alerts)) return [];
@@ -81,6 +85,67 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
   if (sortedAlerts.length === 0) {
     return null;
   }
+
+  const getSelectionsForMatch = (matchId) => {
+    if (!Number.isFinite(matchId) || matchId <= 0) return new Map();
+    const selections = selectedByMatch.get(matchId);
+    if (!selections) return new Map();
+    return selections;
+  };
+
+  const toggleRecommendation = (matchId, player) => {
+    if (!player) return;
+    const numericMatchId = Number(matchId);
+    if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) return;
+
+    const candidateId = Number(
+      player.playerId ?? player.id ?? player.user_id ?? player.userId,
+    );
+    if (!Number.isFinite(candidateId) || candidateId <= 0) return;
+
+    const normalized = {
+      playerId: candidateId,
+      name: player.name || player.fullName || player.full_name || "",
+      email: player.email || player.contactEmail || "",
+      phone: player.phone || player.contactPhone || "",
+      phoneDisplay: player.phoneDisplay || player.phone_display || "",
+    };
+
+    setSelectedByMatch((prev) => {
+      const next = new Map(prev);
+      const existingSelections = new Map(next.get(numericMatchId) || []);
+      if (existingSelections.has(candidateId)) {
+        existingSelections.delete(candidateId);
+      } else {
+        existingSelections.set(candidateId, normalized);
+      }
+      if (existingSelections.size === 0) {
+        next.delete(numericMatchId);
+      } else {
+        next.set(numericMatchId, existingSelections);
+      }
+      return next;
+    });
+  };
+
+  const handleInviteSelected = (matchId) => {
+    const numericMatchId = Number(matchId);
+    if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) return;
+    const selections = getSelectionsForMatch(numericMatchId);
+    if (typeof onInvite !== "function") return;
+    if (selections.size === 0) {
+      onInvite(numericMatchId);
+      return;
+    }
+    onInvite(numericMatchId, {
+      preselectPlayers: Array.from(selections.values()),
+    });
+    setSelectedByMatch((prev) => {
+      const next = new Map(prev);
+      next.delete(numericMatchId);
+      return next;
+    });
+  };
 
   return (
     <section className="bg-gradient-to-r from-amber-50 via-white to-orange-50 border border-amber-200 rounded-3xl shadow-sm p-5 space-y-4">
@@ -104,6 +169,8 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
           const recommendations = Array.isArray(alert.recommendations)
             ? alert.recommendations
             : [];
+          const numericMatchId = Number(alert.matchId);
+          const selections = getSelectionsForMatch(numericMatchId);
           return (
             <div
               key={alert.matchId}
@@ -168,10 +235,13 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => (typeof onInvite === "function" ? onInvite(alert.matchId) : null)}
+                    onClick={() => handleInviteSelected(alert.matchId)}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-xs font-black text-white shadow hover:shadow-md transition"
                   >
-                    <UserPlus className="w-4 h-4" /> Manage invites
+                    <UserPlus className="w-4 h-4" />
+                    {selections.size > 0
+                      ? `Invite ${selections.size} selected`
+                      : "Manage invites"}
                   </button>
                 </div>
               </div>
@@ -180,32 +250,99 @@ const HostMatchAlerts = ({ alerts = [], onInvite, formatDateTime }) => {
                 <div className="mt-4 border-t border-amber-100 pt-4 space-y-3">
                   {recommendations.length > 0 ? (
                     <ul className="space-y-3">
-                      {recommendations.map((player) => (
-                        <li
-                          key={player.key}
-                          className="flex flex-col gap-2 rounded-xl border border-gray-100 bg-gray-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                          <div>
-                            <p className="text-sm font-black text-gray-900">
-                              {player.name}
-                            </p>
-                            <div className="text-xs font-semibold text-gray-600 space-x-2">
-                              <span>{player.matchCount} match{player.matchCount === 1 ? "" : "es"} together</span>
-                              {Number.isFinite(player.lastSeen) && player.lastSeen > 0 && (
-                                <span className="text-gray-400">• {formatRelativePast(player.lastSeen)}</span>
-                              )}
+                      {recommendations.map((player) => {
+                        const candidateId = Number(
+                          player.playerId ??
+                            player.id ??
+                            player.user_id ??
+                            player.userId,
+                        );
+                        const canSelect = Number.isFinite(candidateId) && candidateId > 0;
+                        const isSelected = selections.has(candidateId);
+                        return (
+                          <li
+                            key={player.key}
+                            className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="space-y-1">
+                              <p className="text-sm font-black text-gray-900">
+                                {player.name}
+                              </p>
+                              <div className="text-xs font-semibold text-gray-600 space-x-2">
+                                <span>
+                                  {player.matchCount} match
+                                  {player.matchCount === 1 ? "" : "es"} together
+                                </span>
+                                {Number.isFinite(player.lastSeen) && player.lastSeen > 0 && (
+                                  <span className="text-gray-400">
+                                    • {formatRelativePast(player.lastSeen)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-xs font-semibold text-gray-600 space-y-1 text-left sm:text-right">
-                            {player.email && <p>{player.email}</p>}
-                            {player.phoneDisplay && <p>{player.phoneDisplay}</p>}
-                          </div>
-                        </li>
-                      ))}
+                            <div className="flex flex-col gap-2 sm:items-end">
+                              <div className="text-xs font-semibold text-gray-600 space-y-1 text-left sm:text-right">
+                                {player.email && <p>{player.email}</p>}
+                                {player.phoneDisplay && <p>{player.phoneDisplay}</p>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleRecommendation(alert.matchId, player)}
+                                disabled={!canSelect}
+                                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                                  isSelected
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 shadow"
+                                    : "border-amber-200 bg-white text-amber-700 hover:border-amber-300 hover:bg-amber-50"
+                                } ${
+                                  canSelect
+                                    ? ""
+                                    : "cursor-not-allowed opacity-60"
+                                }`}
+                              >
+                                {isSelected ? (
+                                  <CheckCircle2 className="w-4 h-4" />
+                                ) : (
+                                  <PlusCircle className="w-4 h-4" />
+                                )}
+                                {isSelected ? "Added" : "Add to invite list"}
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   ) : (
                     <div className="rounded-xl border border-dashed border-amber-200 bg-white/60 px-4 py-3 text-sm font-semibold text-amber-700">
                       We don't have enough history to suggest specific players yet. Try inviting partners you've played with recently.
+                    </div>
+                  )}
+
+                  {selections.size > 0 && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-emerald-800">
+                        <Send className="w-4 h-4" />
+                        <span>
+                          Ready to invite {selections.size} player
+                          {selections.size === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Array.from(selections.values()).map((player) => (
+                          <span
+                            key={player.playerId}
+                            className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-200"
+                          >
+                            {player.name || `Player ${player.playerId}`}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleInviteSelected(alert.matchId)}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 px-4 py-2 text-xs font-black text-white shadow hover:shadow-md transition"
+                      >
+                        <Send className="w-4 h-4" /> Invite selected now
+                      </button>
                     </div>
                   )}
                 </div>

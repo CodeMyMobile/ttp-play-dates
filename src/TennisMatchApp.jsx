@@ -1888,7 +1888,10 @@ const TennisMatchApp = () => {
   }, [location.pathname, navigate]);
 
   const openInviteScreen = useCallback(
-    async (matchId, { skipNavigation = false, onClose } = {}) => {
+    async (
+      matchId,
+      { skipNavigation = false, onClose, preselectPlayers = [] } = {},
+    ) => {
       const numericMatchId = Number(matchId);
       if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) {
         displayToast("Match not found", "error");
@@ -1932,6 +1935,9 @@ const TennisMatchApp = () => {
           .filter((id) => Number.isFinite(id) && id > 0);
 
         const initial = new Map();
+        const pendingPreselects = Array.isArray(preselectPlayers)
+          ? preselectPlayers
+          : [];
         const hostParticipant = validParticipants.find(
           (p) => p.status === "hosting",
         );
@@ -1980,6 +1986,35 @@ const TennisMatchApp = () => {
             user_id: id,
             full_name: profile.full_name || `Player ${id}`,
             email: profile.email,
+            hosting: false,
+          });
+        });
+
+        pendingPreselects.forEach((player) => {
+          if (!player) return;
+          const candidateId = Number(
+            player.playerId ??
+              player.id ??
+              player.user_id ??
+              player.userId ??
+              player.player_id,
+          );
+          if (!Number.isFinite(candidateId) || candidateId <= 0) return;
+          if (initial.has(candidateId)) return;
+          const nameCandidate =
+            player.name ||
+            player.full_name ||
+            player.fullName ||
+            player.displayName ||
+            `Player ${candidateId}`;
+          initial.set(candidateId, {
+            user_id: candidateId,
+            full_name: nameCandidate,
+            email:
+              player.email ||
+              player.contactEmail ||
+              player.profileEmail ||
+              "",
             hosting: false,
           });
         });
