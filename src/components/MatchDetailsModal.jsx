@@ -473,6 +473,44 @@ const participantMatchesMember = (participant, memberIdentity) => {
 };
 
 const PHONE_KEYWORDS = ["phone", "mobile", "cell"];
+const PHONE_VALUE_KEYS = [
+  "value",
+  "number",
+  "phone",
+  "phone_number",
+  "phoneNumber",
+  "mobile",
+  "mobile_phone",
+  "mobilePhone",
+  "cell",
+  "cell_phone",
+  "cellPhone",
+  "primary_phone",
+  "primaryPhone",
+  "contact_phone",
+  "contactPhone",
+];
+const PHONE_CONTAINER_KEYS = [
+  "profile",
+  "player",
+  "user",
+  "member",
+  "memberProfile",
+  "member_profile",
+  "contact",
+  "contacts",
+  "metadata",
+  "details",
+  "info",
+  "information",
+  "organizer",
+  "host",
+  "owner",
+  "emergency_contact",
+  "emergencyContact",
+  "primary_contact",
+  "primaryContact",
+];
 
 const collectParticipantPhoneNumbers = (
   participants = [],
@@ -484,6 +522,7 @@ const collectParticipantPhoneNumbers = (
 
   const normalizedNumbers = new Set();
   const digitValues = new Set();
+  const visitedObjects = new WeakSet();
   const hostIdentityList = Array.isArray(hostIdentities)
     ? hostIdentities.filter(Boolean)
     : hostIdentities !== null && hostIdentities !== undefined
@@ -504,24 +543,61 @@ const collectParticipantPhoneNumbers = (
     }
   };
 
-  const visit = (value, inPhoneContext = false) => {
+  const safeGet = (object, key) => {
+    if (!object || typeof object !== "object") return undefined;
+    try {
+      return object[key];
+    } catch (error) {
+      return undefined;
+    }
+  };
+
+  const addPhoneValue = (value) => {
     if (value === null || value === undefined) return;
     if (typeof value === "string" || typeof value === "number") {
-      if (!inPhoneContext) return;
       addPhone(value);
       return;
     }
     if (Array.isArray(value)) {
-      value.forEach((item) => visit(item, inPhoneContext));
+      value.forEach((item) => addPhoneValue(item));
       return;
     }
     if (typeof value === "object") {
-      Object.entries(value).forEach(([key, child]) => {
+      if (visitedObjects.has(value)) return;
+      visitedObjects.add(value);
+
+      PHONE_VALUE_KEYS.forEach((key) => {
+        const candidate = safeGet(value, key);
+        if (candidate !== undefined) {
+          addPhoneValue(candidate);
+        }
+      });
+
+      let keys = [];
+      try {
+        keys = Object.keys(value);
+      } catch (error) {
+        keys = [];
+      }
+
+      keys.forEach((key) => {
         const lowerKey = key.toLowerCase();
         const isPhoneKey = PHONE_KEYWORDS.some((keyword) =>
           lowerKey.includes(keyword),
         );
-        visit(child, inPhoneContext || isPhoneKey);
+        if (isPhoneKey) {
+          const candidate = safeGet(value, key);
+          if (candidate !== undefined) {
+            addPhoneValue(candidate);
+          }
+        }
+      });
+
+      PHONE_CONTAINER_KEYS.forEach((key) => {
+        const container = safeGet(value, key);
+        if (container !== undefined) {
+          addPhoneValue(container);
+        }
       });
     }
   };
@@ -533,7 +609,7 @@ const collectParticipantPhoneNumbers = (
   participants.forEach((participant) => {
     if (!participant || typeof participant !== "object") return;
     if (isHostParticipant(participant)) return;
-    visit(participant, false);
+    addPhoneValue(participant);
   });
 
   return Array.from(normalizedNumbers);
