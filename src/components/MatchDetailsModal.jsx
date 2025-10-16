@@ -29,6 +29,7 @@ import {
   removeParticipant,
   updateMatch,
 } from "../services/matches";
+import { getPhoneDigits, normalizePhoneValue } from "../services/phone";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
@@ -471,6 +472,73 @@ const participantMatchesMember = (participant, memberIdentity) => {
   );
 };
 
+const PHONE_KEYWORDS = ["phone", "mobile", "cell"];
+
+const collectParticipantPhoneNumbers = (
+  participants = [],
+  hostIdentities = [],
+) => {
+  if (!Array.isArray(participants) || participants.length === 0) {
+    return [];
+  }
+
+  const normalizedNumbers = new Set();
+  const digitValues = new Set();
+  const hostIdentityList = Array.isArray(hostIdentities)
+    ? hostIdentities.filter(Boolean)
+    : hostIdentities !== null && hostIdentities !== undefined
+    ? [hostIdentities]
+    : [];
+
+  const addPhone = (value) => {
+    if (value === null || value === undefined) return;
+    const digits = getPhoneDigits(value);
+    if (!digits || digits.length < 7) return;
+    if (digitValues.has(digits)) return;
+    digitValues.add(digits);
+    const normalized = normalizePhoneValue(value);
+    if (normalized) {
+      normalizedNumbers.add(normalized);
+    } else {
+      normalizedNumbers.add(`+${digits}`);
+    }
+  };
+
+  const visit = (value, inPhoneContext = false) => {
+    if (value === null || value === undefined) return;
+    if (typeof value === "string" || typeof value === "number") {
+      if (!inPhoneContext) return;
+      addPhone(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, inPhoneContext));
+      return;
+    }
+    if (typeof value === "object") {
+      Object.entries(value).forEach(([key, child]) => {
+        const lowerKey = key.toLowerCase();
+        const isPhoneKey = PHONE_KEYWORDS.some((keyword) =>
+          lowerKey.includes(keyword),
+        );
+        visit(child, inPhoneContext || isPhoneKey);
+      });
+    }
+  };
+
+  const isHostParticipant = (participant) =>
+    hostIdentityList.length > 0 &&
+    participantMatchesMember(participant, hostIdentityList);
+
+  participants.forEach((participant) => {
+    if (!participant || typeof participant !== "object") return;
+    if (isHostParticipant(participant)) return;
+    visit(participant, false);
+  });
+
+  return Array.from(normalizedNumbers);
+};
+
 const buildInitialEditForm = (match) => {
   if (!match) return { ...DEFAULT_EDIT_FORM };
   const latitude =
@@ -595,6 +663,15 @@ const MatchDetailsModal = ({
     );
   }, [match?.host_id, participants]);
 
+  const hostIdentityCandidates = useMemo(() => {
+    const identities = [];
+    if (match?.host_id) identities.push(match.host_id);
+    if (hostParticipant) {
+      identities.push(...getParticipantIdentityCandidates(hostParticipant));
+    }
+    return identities.filter(Boolean);
+  }, [hostParticipant, match?.host_id]);
+
   const hostProfile = match?.host_profile || hostParticipant?.profile || null;
   const hostName =
     hostProfile?.full_name ||
@@ -613,6 +690,14 @@ const MatchDetailsModal = ({
     () => uniqueActiveParticipants(participants),
     [participants],
   );
+
+  const participantSmsTargets = useMemo(() => {
+    if (!isHost) return [];
+    return collectParticipantPhoneNumbers(
+      committedParticipants,
+      hostIdentityCandidates,
+    );
+  }, [committedParticipants, hostIdentityCandidates, isHost]);
 
   const acceptedInvitees = useMemo(
     () => uniqueAcceptedInvitees(invitees),
@@ -758,6 +843,12 @@ const MatchDetailsModal = ({
 
   const isArchived = match?.status === "archived";
   const isCancelled = match?.status === "cancelled";
+
+  const canMessageParticipants =
+    isHost &&
+    !isArchived &&
+    !isCancelled &&
+    participantSmsTargets.length > 0;
   const isUpcoming = match?.status === "upcoming";
   const isPrivate = matchPrivacy === "private";
   const isOpenMatch = !isPrivate;
@@ -943,6 +1034,34 @@ const MatchDetailsModal = ({
     shareDateTimeLabel,
     shareLink,
     shareMatchLabel,
+  ]);
+
+  const participantSmsMessage = useMemo(() => {
+    if (!isHost) return "";
+    const segments = [];
+    if (hostName) {
+      segments.push(`Hi team — ${hostName} here.`);
+    } else {
+      segments.push("Hi team!");
+    }
+    if (match?.title || match?.name) {
+      segments.push(`Match: ${match.title || match.name}`);
+    }
+    if (shareDateTimeLabel) {
+      segments.push(`When: ${shareDateTimeLabel}`);
+    }
+    if (match?.location_text || match?.location) {
+      segments.push(`Where: ${match.location_text || match.location}`);
+    }
+    return segments.join(" ").trim();
+  }, [
+    hostName,
+    isHost,
+    match?.location,
+    match?.location_text,
+    match?.name,
+    match?.title,
+    shareDateTimeLabel,
   ]);
 
   const shareEmailSubject = useMemo(() => {
@@ -1195,6 +1314,27 @@ const MatchDetailsModal = ({
     onToast?.("Opening email...");
     window.location.href = url;
   };
+
+  const handleMessageParticipants = useCallback(() => {
+    if (!canMessageParticipants) return;
+    const recipients = participantSmsTargets.join(",");
+    if (!recipients) return;
+    const smsUrl = participantSmsMessage
+      ? `sms:${recipients}?&body=${encodeURIComponent(participantSmsMessage)}`
+      : `sms:${recipients}`;
+    try {
+      onToast?.("Opening messages...");
+      window.location.href = smsUrl;
+    } catch (error) {
+      console.error(error);
+      onToast?.("We couldn't open your messages app", "error");
+    }
+  }, [
+    canMessageParticipants,
+    onToast,
+    participantSmsMessage,
+    participantSmsTargets,
+  ]);
 
   const handleRefreshShareLink = () => {
     if (shareLoading || !isOpenMatch || !match?.id) return;
@@ -1811,6 +1951,17 @@ const MatchDetailsModal = ({
               </p>
             </div>
             {renderPlayers()}
+            {canMessageParticipants && (
+              <button
+                type="button"
+                onClick={handleMessageParticipants}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                title="Send a group text to everyone who's joined"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Message players
+              </button>
+            )}
           </section>
 
           {!isArchived && !isCancelled && (
