@@ -472,7 +472,6 @@ const participantMatchesMember = (participant, memberIdentity) => {
   );
 };
 
-const PHONE_KEYWORDS = ["phone", "mobile", "cell"];
 const PHONE_VALUE_KEYS = [
   "value",
   "number",
@@ -570,26 +569,6 @@ const collectParticipantPhoneNumbers = (
         const candidate = safeGet(value, key);
         if (candidate !== undefined) {
           addPhoneValue(candidate);
-        }
-      });
-
-      let keys = [];
-      try {
-        keys = Object.keys(value);
-      } catch (error) {
-        keys = [];
-      }
-
-      keys.forEach((key) => {
-        const lowerKey = key.toLowerCase();
-        const isPhoneKey = PHONE_KEYWORDS.some((keyword) =>
-          lowerKey.includes(keyword),
-        );
-        if (isPhoneKey) {
-          const candidate = safeGet(value, key);
-          if (candidate !== undefined) {
-            addPhoneValue(candidate);
-          }
         }
       });
 
