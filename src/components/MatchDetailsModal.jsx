@@ -545,7 +545,15 @@ const collectParticipantPhoneNumbers = (
   const safeGet = (object, key) => {
     if (!object || typeof object !== "object") return undefined;
     try {
-      return object[key];
+      if (!Object.prototype.hasOwnProperty.call(object, key)) {
+        return undefined;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(object, key);
+      if (!descriptor) return undefined;
+      if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+        return undefined;
+      }
+      return descriptor.value;
     } catch (error) {
       return undefined;
     }
