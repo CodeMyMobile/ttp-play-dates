@@ -498,18 +498,9 @@ const PHONE_CONTAINER_KEYS = [
   "member_profile",
   "contact",
   "contacts",
-  "metadata",
-  "details",
-  "info",
-  "information",
-  "organizer",
-  "host",
-  "owner",
-  "emergency_contact",
-  "emergencyContact",
-  "primary_contact",
-  "primaryContact",
 ];
+
+const MAX_PHONE_DISCOVERY_DEPTH = 3;
 
 const collectParticipantPhoneNumbers = (
   participants = [],
@@ -559,31 +550,33 @@ const collectParticipantPhoneNumbers = (
     }
   };
 
-  const addPhoneValue = (value) => {
+  const addPhoneValue = (value, depth = 0) => {
     if (value === null || value === undefined) return;
     if (typeof value === "string" || typeof value === "number") {
       addPhone(value);
       return;
     }
     if (Array.isArray(value)) {
-      value.forEach((item) => addPhoneValue(item));
+      if (depth >= MAX_PHONE_DISCOVERY_DEPTH) return;
+      value.forEach((item) => addPhoneValue(item, depth + 1));
       return;
     }
     if (typeof value === "object") {
       if (visitedObjects.has(value)) return;
       visitedObjects.add(value);
+      if (depth >= MAX_PHONE_DISCOVERY_DEPTH) return;
 
       PHONE_VALUE_KEYS.forEach((key) => {
         const candidate = safeGet(value, key);
         if (candidate !== undefined) {
-          addPhoneValue(candidate);
+          addPhoneValue(candidate, depth + 1);
         }
       });
 
       PHONE_CONTAINER_KEYS.forEach((key) => {
         const container = safeGet(value, key);
         if (container !== undefined) {
-          addPhoneValue(container);
+          addPhoneValue(container, depth + 1);
         }
       });
     }
@@ -756,10 +749,15 @@ const MatchDetailsModal = ({
 
   const participantSmsTargets = useMemo(() => {
     if (!isHost) return [];
-    return collectParticipantPhoneNumbers(
-      committedParticipants,
-      hostIdentityCandidates,
-    );
+    try {
+      return collectParticipantPhoneNumbers(
+        committedParticipants,
+        hostIdentityCandidates,
+      );
+    } catch (error) {
+      console.error("Failed to collect participant phone numbers", error);
+      return [];
+    }
   }, [committedParticipants, hostIdentityCandidates, isHost]);
 
   const acceptedInvitees = useMemo(
