@@ -30,6 +30,8 @@ import {
 } from "./utils/participants";
 import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
+import PlayerAvatar from "./components/PlayerAvatar.jsx";
+import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -891,7 +893,8 @@ export default function InvitationPage() {
 
   const inviterName = (preview?.inviter?.full_name || "").trim();
   const inviterFirstName = inviterName.split(" ").filter(Boolean)[0] || "";
-  const inviterInitials = getInitials(inviterName || "Matchplay");
+  const inviterInitials = getAvatarInitials(inviterName || "Matchplay");
+  const inviterAvatarUrl = getAvatarUrlFromPlayer(preview?.inviter);
 
   const maskedIdentifier = preview?.maskedIdentifier;
   const isInviteeClaim = inviteeRequiresAccountClaim;
@@ -1275,12 +1278,12 @@ export default function InvitationPage() {
     </div>
   );
 
-  const avatarPalette = [
-    "bg-emerald-500",
-    "bg-sky-500",
-    "bg-indigo-500",
-    "bg-purple-500",
-    "bg-amber-500",
+  const avatarVariants = [
+    "emerald",
+    "indigo",
+    "sky",
+    "violet",
+    "amber",
   ];
   return (
     <InvitationLayout>
@@ -1309,9 +1312,14 @@ export default function InvitationPage() {
               </div>
             </div>
             <div className="mt-6 flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-2xl font-black text-amber-500 shadow-lg shadow-amber-200/70">
-                {inviterInitials}
-              </div>
+              <PlayerAvatar
+                name={inviterName || "Matchplay"}
+                imageUrl={inviterAvatarUrl}
+                fallback={inviterInitials}
+                size="xl"
+                variant="amber"
+                className="shadow-lg shadow-amber-200/70"
+              />
               <div className="space-y-1">
                 <p className="text-2xl font-bold">
                   {inviterFirstName
@@ -1391,9 +1399,10 @@ export default function InvitationPage() {
                   <ul className="mt-4 grid gap-2 sm:grid-cols-2">
                     {avatarPlayers.map((player, index) => {
                       const name = participantDisplayName(player) || "Player";
-                      const initials = getInitials(name) || "P";
-                      const color =
-                        avatarPalette[index % avatarPalette.length];
+                      const initials = getAvatarInitials(name);
+                      const avatarUrl = getAvatarUrlFromPlayer(player);
+                      const variant =
+                        avatarVariants[index % avatarVariants.length];
                       const key =
                         player?.player_id ||
                         player?.id ||
@@ -1419,11 +1428,12 @@ export default function InvitationPage() {
                           title={name}
                           className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-sm"
                         >
-                          <div
-                            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow ${color}`}
-                          >
-                            {initials}
-                          </div>
+                          <PlayerAvatar
+                            name={name}
+                            imageUrl={avatarUrl}
+                            fallback={initials}
+                            variant={variant}
+                          />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-slate-900">
                               {name}
@@ -1733,18 +1743,6 @@ function formatSkillRange(min, max) {
   if (hasMin) return `${minNum}+`;
   if (hasMax) return `Up to ${maxNum}`;
   return "";
-}
-
-function getInitials(name) {
-  const clean = (name || "").trim();
-  if (!clean) return "";
-  return clean
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
 }
 
 function asNumber(value) {

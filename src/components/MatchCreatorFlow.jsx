@@ -23,6 +23,7 @@ import {
   Zap,
   X,
 } from "lucide-react";
+import PlayerAvatar from "./PlayerAvatar";
 import Autocomplete from "react-google-autocomplete";
 import {
   cancelMatch,
@@ -38,6 +39,7 @@ import {
   SKILL_LEVEL_OPTIONS,
 } from "../utils/matchOptions";
 import { combineDateAndTimeToIso } from "../utils/datetime";
+import { getAvatarInitials, getAvatarUrlFromPlayer } from "../utils/avatar";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -182,59 +184,6 @@ const formatPhoneDisplay = (value) => {
   return value;
 };
 
-const PROFILE_IMAGE_KEYS = [
-  "profile_picture",
-  "profilePicture",
-  "profile_picture_url",
-  "profilePictureUrl",
-  "profile_photo",
-  "profilePhoto",
-  "profile_image",
-  "profileImage",
-  "profile_image_url",
-  "profileImageUrl",
-  "photo_url",
-  "photoUrl",
-  "image_url",
-  "imageUrl",
-  "avatar_url",
-  "avatarUrl",
-  "avatar",
-  "host_avatar",
-  "hostAvatar",
-  "picture",
-  "photo",
-];
-
-const getProfileImageFromSource = (source) => {
-  if (!source || typeof source !== "object") return "";
-  for (const key of PROFILE_IMAGE_KEYS) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = source[key];
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
-    if (!trimmed || trimmed.length < 5) continue;
-    const looksLikeUrl =
-      /^https?:\/\//i.test(trimmed) ||
-      trimmed.startsWith("data:") ||
-      trimmed.startsWith("/") ||
-      trimmed.includes("/") ||
-      trimmed.includes(".");
-    if (looksLikeUrl) return trimmed;
-  }
-  return "";
-};
-
-const getAvatarUrlFromPlayer = (player) => {
-  if (!player || typeof player !== "object") return "";
-  const sources = [player.profile, player.player, player.user, player];
-  for (const source of sources) {
-    const url = getProfileImageFromSource(source);
-    if (url) return url;
-  }
-  return "";
-};
-
 const normalizePlayer = (player) => {
   const id = Number(player?.user_id ?? player?.id);
   const name = player?.full_name || player?.name || player?.email || "Player";
@@ -246,7 +195,7 @@ const normalizePlayer = (player) => {
     name,
     email: player?.email || "",
     ntrp,
-    avatar: name.charAt(0).toUpperCase(),
+    avatar: getAvatarInitials(name, player?.email),
     avatarUrl: getAvatarUrlFromPlayer(player),
     lastPlayed: formatRelativeDate(lastPlayed),
     raw: player,
@@ -286,32 +235,6 @@ const ProgressBar = ({ currentStep }) => (
     ))}
   </div>
 );
-
-const Avatar = ({
-  name,
-  imageUrl,
-  fallback,
-  className = "w-10 h-10",
-  fallbackClassName = "bg-blue-500 text-white font-bold",
-  alt,
-}) => {
-  if (imageUrl) {
-    return (
-      <img
-        src={imageUrl}
-        alt={alt || `${name || "Player"} avatar`}
-        className={`rounded-full object-cover ${className}`}
-      />
-    );
-  }
-  return (
-    <div
-      className={`rounded-full flex items-center justify-center ${fallbackClassName} ${className}`}
-    >
-      {fallback || (name ? name.charAt(0).toUpperCase() : "?")}
-    </div>
-  );
-};
 
 const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser }) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -1102,12 +1025,10 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             </div>
             <div className="space-y-3 mb-4">
               <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
-                <Avatar
+                <PlayerAvatar
                   name={currentUser?.name || "You"}
                   imageUrl={currentUserAvatarUrl}
-                  fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
-                  className="w-10 h-10"
-                  fallbackClassName="bg-green-600 text-white font-bold"
+                  variant="emerald"
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900">You (Host)</div>
@@ -1124,11 +1045,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                       <Phone size={18} />
                     </div>
                   ) : (
-                    <Avatar
+                    <PlayerAvatar
                       name={invitee.name}
                       imageUrl={invitee.avatarUrl}
                       fallback={invitee.avatar}
-                      className="w-10 h-10"
+                      variant="indigo"
                     />
                   )}
                   <div className="flex-1">
@@ -1231,11 +1152,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                           onClick={() => handleAddPlayer(player)}
                           className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-left"
                         >
-                          <Avatar
+                          <PlayerAvatar
                             name={player.name}
                             imageUrl={player.avatarUrl}
                             fallback={player.avatar}
-                            className="w-10 h-10"
+                            variant="sky"
                           />
                           <div className="flex-1">
                             <div className="font-medium text-gray-900">{player.name}</div>
@@ -1407,22 +1328,22 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <h3 className="text-lg font-bold text-gray-900 mb-4">INVITED PLAYERS</h3>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Avatar
+                  <PlayerAvatar
                     name={currentUser?.name || "You"}
                     imageUrl={currentUserAvatarUrl}
-                    fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
-                    className="w-6 h-6 text-[10px]"
-                    fallbackClassName="bg-green-600 text-white font-bold"
+                    size="xs"
+                    variant="emerald"
                   />
                   <span className="text-gray-700 font-medium">You (Host)</span>
                 </div>
                 {invitedPlayers.map((player) => (
                   <div key={player.id} className="flex items-center gap-2">
-                    <Avatar
+                    <PlayerAvatar
                       name={player.name}
                       imageUrl={player.avatarUrl}
                       fallback={player.avatar}
-                      className="w-6 h-6 text-[10px]"
+                      size="xs"
+                      variant="indigo"
                     />
                     <span className="text-gray-700">{player.name}</span>
                   </div>
@@ -1728,14 +1649,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               </h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Avatar
-                      name={currentUser?.name || "You"}
-                      imageUrl={currentUserAvatarUrl}
-                      fallback={(currentUser?.name || "You").charAt(0).toUpperCase()}
-                      className="w-10 h-10"
-                      fallbackClassName="bg-green-600 text-white font-bold"
-                    />
+                <div className="flex items-center space-x-3">
+                  <PlayerAvatar
+                    name={currentUser?.name || "You"}
+                    imageUrl={currentUserAvatarUrl}
+                    variant="emerald"
+                  />
                     <div>
                       <p className="font-medium text-gray-800">You</p>
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Host</span>
@@ -1746,11 +1665,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 {invitedPlayers.map((player) => (
                   <div key={player.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <Avatar
+                      <PlayerAvatar
                         name={player.name}
                         imageUrl={player.avatarUrl}
                         fallback={player.avatar}
-                        className="w-10 h-10"
+                        variant="indigo"
                       />
                       <div>
                         <p className="font-medium text-gray-800">{player.name}</p>
