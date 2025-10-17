@@ -29,6 +29,7 @@ import {
   removeParticipant,
   updateMatch,
 } from "../services/matches";
+import { getPhoneDigits, normalizePhoneValue } from "../services/phone";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
@@ -58,6 +59,10 @@ import {
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
 import { combineDateAndTimeToIso } from "../utils/datetime";
+import {
+  safeOwnPropertyValue,
+  safeOwnedPlainObject,
+} from "../utils/safeAccess";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -216,6 +221,59 @@ const buildProfileUrlFromPlayerId = (playerId) => {
   return null;
 };
 
+const createSafeSnapshot = (value, maxDepth = 3, visited = new WeakMap()) => {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+  if (visited.has(value)) return visited.get(value);
+
+  const nextDepth = maxDepth > 0 ? maxDepth - 1 : 0;
+
+  if (Array.isArray(value)) {
+    const snapshot = [];
+    visited.set(value, snapshot);
+    if (maxDepth <= 0) return snapshot;
+    for (let index = 0; index < value.length; index += 1) {
+      snapshot[index] = createSafeSnapshot(value[index], nextDepth, visited);
+    }
+    return snapshot;
+  }
+
+  const snapshot = {};
+  visited.set(value, snapshot);
+  let keys = [];
+  try {
+    keys = Object.keys(value);
+  } catch {
+    return snapshot;
+  }
+
+  for (const key of keys) {
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+      continue;
+    }
+    if (!descriptor) continue;
+    if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+      continue;
+    }
+
+    const propertyValue = descriptor.value;
+    if (
+      propertyValue !== null &&
+      typeof propertyValue === "object" &&
+      nextDepth > 0
+    ) {
+      snapshot[key] = createSafeSnapshot(propertyValue, nextDepth, visited);
+    } else {
+      snapshot[key] = propertyValue;
+    }
+  }
+
+  return snapshot;
+};
+
 const getProfileImageFromSource = (source) => {
   if (!source || typeof source !== "object") return null;
   const keys = [
@@ -242,8 +300,7 @@ const getProfileImageFromSource = (source) => {
     "photo",
   ];
   for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = asNonEmptyString(source[key]);
+    const value = asNonEmptyString(safeOwnPropertyValue(source, key));
     if (value) return value;
   }
   return null;
@@ -269,8 +326,7 @@ const getProfileUrlFromSource = (source) => {
     "handle",
   ];
   for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const candidate = source[key];
+    const candidate = safeOwnPropertyValue(source, key);
     const url = buildProfileUrlFromString(candidate);
     if (url) return url;
   }
@@ -279,9 +335,11 @@ const getProfileUrlFromSource = (source) => {
 
 const getParticipantProfileImage = (participant) => {
   if (!participant || typeof participant !== "object") return null;
+  const profileSource = safeOwnedPlainObject(participant, "profile");
+  const playerSource = safeOwnedPlainObject(participant, "player");
   return (
-    getProfileImageFromSource(participant.profile) ||
-    getProfileImageFromSource(participant.player) ||
+    getProfileImageFromSource(profileSource) ||
+    getProfileImageFromSource(playerSource) ||
     getProfileImageFromSource(participant) ||
     null
   );
@@ -292,9 +350,11 @@ const getParticipantProfileUrl = (participant, playerId) => {
     return buildProfileUrlFromPlayerId(playerId);
   }
 
+  const profileSource = safeOwnedPlainObject(participant, "profile");
+  const playerSource = safeOwnedPlainObject(participant, "player");
   const profileUrl =
-    getProfileUrlFromSource(participant.profile) ||
-    getProfileUrlFromSource(participant.player) ||
+    getProfileUrlFromSource(profileSource) ||
+    getProfileUrlFromSource(playerSource) ||
     getProfileUrlFromSource(participant);
   if (profileUrl) {
     return profileUrl;
@@ -415,26 +475,26 @@ const firstNonEmptyValue = (values = []) => {
 
 const getParticipantIdentityCandidates = (participant) => {
   if (!participant || typeof participant !== "object") return [];
-  const profile = participant.profile || {};
-  const player = participant.player || {};
+  const profile = safeOwnedPlainObject(participant, "profile") || {};
+  const player = safeOwnedPlainObject(participant, "player") || {};
   return [
-    participant.match_participant_id,
-    participant.matchParticipantId,
-    participant.participant_id,
-    participant.participantId,
-    participant.player_id,
-    participant.playerId,
-    participant.invitee_id,
-    participant.inviteeId,
-    participant.id,
-    profile.id,
-    profile.player_id,
-    profile.playerId,
-    profile.user_id,
-    profile.userId,
-    player.id,
-    player.player_id,
-    player.playerId,
+    safeOwnPropertyValue(participant, "match_participant_id"),
+    safeOwnPropertyValue(participant, "matchParticipantId"),
+    safeOwnPropertyValue(participant, "participant_id"),
+    safeOwnPropertyValue(participant, "participantId"),
+    safeOwnPropertyValue(participant, "player_id"),
+    safeOwnPropertyValue(participant, "playerId"),
+    safeOwnPropertyValue(participant, "invitee_id"),
+    safeOwnPropertyValue(participant, "inviteeId"),
+    safeOwnPropertyValue(participant, "id"),
+    safeOwnPropertyValue(profile, "id"),
+    safeOwnPropertyValue(profile, "player_id"),
+    safeOwnPropertyValue(profile, "playerId"),
+    safeOwnPropertyValue(profile, "user_id"),
+    safeOwnPropertyValue(profile, "userId"),
+    safeOwnPropertyValue(player, "id"),
+    safeOwnPropertyValue(player, "player_id"),
+    safeOwnPropertyValue(player, "playerId"),
   ];
 };
 
@@ -443,17 +503,17 @@ const getParticipantIdentity = (participant, fallback = null) =>
 
 const getParticipantPlayerId = (participant) => {
   if (!participant || typeof participant !== "object") return null;
-  const profile = participant.profile || {};
-  const player = participant.player || {};
+  const profile = safeOwnedPlainObject(participant, "profile") || {};
+  const player = safeOwnedPlainObject(participant, "player") || {};
   return firstNonEmptyValue([
-    participant.player_id,
-    participant.playerId,
-    player.id,
-    player.player_id,
-    player.playerId,
-    profile.player_id,
-    profile.playerId,
-    profile.id,
+    safeOwnPropertyValue(participant, "player_id"),
+    safeOwnPropertyValue(participant, "playerId"),
+    safeOwnPropertyValue(player, "id"),
+    safeOwnPropertyValue(player, "player_id"),
+    safeOwnPropertyValue(player, "playerId"),
+    safeOwnPropertyValue(profile, "player_id"),
+    safeOwnPropertyValue(profile, "playerId"),
+    safeOwnPropertyValue(profile, "id"),
   ]);
 };
 
@@ -469,6 +529,112 @@ const participantMatchesMember = (participant, memberIdentity) => {
   return getParticipantIdentityCandidates(participant).some((candidate) =>
     idsMatch(candidate, memberIdentity),
   );
+};
+
+const PHONE_VALUE_KEYS = [
+  "value",
+  "number",
+  "phone",
+  "phone_number",
+  "phoneNumber",
+  "mobile",
+  "mobile_phone",
+  "mobilePhone",
+  "cell",
+  "cell_phone",
+  "cellPhone",
+  "primary_phone",
+  "primaryPhone",
+  "contact_phone",
+  "contactPhone",
+];
+const PHONE_CONTAINER_KEYS = [
+  "profile",
+  "player",
+  "user",
+  "member",
+  "memberProfile",
+  "member_profile",
+  "contact",
+  "contacts",
+];
+
+const MAX_PHONE_DISCOVERY_DEPTH = 3;
+
+const collectParticipantPhoneNumbers = (
+  participants = [],
+  hostIdentities = [],
+) => {
+  if (!Array.isArray(participants) || participants.length === 0) {
+    return [];
+  }
+
+  const normalizedNumbers = new Set();
+  const digitValues = new Set();
+  const visitedObjects = new WeakSet();
+  const hostIdentityList = Array.isArray(hostIdentities)
+    ? hostIdentities.filter(Boolean)
+    : hostIdentities !== null && hostIdentities !== undefined
+    ? [hostIdentities]
+    : [];
+
+  const addPhone = (value) => {
+    if (value === null || value === undefined) return;
+    const digits = getPhoneDigits(value);
+    if (!digits || digits.length < 7) return;
+    if (digitValues.has(digits)) return;
+    digitValues.add(digits);
+    const normalized = normalizePhoneValue(value);
+    if (normalized) {
+      normalizedNumbers.add(normalized);
+    } else {
+      normalizedNumbers.add(`+${digits}`);
+    }
+  };
+
+  const addPhoneValue = (value, depth = 0) => {
+    if (value === null || value === undefined) return;
+    if (typeof value === "string" || typeof value === "number") {
+      addPhone(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      if (depth >= MAX_PHONE_DISCOVERY_DEPTH) return;
+      value.forEach((item) => addPhoneValue(item, depth + 1));
+      return;
+    }
+    if (typeof value === "object") {
+      if (visitedObjects.has(value)) return;
+      visitedObjects.add(value);
+      if (depth >= MAX_PHONE_DISCOVERY_DEPTH) return;
+
+      PHONE_VALUE_KEYS.forEach((key) => {
+        const candidate = safeOwnPropertyValue(value, key);
+        if (candidate !== undefined) {
+          addPhoneValue(candidate, depth + 1);
+        }
+      });
+
+      PHONE_CONTAINER_KEYS.forEach((key) => {
+        const container = safeOwnPropertyValue(value, key);
+        if (container !== undefined) {
+          addPhoneValue(container, depth + 1);
+        }
+      });
+    }
+  };
+
+  const isHostParticipant = (participant) =>
+    hostIdentityList.length > 0 &&
+    participantMatchesMember(participant, hostIdentityList);
+
+  participants.forEach((participant) => {
+    if (!participant || typeof participant !== "object") return;
+    if (isHostParticipant(participant)) return;
+    addPhoneValue(participant);
+  });
+
+  return Array.from(normalizedNumbers);
 };
 
 const buildInitialEditForm = (match) => {
@@ -537,23 +703,46 @@ const MatchDetailsModal = ({
     [],
   );
 
-  const match = matchData?.match || null;
+  const safeMatchData = useMemo(() => {
+    if (!matchData || typeof matchData !== "object") return null;
+    try {
+      return createSafeSnapshot(matchData, 4);
+    } catch (error) {
+      console.error("Failed to snapshot match data", error);
+      return null;
+    }
+  }, [matchData]);
+
+  const match = useMemo(() => {
+    if (!safeMatchData || typeof safeMatchData !== "object") return null;
+    if (safeMatchData.match && typeof safeMatchData.match === "object") {
+      return safeMatchData.match;
+    }
+    return safeMatchData;
+  }, [safeMatchData]);
+
   const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
   const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
   const participants = useMemo(() => {
-    if (Array.isArray(matchData?.participants)) {
-      return uniqueParticipants(matchData.participants);
+    const fromRoot = Array.isArray(safeMatchData?.participants)
+      ? safeMatchData.participants
+      : null;
+    const fromMatch = Array.isArray(match?.participants)
+      ? match.participants
+      : null;
+    if (Array.isArray(fromRoot) && fromRoot.length > 0) {
+      return uniqueParticipants(fromRoot);
     }
-    if (Array.isArray(match?.participants)) {
-      return uniqueParticipants(match.participants);
+    if (Array.isArray(fromMatch)) {
+      return uniqueParticipants(fromMatch);
     }
     return [];
-  }, [matchData, match]);
+  }, [match, safeMatchData]);
   const invitees = useMemo(() => {
-    if (Array.isArray(matchData?.invitees)) return matchData.invitees;
+    if (Array.isArray(safeMatchData?.invitees)) return safeMatchData.invitees;
     if (Array.isArray(match?.invitees)) return match.invitees;
     return [];
-  }, [matchData, match]);
+  }, [match, safeMatchData]);
 
   const originalEditForm = useMemo(() => buildInitialEditForm(match), [match]);
   const availableMatchFormats = useMemo(
@@ -595,13 +784,25 @@ const MatchDetailsModal = ({
     );
   }, [match?.host_id, participants]);
 
-  const hostProfile = match?.host_profile || hostParticipant?.profile || null;
+  const hostIdentityCandidates = useMemo(() => {
+    const identities = [];
+    if (match?.host_id) identities.push(match.host_id);
+    if (hostParticipant) {
+      identities.push(...getParticipantIdentityCandidates(hostParticipant));
+    }
+    return identities.filter(Boolean);
+  }, [hostParticipant, match?.host_id]);
+
+  const hostParticipantProfile = safeOwnedPlainObject(hostParticipant, "profile");
+  const matchHostProfile = safeOwnedPlainObject(match, "host_profile");
+  const hostProfile = matchHostProfile || hostParticipantProfile || null;
   const hostName =
-    hostProfile?.full_name ||
-    hostProfile?.fullName ||
-    match?.host_name ||
-    hostParticipant?.profile?.name ||
-    "Match Organizer";
+    firstNonEmptyValue([
+      safeOwnPropertyValue(hostProfile || {}, "full_name"),
+      safeOwnPropertyValue(hostProfile || {}, "fullName"),
+      safeOwnPropertyValue(match, "host_name"),
+      safeOwnPropertyValue(hostParticipantProfile || {}, "name"),
+    ]) || "Match Organizer";
 
   const hostAvatar =
     getProfileImageFromSource(hostProfile) ||
@@ -613,6 +814,19 @@ const MatchDetailsModal = ({
     () => uniqueActiveParticipants(participants),
     [participants],
   );
+
+  const participantSmsTargets = useMemo(() => {
+    if (!isHost) return [];
+    try {
+      return collectParticipantPhoneNumbers(
+        committedParticipants,
+        hostIdentityCandidates,
+      );
+    } catch (error) {
+      console.error("Failed to collect participant phone numbers", error);
+      return [];
+    }
+  }, [committedParticipants, hostIdentityCandidates, isHost]);
 
   const acceptedInvitees = useMemo(
     () => uniqueAcceptedInvitees(invitees),
@@ -688,7 +902,17 @@ const MatchDetailsModal = ({
     const identityMatchesCurrentUser = (value) =>
       memberIdentities.some((id) => idsMatch(value, id));
 
-    const sources = [matchData, matchData?.match, match];
+    const sources = [];
+    const addSource = (candidate) => {
+      if (!candidate || typeof candidate !== "object") return;
+      if (sources.some((source) => source === candidate)) return;
+      sources.push(candidate);
+    };
+    addSource(safeMatchData);
+    if (safeMatchData && typeof safeMatchData === "object") {
+      addSource(safeMatchData.match);
+    }
+    addSource(match);
     const truthyStatuses = new Set([
       "joined",
       "accepted",
@@ -749,7 +973,7 @@ const MatchDetailsModal = ({
     }
 
     return false;
-  }, [match, matchData, memberIdentities]);
+  }, [match, memberIdentities, safeMatchData]);
 
   const isJoined = useMemo(
     () => isHost || isParticipant || hasAcceptedInvite || metadataIndicatesJoined,
@@ -758,6 +982,12 @@ const MatchDetailsModal = ({
 
   const isArchived = match?.status === "archived";
   const isCancelled = match?.status === "cancelled";
+
+  const canMessageParticipants =
+    isHost &&
+    !isArchived &&
+    !isCancelled &&
+    participantSmsTargets.length > 0;
   const isUpcoming = match?.status === "upcoming";
   const isPrivate = matchPrivacy === "private";
   const isOpenMatch = !isPrivate;
@@ -943,6 +1173,34 @@ const MatchDetailsModal = ({
     shareDateTimeLabel,
     shareLink,
     shareMatchLabel,
+  ]);
+
+  const participantSmsMessage = useMemo(() => {
+    if (!isHost) return "";
+    const segments = [];
+    if (hostName) {
+      segments.push(`Hi team — ${hostName} here.`);
+    } else {
+      segments.push("Hi team!");
+    }
+    if (match?.title || match?.name) {
+      segments.push(`Match: ${match.title || match.name}`);
+    }
+    if (shareDateTimeLabel) {
+      segments.push(`When: ${shareDateTimeLabel}`);
+    }
+    if (match?.location_text || match?.location) {
+      segments.push(`Where: ${match.location_text || match.location}`);
+    }
+    return segments.join(" ").trim();
+  }, [
+    hostName,
+    isHost,
+    match?.location,
+    match?.location_text,
+    match?.name,
+    match?.title,
+    shareDateTimeLabel,
   ]);
 
   const shareEmailSubject = useMemo(() => {
@@ -1196,6 +1454,27 @@ const MatchDetailsModal = ({
     window.location.href = url;
   };
 
+  const handleMessageParticipants = useCallback(() => {
+    if (!canMessageParticipants) return;
+    const recipients = participantSmsTargets.join(",");
+    if (!recipients) return;
+    const smsUrl = participantSmsMessage
+      ? `sms:${recipients}?&body=${encodeURIComponent(participantSmsMessage)}`
+      : `sms:${recipients}`;
+    try {
+      onToast?.("Opening messages...");
+      window.location.href = smsUrl;
+    } catch (error) {
+      console.error(error);
+      onToast?.("We couldn't open your messages app", "error");
+    }
+  }, [
+    canMessageParticipants,
+    onToast,
+    participantSmsMessage,
+    participantSmsTargets,
+  ]);
+
   const handleRefreshShareLink = () => {
     if (shareLoading || !isOpenMatch || !match?.id) return;
     requestShareLink({ silent: false });
@@ -1228,33 +1507,37 @@ const MatchDetailsModal = ({
 
   const playersList = useMemo(() => {
     const list = committedParticipants.map((participant, index) => {
-      const profile = participant.profile || {};
+      const profile = safeOwnedPlainObject(participant, "profile") || {};
       const playerId = getParticipantPlayerId(participant);
       const id = getParticipantIdentity(participant, `participant-${index}`);
       const avatar = getParticipantProfileImage(participant);
       const profileUrl = getParticipantProfileUrl(participant, playerId);
+      const nameCandidates = [
+        safeOwnPropertyValue(profile, "full_name"),
+        safeOwnPropertyValue(profile, "fullName"),
+        safeOwnPropertyValue(profile, "preferred_name"),
+        safeOwnPropertyValue(profile, "preferredName"),
+        safeOwnPropertyValue(participant, "full_name"),
+        safeOwnPropertyValue(participant, "fullName"),
+        safeOwnPropertyValue(profile, "name"),
+        safeOwnPropertyValue(participant, "name"),
+      ];
+      const ratingCandidates = [
+        safeOwnPropertyValue(profile, "usta_rating"),
+        safeOwnPropertyValue(profile, "rating"),
+        safeOwnPropertyValue(profile, "skill_rating"),
+        safeOwnPropertyValue(profile, "ntrp_rating"),
+        safeOwnPropertyValue(participant, "rating"),
+      ];
       return {
         id,
         playerId,
         name:
-          profile.full_name ||
-          profile.fullName ||
-          profile.preferred_name ||
-          profile.preferredName ||
-          participant.full_name ||
-          participant.fullName ||
-          profile.name ||
-          participant.name ||
+          firstNonEmptyValue(nameCandidates) ||
           (playerId ? `Player ${playerId}` : `Player ${index + 1}`),
         avatar,
         isHost: match?.host_id ? idsMatch(playerId, match.host_id) : false,
-        rating:
-          profile.usta_rating ||
-          profile.rating ||
-          profile.skill_rating ||
-          profile.ntrp_rating ||
-          participant.rating ||
-          null,
+        rating: firstNonEmptyValue(ratingCandidates),
         profileUrl,
         participant,
       };
@@ -1811,6 +2094,17 @@ const MatchDetailsModal = ({
               </p>
             </div>
             {renderPlayers()}
+            {canMessageParticipants && (
+              <button
+                type="button"
+                onClick={handleMessageParticipants}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                title="Send a group text to everyone who's joined"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Message players
+              </button>
+            )}
           </section>
 
           {!isArchived && !isCancelled && (

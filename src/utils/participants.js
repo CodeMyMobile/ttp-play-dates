@@ -1,3 +1,10 @@
+import {
+  safeOwnPropertyDescriptor,
+  safeOwnPropertyValue,
+  safeValueAtPath,
+  safeIterableKeys,
+} from "./safeAccess";
+
 const PARTICIPANT_IDENTITY_KEYS = [
   "match_participant_id",
   "matchParticipantId",
@@ -36,21 +43,13 @@ const DEFAULT_IDENTITY_KEYS = PARTICIPANT_IDENTITY_KEYS;
 const getValueByKeyPath = (item, key) => {
   if (!item || typeof item !== "object") return undefined;
   if (Array.isArray(key)) {
-    return getValueByKeyPath(item, key.join("."));
+    return safeValueAtPath(item, key);
   }
   if (typeof key !== "string" || key.length === 0) return undefined;
   if (!key.includes(".")) {
-    return item[key];
+    return safeOwnPropertyValue(item, key);
   }
-  const segments = key.split(".");
-  let current = item;
-  for (const segment of segments) {
-    if (!current || typeof current !== "object") {
-      return undefined;
-    }
-    current = current[segment];
-  }
-  return current;
+  return safeValueAtPath(item, key.split("."));
 };
 
 const normalizeIdentityValue = (value) => {
@@ -69,6 +68,12 @@ const normalizeIdentityValue = (value) => {
   }
   if (typeof value === "bigint") {
     return value.toString();
+  }
+  if (typeof value === "boolean") {
+    return null;
+  }
+  if (typeof value !== "number" && typeof value !== "bigint") {
+    return null;
   }
   const numeric = Number(value);
   if (Number.isFinite(numeric)) {
@@ -129,16 +134,20 @@ export const uniqueParticipants = (participants = []) => {
 const isParticipantActive = (participant) => {
   if (!participant || typeof participant !== "object") return false;
 
-  if (participant.is_active === false || participant.active === false) {
+  const inactiveFlags = [
+    safeOwnPropertyValue(participant, "is_active"),
+    safeOwnPropertyValue(participant, "active"),
+  ];
+  if (inactiveFlags.some((value) => value === false)) {
     return false;
   }
 
   const statusCandidates = [
-    participant.status,
-    participant.participant_status,
-    participant.participantStatus,
-    participant.status_reason,
-    participant.statusReason,
+    safeOwnPropertyValue(participant, "status"),
+    safeOwnPropertyValue(participant, "participant_status"),
+    safeOwnPropertyValue(participant, "participantStatus"),
+    safeOwnPropertyValue(participant, "status_reason"),
+    safeOwnPropertyValue(participant, "statusReason"),
   ];
   if (statusCandidates.some((value) => isInactiveStatus(value))) {
     return false;
@@ -206,10 +215,9 @@ export const uniqueInvitees = (invitees = []) => {
 };
 
 const hasAnyValue = (item, keys = []) => {
-  if (!item) return false;
+  if (!item || typeof item !== "object") return false;
   return keys.some((key) => {
-    if (!Object.prototype.hasOwnProperty.call(item, key)) return false;
-    const value = item[key];
+    const value = safeOwnPropertyValue(item, key);
     if (value === undefined || value === null) return false;
     if (typeof value === "string") {
       return value.trim().length > 0;
@@ -225,7 +233,10 @@ const hasAnyValue = (item, keys = []) => {
 };
 
 const isInactiveStatus = (value) => {
-  if (!value) return false;
+  if (value === undefined || value === null) return false;
+  if (typeof value !== "string" && typeof value !== "number") {
+    return false;
+  }
   const normalized = value.toString().trim().toLowerCase();
   return [
     "left",
@@ -243,19 +254,25 @@ const isInactiveStatus = (value) => {
 
 const isInviteActive = (invite) => {
   if (!invite || typeof invite !== "object") return false;
-  const status = invite.status ? invite.status.toString().trim().toLowerCase() : "";
+  const rawStatus = safeOwnPropertyValue(invite, "status");
+  const status = rawStatus ? rawStatus.toString().trim().toLowerCase() : "";
   if (status !== "accepted" || isInactiveStatus(status)) {
     return false;
   }
 
-  if (invite.is_active === false || invite.active === false) {
+  const inactiveFlags = [
+    safeOwnPropertyValue(invite, "is_active"),
+    safeOwnPropertyValue(invite, "active"),
+  ];
+  if (inactiveFlags.some((value) => value === false)) {
     return false;
   }
 
-  const participantStatus = invite.participant_status
-    ? invite.participant_status.toString().trim().toLowerCase()
-    : invite.participantStatus
-    ? invite.participantStatus.toString().trim().toLowerCase()
+  const participantStatusRaw =
+    safeOwnPropertyValue(invite, "participant_status") ??
+    safeOwnPropertyValue(invite, "participantStatus");
+  const participantStatus = participantStatusRaw
+    ? participantStatusRaw.toString().trim().toLowerCase()
     : "";
   if (isInactiveStatus(participantStatus)) {
     return false;
@@ -280,10 +297,11 @@ const isInviteActive = (invite) => {
     return false;
   }
 
-  const statusReason = invite.status_reason
-    ? invite.status_reason.toString().trim().toLowerCase()
-    : invite.statusReason
-    ? invite.statusReason.toString().trim().toLowerCase()
+  const statusReasonRaw =
+    safeOwnPropertyValue(invite, "status_reason") ??
+    safeOwnPropertyValue(invite, "statusReason");
+  const statusReason = statusReasonRaw
+    ? statusReasonRaw.toString().trim().toLowerCase()
     : "";
   if (isInactiveStatus(statusReason)) {
     return false;
@@ -340,18 +358,18 @@ const pruneItemsByIdentity = (items, memberIdentity) => {
   return items.filter((item) => {
     if (!item || typeof item !== "object") return true;
     const candidates = [
-      item.player_id,
-      item.playerId,
-      item.match_participant_id,
-      item.matchParticipantId,
-      item.participant_id,
-      item.participantId,
-      item.invitee_id,
-      item.inviteeId,
-      item.id,
-      item.profile?.id,
-      item.profile?.player_id,
-      item.profile?.playerId,
+      safeOwnPropertyValue(item, "player_id"),
+      safeOwnPropertyValue(item, "playerId"),
+      safeOwnPropertyValue(item, "match_participant_id"),
+      safeOwnPropertyValue(item, "matchParticipantId"),
+      safeOwnPropertyValue(item, "participant_id"),
+      safeOwnPropertyValue(item, "participantId"),
+      safeOwnPropertyValue(item, "invitee_id"),
+      safeOwnPropertyValue(item, "inviteeId"),
+      safeOwnPropertyValue(item, "id"),
+      safeValueAtPath(item, ["profile", "id"]),
+      safeValueAtPath(item, ["profile", "player_id"]),
+      safeValueAtPath(item, ["profile", "playerId"]),
     ];
     return !candidates.some((value) => matchesMemberIdentity(value, memberIdentity));
   });
@@ -373,11 +391,36 @@ const JOIN_METADATA_KEYS = [
   "isJoined",
 ];
 
+const clonePlainObject = (source) => {
+  if (!source || typeof source !== "object") return {};
+  const clone = {};
+  for (const key of safeIterableKeys(source)) {
+    const descriptor = safeOwnPropertyDescriptor(source, key);
+    if (!descriptor) continue;
+    if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+      continue;
+    }
+    clone[key] = descriptor.value;
+  }
+  return clone;
+};
+
 const clearJoinMetadata = (target) => {
   if (!target || typeof target !== "object") return target;
   for (const key of JOIN_METADATA_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(target, key)) {
+    const descriptor = safeOwnPropertyDescriptor(target, key);
+    if (!descriptor) continue;
+    if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+      continue;
+    }
+    try {
       delete target[key];
+    } catch {
+      try {
+        target[key] = undefined;
+      } catch {
+        /* ignore */
+      }
     }
   }
   return target;
@@ -388,19 +431,21 @@ const pruneParticipantCollections = (target, memberIdentity, seen) => {
   if (seen.has(target)) return target;
   seen.add(target);
 
-  const next = clearJoinMetadata({ ...target });
+  const next = clearJoinMetadata(clonePlainObject(target));
 
-  if (Array.isArray(next.participants)) {
-    next.participants = pruneItemsByIdentity(next.participants, memberIdentity);
+  const participants = safeOwnPropertyValue(target, "participants");
+  if (Array.isArray(participants)) {
+    next.participants = pruneItemsByIdentity(participants, memberIdentity);
   }
 
-  if (Array.isArray(next.invitees)) {
-    next.invitees = pruneItemsByIdentity(next.invitees, memberIdentity);
+  const invitees = safeOwnPropertyValue(target, "invitees");
+  if (Array.isArray(invitees)) {
+    next.invitees = pruneItemsByIdentity(invitees, memberIdentity);
   }
 
-  if (next.match && typeof next.match === "object") {
-    next.match = pruneParticipantCollections(next.match, memberIdentity, seen);
-    clearJoinMetadata(next.match);
+  const nestedMatch = safeOwnPropertyValue(target, "match");
+  if (nestedMatch && typeof nestedMatch === "object") {
+    next.match = pruneParticipantCollections(nestedMatch, memberIdentity, seen);
   }
 
   return next;
