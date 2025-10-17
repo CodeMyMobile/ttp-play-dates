@@ -775,7 +775,9 @@ export default function InvitationPage() {
         return;
       }
       const claimMessage = mapClaimError(err);
-      if (err?.status === 404 || err?.message === "not_found") {
+      if (claimMessage) {
+        setError(claimMessage);
+      } else if (err?.status === 404 || err?.message === "not_found") {
         setPreview(null);
         setLoadError({
           emoji: "🔍",
@@ -783,8 +785,6 @@ export default function InvitationPage() {
           message:
             "This invite is no longer available. Ask the host to send a new link.",
         });
-      } else if (claimMessage) {
-        setError(claimMessage);
       } else {
         setError("We couldn't complete your signup. Try again later.");
       }
@@ -1689,8 +1689,24 @@ function mapAcceptError(error) {
 
 function mapClaimError(error) {
   if (!error) return null;
+  const normalizedCode = (error.data?.error || error.message || "")
+    .toString()
+    .toLowerCase();
+  const normalizedMessage = (error.data?.message || "")
+    .toString()
+    .toLowerCase();
+
   if (error.status === 409 || error.message === "email_in_use") {
     return "That email is already in use. Try a different email or sign in instead.";
+  }
+  if (
+    error.status === 404 &&
+    (normalizedCode.includes("user") ||
+      normalizedCode.includes("account") ||
+      normalizedMessage.includes("user") ||
+      normalizedMessage.includes("account"))
+  ) {
+    return "We couldn't find an account with that email. Sign up to join this match.";
   }
   if (error.status === 404 || error.message === "not_found") {
     return null;
