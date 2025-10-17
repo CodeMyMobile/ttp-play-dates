@@ -59,6 +59,10 @@ import {
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
 import { combineDateAndTimeToIso } from "../utils/datetime";
+import {
+  safeOwnPropertyValue,
+  safeOwnedPlainObject,
+} from "../utils/safeAccess";
 
 const buildAvatarLabel = (name = "") => {
   if (!name) return "?";
@@ -215,28 +219,6 @@ const buildProfileUrlFromPlayerId = (playerId) => {
     return null;
   }
   return null;
-};
-
-const safeOwnPropertyValue = (object, key) => {
-  if (!object || typeof object !== "object") return undefined;
-  try {
-    if (!Object.prototype.hasOwnProperty.call(object, key)) {
-      return undefined;
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(object, key);
-    if (!descriptor) return undefined;
-    if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
-      return undefined;
-    }
-    return descriptor.value;
-  } catch {
-    return undefined;
-  }
-};
-
-const safeOwnedPlainObject = (object, key) => {
-  const value = safeOwnPropertyValue(object, key);
-  return value && typeof value === "object" ? value : null;
 };
 
 const createSafeSnapshot = (value, maxDepth = 3, visited = new WeakMap()) => {

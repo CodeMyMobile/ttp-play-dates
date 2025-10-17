@@ -1,4 +1,9 @@
 import { idsMatch } from "./participants";
+import {
+  safeOwnPropertyValue,
+  safeOwnedPlainObject,
+  safeValueAtPath,
+} from "./safeAccess";
 
 const MEMBER_ID_KEYS = [
   "id",
@@ -210,19 +215,14 @@ const HOST_STATUS_VALUES = new Set(["hosting", "host"]);
 
 const getValueByPath = (subject, path) => {
   if (!subject || typeof subject !== "object") return undefined;
+  if (Array.isArray(path)) {
+    return safeValueAtPath(subject, path);
+  }
   if (typeof path !== "string" || path.length === 0) return undefined;
   if (!path.includes(".")) {
-    return subject[path];
+    return safeOwnPropertyValue(subject, path);
   }
-  const segments = path.split(".");
-  let current = subject;
-  for (const segment of segments) {
-    if (!current || typeof current !== "object") {
-      return undefined;
-    }
-    current = current[segment];
-  }
-  return current;
+  return safeValueAtPath(subject, path.split("."));
 };
 
 const gatherValues = (source, keys) => {
@@ -274,10 +274,10 @@ const gatherIdentityHints = (...sources) => {
 const isHostingParticipant = (participant) => {
   if (!participant || typeof participant !== "object") return false;
   const statusCandidates = [
-    participant.status,
-    participant.participant_status,
-    participant.participantStatus,
-    participant.role,
+    safeOwnPropertyValue(participant, "status"),
+    safeOwnPropertyValue(participant, "participant_status"),
+    safeOwnPropertyValue(participant, "participantStatus"),
+    safeOwnPropertyValue(participant, "role"),
   ];
   return statusCandidates.some((status) => {
     if (!status) return false;
@@ -290,71 +290,75 @@ const collectValues = (source, keys) => dedupeValues(gatherValues(source, keys))
 
 export const collectMemberIds = (member) => {
   if (!member || typeof member !== "object") return [];
-  if (Array.isArray(member.identityIds) && member.identityIds.length > 0) {
-    return dedupeValues(member.identityIds);
+  const immediateIdentityIds = safeOwnPropertyValue(member, "identityIds");
+  if (Array.isArray(immediateIdentityIds) && immediateIdentityIds.length > 0) {
+    return dedupeValues(immediateIdentityIds);
   }
   const baseValues = collectValues(member, MEMBER_ID_KEYS);
-  const membershipSources = [
-    member.memberships,
-    member.membership,
-    member.profile?.memberships,
-    member.profile?.membership,
-    member.profile?.member,
-    member.account?.memberships,
-    member.account?.membership,
-    member.account?.member,
-    member.person?.memberships,
-    member.person?.membership,
-    member.person?.member,
-    member.member?.memberships,
-    member.member?.membership,
-    member.user?.memberships,
-    member.user?.membership,
-    member.user?.member,
-    member.userRecord?.memberships,
-    member.userRecord?.membership,
-    member.userRecord?.member,
+  const membershipSourcePaths = [
+    "memberships",
+    "membership",
+    "profile.memberships",
+    "profile.membership",
+    "profile.member",
+    "account.memberships",
+    "account.membership",
+    "account.member",
+    "person.memberships",
+    "person.membership",
+    "person.member",
+    "member.memberships",
+    "member.membership",
+    "user.memberships",
+    "user.membership",
+    "user.member",
+    "userRecord.memberships",
+    "userRecord.membership",
+    "userRecord.member",
   ];
+  const membershipSources = membershipSourcePaths.map((path) =>
+    getValueByPath(member, path),
+  );
   const membershipValues = dedupeValues(
     membershipSources.flatMap((source) => collectValues(source, MEMBERSHIP_ID_KEYS)),
   );
   const additionalValues = gatherIdentityHints(
-    member.identityIds,
-    member.identity_ids,
-    member.identity,
-    member.identityId,
-    member.identityHints,
-    member.identities,
-    member.memberIds,
-    member.member_ids,
-    member.matchplayIds,
-    member.matchplay_ids,
-    member.authIds,
-    member.auth_ids,
-    member.profile?.identityIds,
-    member.profile?.identity_ids,
-    member.profile?.identityHints,
-    member.profile?.identities,
-    member.account?.identityIds,
-    member.account?.identity_ids,
-    member.account?.identityHints,
-    member.account?.identities,
-    member.person?.identityIds,
-    member.person?.identity_ids,
-    member.person?.identityHints,
-    member.person?.identities,
-    member.member?.identityIds,
-    member.member?.identity_ids,
-    member.member?.identityHints,
-    member.member?.identities,
-    member.user?.identityIds,
-    member.user?.identity_ids,
-    member.user?.identityHints,
-    member.user?.identities,
-    member.userRecord?.identityIds,
-    member.userRecord?.identity_ids,
-    member.userRecord?.identityHints,
-    member.userRecord?.identities,
+    safeOwnPropertyValue(member, "identityIds"),
+    safeOwnPropertyValue(member, "identity_ids"),
+    safeOwnPropertyValue(member, "identity"),
+    safeOwnPropertyValue(member, "identityId"),
+    safeOwnPropertyValue(member, "identityHints"),
+    safeOwnPropertyValue(member, "identities"),
+    safeOwnPropertyValue(member, "memberIds"),
+    safeOwnPropertyValue(member, "member_ids"),
+    safeOwnPropertyValue(member, "matchplayIds"),
+    safeOwnPropertyValue(member, "matchplay_ids"),
+    safeOwnPropertyValue(member, "authIds"),
+    safeOwnPropertyValue(member, "auth_ids"),
+    getValueByPath(member, "profile.identityIds"),
+    getValueByPath(member, "profile.identity_ids"),
+    getValueByPath(member, "profile.identityHints"),
+    getValueByPath(member, "profile.identities"),
+    getValueByPath(member, "account.identityIds"),
+    getValueByPath(member, "account.identity_ids"),
+    getValueByPath(member, "account.identityHints"),
+    getValueByPath(member, "account.identities"),
+    getValueByPath(member, "person.identityIds"),
+    getValueByPath(member, "person.identity_ids"),
+    getValueByPath(member, "person.identityHints"),
+    getValueByPath(member, "person.identities"),
+    getValueByPath(member, "member.identityIds"),
+    getValueByPath(member, "member.identity_ids"),
+    getValueByPath(member, "member.identityHints"),
+    getValueByPath(member, "member.identities"),
+    getValueByPath(member, "user.identityIds"),
+    getValueByPath(member, "user.identity_ids"),
+    getValueByPath(member, "user.identityHints"),
+    getValueByPath(member, "user.identities"),
+    getValueByPath(member, "userRecord.identityIds"),
+    getValueByPath(member, "userRecord.identity_ids"),
+    getValueByPath(member, "userRecord.identityHints"),
+    getValueByPath(member, "userRecord.identities"),
   );
   return dedupeValues([...baseValues, ...membershipValues, ...additionalValues]);
 };
@@ -391,20 +395,20 @@ export const collectMatchHostIds = (match) => {
   const hostIds = [
     ...collectValues(match, HOST_ID_KEYS),
     ...gatherIdentityHints(
-      match.host_identity,
-      match.hostIdentity,
-      match.host_identity_id,
-      match.hostIdentityId,
-      match.organizer_identity,
-      match.organizerIdentity,
-      match.organiser_identity,
-      match.organiserIdentity,
-      match.creator_identity,
-      match.creatorIdentity,
-      match.created_by_identity,
-      match.createdByIdentity,
-      match.owner_identity,
-      match.ownerIdentity,
+      safeOwnPropertyValue(match, "host_identity"),
+      safeOwnPropertyValue(match, "hostIdentity"),
+      safeOwnPropertyValue(match, "host_identity_id"),
+      safeOwnPropertyValue(match, "hostIdentityId"),
+      safeOwnPropertyValue(match, "organizer_identity"),
+      safeOwnPropertyValue(match, "organizerIdentity"),
+      safeOwnPropertyValue(match, "organiser_identity"),
+      safeOwnPropertyValue(match, "organiserIdentity"),
+      safeOwnPropertyValue(match, "creator_identity"),
+      safeOwnPropertyValue(match, "creatorIdentity"),
+      safeOwnPropertyValue(match, "created_by_identity"),
+      safeOwnPropertyValue(match, "createdByIdentity"),
+      safeOwnPropertyValue(match, "owner_identity"),
+      safeOwnPropertyValue(match, "ownerIdentity"),
     ),
   ];
   for (const key of HOST_ASSOCIATED_OBJECT_KEYS) {
@@ -413,23 +417,25 @@ export const collectMatchHostIds = (match) => {
       hostIds.push(...collectMemberIds(candidate));
     }
   }
-  if (Array.isArray(match.participants)) {
-    const hostParticipant = match.participants.find(isHostingParticipant);
+  const participants = safeOwnPropertyValue(match, "participants");
+  if (Array.isArray(participants)) {
+    const hostParticipant = participants.find(isHostingParticipant);
     if (hostParticipant) {
       hostIds.push(...collectValues(hostParticipant, PARTICIPANT_ID_KEYS));
-      hostIds.push(...collectValues(hostParticipant.profile || {}, MEMBER_ID_KEYS));
+      const participantProfile = safeOwnedPlainObject(hostParticipant, "profile") || {};
+      hostIds.push(...collectValues(participantProfile, MEMBER_ID_KEYS));
       hostIds.push(
         ...gatherIdentityHints(
-          hostParticipant.identity,
-          hostParticipant.identityId,
-          hostParticipant.identity_ids,
-          hostParticipant.identityIds,
-          hostParticipant.identityHints,
-          hostParticipant.profile?.identity,
-          hostParticipant.profile?.identityId,
-          hostParticipant.profile?.identity_ids,
-          hostParticipant.profile?.identityIds,
-          hostParticipant.profile?.identityHints,
+          safeOwnPropertyValue(hostParticipant, "identity"),
+          safeOwnPropertyValue(hostParticipant, "identityId"),
+          safeOwnPropertyValue(hostParticipant, "identity_ids"),
+          safeOwnPropertyValue(hostParticipant, "identityIds"),
+          safeOwnPropertyValue(hostParticipant, "identityHints"),
+          getValueByPath(hostParticipant, "profile.identity"),
+          getValueByPath(hostParticipant, "profile.identityId"),
+          getValueByPath(hostParticipant, "profile.identity_ids"),
+          getValueByPath(hostParticipant, "profile.identityIds"),
+          getValueByPath(hostParticipant, "profile.identityHints"),
         ),
       );
     }
