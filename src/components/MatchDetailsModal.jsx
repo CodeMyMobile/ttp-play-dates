@@ -239,6 +239,59 @@ const safeOwnedPlainObject = (object, key) => {
   return value && typeof value === "object" ? value : null;
 };
 
+const createSafeSnapshot = (value, maxDepth = 3, visited = new WeakMap()) => {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+  if (visited.has(value)) return visited.get(value);
+
+  const nextDepth = maxDepth > 0 ? maxDepth - 1 : 0;
+
+  if (Array.isArray(value)) {
+    const snapshot = [];
+    visited.set(value, snapshot);
+    if (maxDepth <= 0) return snapshot;
+    for (let index = 0; index < value.length; index += 1) {
+      snapshot[index] = createSafeSnapshot(value[index], nextDepth, visited);
+    }
+    return snapshot;
+  }
+
+  const snapshot = {};
+  visited.set(value, snapshot);
+  let keys = [];
+  try {
+    keys = Object.keys(value);
+  } catch {
+    return snapshot;
+  }
+
+  for (const key of keys) {
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+      continue;
+    }
+    if (!descriptor) continue;
+    if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+      continue;
+    }
+
+    const propertyValue = descriptor.value;
+    if (
+      propertyValue !== null &&
+      typeof propertyValue === "object" &&
+      nextDepth > 0
+    ) {
+      snapshot[key] = createSafeSnapshot(propertyValue, nextDepth, visited);
+    } else {
+      snapshot[key] = propertyValue;
+    }
+  }
+
+  return snapshot;
+};
+
 const getProfileImageFromSource = (source) => {
   if (!source || typeof source !== "object") return null;
   const keys = [
@@ -668,23 +721,46 @@ const MatchDetailsModal = ({
     [],
   );
 
-  const match = matchData?.match || null;
+  const safeMatchData = useMemo(() => {
+    if (!matchData || typeof matchData !== "object") return null;
+    try {
+      return createSafeSnapshot(matchData, 4);
+    } catch (error) {
+      console.error("Failed to snapshot match data", error);
+      return null;
+    }
+  }, [matchData]);
+
+  const match = useMemo(() => {
+    if (!safeMatchData || typeof safeMatchData !== "object") return null;
+    if (safeMatchData.match && typeof safeMatchData.match === "object") {
+      return safeMatchData.match;
+    }
+    return safeMatchData;
+  }, [safeMatchData]);
+
   const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
   const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
   const participants = useMemo(() => {
-    if (Array.isArray(matchData?.participants)) {
-      return uniqueParticipants(matchData.participants);
+    const fromRoot = Array.isArray(safeMatchData?.participants)
+      ? safeMatchData.participants
+      : null;
+    const fromMatch = Array.isArray(match?.participants)
+      ? match.participants
+      : null;
+    if (Array.isArray(fromRoot) && fromRoot.length > 0) {
+      return uniqueParticipants(fromRoot);
     }
-    if (Array.isArray(match?.participants)) {
-      return uniqueParticipants(match.participants);
+    if (Array.isArray(fromMatch)) {
+      return uniqueParticipants(fromMatch);
     }
     return [];
-  }, [matchData, match]);
+  }, [match, safeMatchData]);
   const invitees = useMemo(() => {
-    if (Array.isArray(matchData?.invitees)) return matchData.invitees;
+    if (Array.isArray(safeMatchData?.invitees)) return safeMatchData.invitees;
     if (Array.isArray(match?.invitees)) return match.invitees;
     return [];
-  }, [matchData, match]);
+  }, [match, safeMatchData]);
 
   const originalEditForm = useMemo(() => buildInitialEditForm(match), [match]);
   const availableMatchFormats = useMemo(
@@ -844,7 +920,17 @@ const MatchDetailsModal = ({
     const identityMatchesCurrentUser = (value) =>
       memberIdentities.some((id) => idsMatch(value, id));
 
-    const sources = [matchData, matchData?.match, match];
+    const sources = [];
+    const addSource = (candidate) => {
+      if (!candidate || typeof candidate !== "object") return;
+      if (sources.some((source) => source === candidate)) return;
+      sources.push(candidate);
+    };
+    addSource(safeMatchData);
+    if (safeMatchData && typeof safeMatchData === "object") {
+      addSource(safeMatchData.match);
+    }
+    addSource(match);
     const truthyStatuses = new Set([
       "joined",
       "accepted",
@@ -905,7 +991,7 @@ const MatchDetailsModal = ({
     }
 
     return false;
-  }, [match, matchData, memberIdentities]);
+  }, [match, memberIdentities, safeMatchData]);
 
   const isJoined = useMemo(
     () => isHost || isParticipant || hasAcceptedInvite || metadataIndicatesJoined,
