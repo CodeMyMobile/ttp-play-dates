@@ -89,6 +89,7 @@ import {
   memberMatchesParticipant,
 } from "./utils/memberIdentity";
 import { getMatchPrivacy } from "./utils/matchPrivacy";
+import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -276,17 +277,6 @@ const collectHostContactDetails = (match) => {
   return { emails, normalizedPhones, phoneDigits };
 };
 
-const createInitials = (name, fallbackEmail) => {
-  const source = (name || fallbackEmail || "").trim();
-  if (!source) return "MP";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "MP";
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
-
 const toPlainObject = (value) =>
   value && typeof value === "object" ? { ...value } : null;
 
@@ -400,7 +390,14 @@ const buildLocalUser = ({
     email,
     phone: phone || "",
     skillLevel: skillLevel || "",
-    avatar: createInitials(safeName, email),
+    avatar: getAvatarInitials(safeName, email),
+    avatarUrl: getAvatarUrlFromPlayer({
+      profile: normalizedProfile,
+      player: normalizedProfile,
+      user: normalizedUserRecord,
+      account: normalizedAccount,
+      member: normalizedMember,
+    }),
     rating: 4.2,
     profile: normalizedProfile,
     account: normalizedAccount,

@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ChevronLeft, LogOut, Bell } from "lucide-react";
+import PlayerAvatar from "./PlayerAvatar";
+import { getAvatarUrlFromPlayer } from "../utils/avatar";
 
 const AppHeader = ({
   currentScreen,
@@ -12,6 +14,12 @@ const AppHeader = ({
   onOpenSignIn,
   setShowPreview,
 }) => {
+  const avatarName = currentUser?.name || "You";
+  const currentUserAvatarUrl = useMemo(
+    () => getAvatarUrlFromPlayer(currentUser),
+    [currentUser],
+  );
+
   return (
     <div className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/95">
       <div className="max-w-7xl mx-auto px-4 py-3 sm:py-4">
@@ -40,9 +48,13 @@ const AppHeader = ({
                   onClick={onOpenProfile}
                   className="flex items-center gap-2 rounded-full px-2 py-1 transition-all hover:bg-gray-50 sm:rounded-xl sm:px-3 sm:py-2"
                 >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-sm font-bold text-white shadow-lg">
-                    {currentUser.avatar}
-                  </div>
+                  <PlayerAvatar
+                    name={avatarName}
+                    imageUrl={currentUserAvatarUrl}
+                    variant="violet"
+                    size="sm"
+                    className="shadow-lg"
+                  />
                   <div className="hidden min-w-0 flex-col items-start sm:flex">
                     <span className="text-sm font-bold text-gray-800">
                       {currentUser.name.split(" ")[0]}
@@ -90,9 +102,13 @@ const AppHeader = ({
             </button>
             <h1 className="text-xl font-black text-gray-800">Invites</h1>
             {currentUser && (
-              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
-                {currentUser.avatar}
-              </div>
+              <PlayerAvatar
+                name={avatarName}
+                imageUrl={currentUserAvatarUrl}
+                variant="violet"
+                size="sm"
+                className="shadow-lg"
+              />
             )}
           </div>
         ) : (
@@ -111,9 +127,13 @@ const AppHeader = ({
               <span className="text-gray-700 font-bold">Back</span>
             </button>
             {currentUser && (
-              <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg">
-                {currentUser.avatar}
-              </div>
+              <PlayerAvatar
+                name={avatarName}
+                imageUrl={currentUserAvatarUrl}
+                variant="violet"
+                size="sm"
+                className="shadow-lg"
+              />
             )}
           </div>
         )}

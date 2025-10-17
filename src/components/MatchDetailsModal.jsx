@@ -21,6 +21,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import PlayerAvatar from "./PlayerAvatar";
 import {
   cancelMatch,
   getShareLink,
@@ -58,15 +59,10 @@ import {
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
 import { combineDateAndTimeToIso } from "../utils/datetime";
-
-const buildAvatarLabel = (name = "") => {
-  if (!name) return "?";
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-};
+import {
+  getAvatarInitials,
+  getProfileImageFromSource,
+} from "../utils/avatar";
 
 const safeDate = (value) => {
   if (!value) return null;
@@ -212,39 +208,6 @@ const buildProfileUrlFromPlayerId = (playerId) => {
     }
   } catch {
     return null;
-  }
-  return null;
-};
-
-const getProfileImageFromSource = (source) => {
-  if (!source || typeof source !== "object") return null;
-  const keys = [
-    "profile_picture",
-    "profilePicture",
-    "profile_picture_url",
-    "profilePictureUrl",
-    "profile_photo",
-    "profilePhoto",
-    "profile_image",
-    "profileImage",
-    "profile_image_url",
-    "profileImageUrl",
-    "photo_url",
-    "photoUrl",
-    "image_url",
-    "imageUrl",
-    "avatar_url",
-    "avatarUrl",
-    "avatar",
-    "host_avatar",
-    "hostAvatar",
-    "picture",
-    "photo",
-  ];
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = asNonEmptyString(source[key]);
-    if (value) return value;
   }
   return null;
 };
@@ -1481,17 +1444,12 @@ const MatchDetailsModal = ({
                 canViewProfile ? `View ${player.name}'s profile` : undefined
               }
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-sm font-bold text-indigo-700">
-                {player.avatar ? (
-                  <img
-                    src={player.avatar}
-                    alt={player.name}
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                ) : (
-                  buildAvatarLabel(player.name)
-                )}
-              </div>
+              <PlayerAvatar
+                name={player.name}
+                imageUrl={player.avatar}
+                fallback={getAvatarInitials(player.name)}
+                variant={player.isHost ? "emerald" : "indigo"}
+              />
               <div className="flex-1">
                 <p className="text-sm font-black text-gray-900">
                   {player.name}
@@ -1729,19 +1687,13 @@ const MatchDetailsModal = ({
       <div className="flex flex-col">
         <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
           <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
-                {hostAvatar ? (
-                  <img
-                    src={hostAvatar}
-                    alt={hostName}
-                    className="h-12 w-12 rounded-full object-cover"
-                  />
-                ) : (
-                  buildAvatarLabel(hostName)
-                )}
-              </div>
-            </div>
+            <PlayerAvatar
+              name={hostName}
+              imageUrl={hostAvatar}
+              fallback={getAvatarInitials(hostName)}
+              size="lg"
+              variant="emerald"
+            />
             <div>
               <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
                 Match Details
@@ -2004,15 +1956,13 @@ const MatchDetailsModal = ({
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
         <div className="flex items-center gap-3">
-          <div className="relative h-12 w-12">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
-              {hostAvatar ? (
-                <img src={hostAvatar} alt={hostName} className="h-12 w-12 rounded-full object-cover" />
-              ) : (
-                buildAvatarLabel(hostName)
-              )}
-            </div>
-          </div>
+          <PlayerAvatar
+            name={hostName}
+            imageUrl={hostAvatar}
+            fallback={getAvatarInitials(hostName)}
+            size="lg"
+            variant="emerald"
+          />
           <div>
             <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
               Match Details
