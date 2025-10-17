@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 const dimensionClasses = {
   xs: "h-6 w-6",
@@ -59,6 +59,7 @@ const PlayerAvatar = ({
   variant = "emerald",
   showBadge = true,
 }) => {
+  const [imageFailed, setImageFailed] = useState(false);
   const normalizedImageUrl =
     typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : "";
   const dimensions = dimensionClasses[size] || dimensionClasses.md;
@@ -84,8 +85,17 @@ const PlayerAvatar = ({
     badgeSize,
   );
 
-  if (normalizedImageUrl) {
-    return <img src={normalizedImageUrl} alt={label} className={imageClassName} />;
+  const shouldRenderImage = normalizedImageUrl && !imageFailed;
+
+  if (shouldRenderImage) {
+    return (
+      <img
+        src={normalizedImageUrl}
+        alt={label}
+        className={imageClassName}
+        onError={() => setImageFailed(true)}
+      />
+    );
   }
 
   return (

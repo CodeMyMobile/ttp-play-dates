@@ -36,11 +36,27 @@ const toNonEmptyString = (value) => {
   return "";
 };
 
+const normalizeAvatarUrl = (value) => {
+  const candidate = toNonEmptyString(value);
+  if (!candidate || candidate.length < 5) return "";
+  if (
+    /^https?:\/\//i.test(candidate) ||
+    candidate.startsWith("data:") ||
+    candidate.startsWith("//") ||
+    candidate.startsWith("/") ||
+    candidate.includes("/") ||
+    candidate.includes(".")
+  ) {
+    return candidate;
+  }
+  return "";
+};
+
 export const getProfileImageFromSource = (source) => {
   if (!source || typeof source !== "object") return "";
   for (const key of PROFILE_IMAGE_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const candidate = toNonEmptyString(source[key]);
+    const candidate = normalizeAvatarUrl(source[key]);
     if (candidate) {
       return candidate;
     }
