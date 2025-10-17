@@ -22,21 +22,28 @@ const PROFILE_IMAGE_KEYS = [
   "photo",
 ];
 
+const toNonEmptyString = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : "";
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  return "";
+};
+
 export const getProfileImageFromSource = (source) => {
   if (!source || typeof source !== "object") return "";
   for (const key of PROFILE_IMAGE_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = source[key];
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
-    if (!trimmed || trimmed.length < 5) continue;
-    const looksLikeUrl =
-      /^https?:\/\//i.test(trimmed) ||
-      trimmed.startsWith("data:") ||
-      trimmed.startsWith("/") ||
-      trimmed.includes("/") ||
-      trimmed.includes(".");
-    if (looksLikeUrl) return trimmed;
+    const candidate = toNonEmptyString(source[key]);
+    if (candidate) {
+      return candidate;
+    }
   }
   return "";
 };

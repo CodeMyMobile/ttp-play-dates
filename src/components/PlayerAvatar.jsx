@@ -59,6 +59,8 @@ const PlayerAvatar = ({
   variant = "emerald",
   showBadge = true,
 }) => {
+  const normalizedImageUrl =
+    typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : "";
   const dimensions = dimensionClasses[size] || dimensionClasses.md;
   const fontSize = fontClasses[size] || fontClasses.md;
   const badgeSize = badgeClasses[size] || badgeClasses.md;
@@ -66,9 +68,13 @@ const PlayerAvatar = ({
   const label = alt || `${name || "Player"} avatar`;
   const initials = fallback && fallback.trim() ? fallback.trim() : computeInitials(name);
 
-  const imageClassName = joinClasses("rounded-full object-cover shadow-sm", dimensions, className);
+  const imageClassName = joinClasses(
+    "rounded-full object-cover shadow-sm shrink-0",
+    dimensions,
+    className,
+  );
   const wrapperClassName = joinClasses(
-    "relative inline-flex items-center justify-center overflow-hidden rounded-full font-black text-white shadow-sm",
+    "relative inline-flex items-center justify-center overflow-hidden rounded-full font-black text-white shadow-sm shrink-0",
     dimensions,
     fontSize,
     className,
@@ -78,8 +84,8 @@ const PlayerAvatar = ({
     badgeSize,
   );
 
-  if (imageUrl) {
-    return <img src={imageUrl} alt={label} className={imageClassName} />;
+  if (normalizedImageUrl) {
+    return <img src={normalizedImageUrl} alt={label} className={imageClassName} />;
   }
 
   return (
