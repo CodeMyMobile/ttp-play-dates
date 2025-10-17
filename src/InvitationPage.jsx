@@ -1852,10 +1852,7 @@ function getRosterParticipants(match, preview) {
     }
 
     return filterDisplayableParticipants(
-      uniqueParticipants([
-        ...participantSource,
-        ...inviteeSource,
-      ]),
+      uniqueMatchOccupants(participantSource, inviteeSource),
     );
   }
 
@@ -1880,10 +1877,7 @@ function getRosterParticipants(match, preview) {
   }
 
   return filterDisplayableParticipants(
-    uniqueParticipants([
-      ...filteredParticipants,
-      ...acceptedInvitees,
-    ]),
+    uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
   );
 }
 
