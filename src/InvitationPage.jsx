@@ -1852,10 +1852,7 @@ function getRosterParticipants(match, preview) {
     }
 
     return filterDisplayableParticipants(
-      uniqueParticipants([
-        ...participantSource,
-        ...inviteeSource,
-      ]),
+      uniqueMatchOccupants(participantSource, inviteeSource),
     );
   }
 
@@ -1880,10 +1877,7 @@ function getRosterParticipants(match, preview) {
   }
 
   return filterDisplayableParticipants(
-    uniqueParticipants([
-      ...filteredParticipants,
-      ...acceptedInvitees,
-    ]),
+    uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
   );
 }
 
@@ -2210,13 +2204,36 @@ function participantDisplayName(participant) {
 
   const candidates = [
     participant.profile?.full_name,
+    participant.profile?.fullName,
     participant.full_name,
+    participant.fullName,
     joinNames(participant.profile?.first_name, participant.profile?.last_name),
     joinNames(participant.first_name, participant.last_name),
     participant.name,
     participant.profile?.name,
+    participant.profile?.display_name,
+    participant.profile?.displayName,
+    participant.player?.profile?.full_name,
+    participant.player?.profile?.fullName,
+    participant.player?.full_name,
+    participant.player?.fullName,
+    joinNames(
+      participant.player?.profile?.first_name,
+      participant.player?.profile?.last_name,
+    ),
+    joinNames(participant.player?.first_name, participant.player?.last_name),
+    participant.player?.name,
+    participant.player?.profile?.name,
+    participant.player?.profile?.display_name,
+    participant.player?.profile?.displayName,
     participant.invitee?.full_name,
+    participant.invitee?.fullName,
     participant.invitee?.name,
+    participant.invitee?.profile?.full_name,
+    participant.invitee?.profile?.fullName,
+    participant.invitee?.profile?.name,
+    participant.invitee?.profile?.display_name,
+    participant.invitee?.profile?.displayName,
     participant.invitee_full_name,
     participant.invitee_name,
     participant.inviteeFullName,
