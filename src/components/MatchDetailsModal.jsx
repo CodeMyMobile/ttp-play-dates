@@ -217,6 +217,28 @@ const buildProfileUrlFromPlayerId = (playerId) => {
   return null;
 };
 
+const safeOwnPropertyValue = (object, key) => {
+  if (!object || typeof object !== "object") return undefined;
+  try {
+    if (!Object.prototype.hasOwnProperty.call(object, key)) {
+      return undefined;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(object, key);
+    if (!descriptor) return undefined;
+    if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+      return undefined;
+    }
+    return descriptor.value;
+  } catch {
+    return undefined;
+  }
+};
+
+const safeOwnedPlainObject = (object, key) => {
+  const value = safeOwnPropertyValue(object, key);
+  return value && typeof value === "object" ? value : null;
+};
+
 const getProfileImageFromSource = (source) => {
   if (!source || typeof source !== "object") return null;
   const keys = [
@@ -243,8 +265,7 @@ const getProfileImageFromSource = (source) => {
     "photo",
   ];
   for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = asNonEmptyString(source[key]);
+    const value = asNonEmptyString(safeOwnPropertyValue(source, key));
     if (value) return value;
   }
   return null;
@@ -270,8 +291,7 @@ const getProfileUrlFromSource = (source) => {
     "handle",
   ];
   for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const candidate = source[key];
+    const candidate = safeOwnPropertyValue(source, key);
     const url = buildProfileUrlFromString(candidate);
     if (url) return url;
   }
@@ -280,9 +300,11 @@ const getProfileUrlFromSource = (source) => {
 
 const getParticipantProfileImage = (participant) => {
   if (!participant || typeof participant !== "object") return null;
+  const profileSource = safeOwnedPlainObject(participant, "profile");
+  const playerSource = safeOwnedPlainObject(participant, "player");
   return (
-    getProfileImageFromSource(participant.profile) ||
-    getProfileImageFromSource(participant.player) ||
+    getProfileImageFromSource(profileSource) ||
+    getProfileImageFromSource(playerSource) ||
     getProfileImageFromSource(participant) ||
     null
   );
@@ -293,9 +315,11 @@ const getParticipantProfileUrl = (participant, playerId) => {
     return buildProfileUrlFromPlayerId(playerId);
   }
 
+  const profileSource = safeOwnedPlainObject(participant, "profile");
+  const playerSource = safeOwnedPlainObject(participant, "player");
   const profileUrl =
-    getProfileUrlFromSource(participant.profile) ||
-    getProfileUrlFromSource(participant.player) ||
+    getProfileUrlFromSource(profileSource) ||
+    getProfileUrlFromSource(playerSource) ||
     getProfileUrlFromSource(participant);
   if (profileUrl) {
     return profileUrl;
@@ -416,26 +440,26 @@ const firstNonEmptyValue = (values = []) => {
 
 const getParticipantIdentityCandidates = (participant) => {
   if (!participant || typeof participant !== "object") return [];
-  const profile = participant.profile || {};
-  const player = participant.player || {};
+  const profile = safeOwnedPlainObject(participant, "profile") || {};
+  const player = safeOwnedPlainObject(participant, "player") || {};
   return [
-    participant.match_participant_id,
-    participant.matchParticipantId,
-    participant.participant_id,
-    participant.participantId,
-    participant.player_id,
-    participant.playerId,
-    participant.invitee_id,
-    participant.inviteeId,
-    participant.id,
-    profile.id,
-    profile.player_id,
-    profile.playerId,
-    profile.user_id,
-    profile.userId,
-    player.id,
-    player.player_id,
-    player.playerId,
+    safeOwnPropertyValue(participant, "match_participant_id"),
+    safeOwnPropertyValue(participant, "matchParticipantId"),
+    safeOwnPropertyValue(participant, "participant_id"),
+    safeOwnPropertyValue(participant, "participantId"),
+    safeOwnPropertyValue(participant, "player_id"),
+    safeOwnPropertyValue(participant, "playerId"),
+    safeOwnPropertyValue(participant, "invitee_id"),
+    safeOwnPropertyValue(participant, "inviteeId"),
+    safeOwnPropertyValue(participant, "id"),
+    safeOwnPropertyValue(profile, "id"),
+    safeOwnPropertyValue(profile, "player_id"),
+    safeOwnPropertyValue(profile, "playerId"),
+    safeOwnPropertyValue(profile, "user_id"),
+    safeOwnPropertyValue(profile, "userId"),
+    safeOwnPropertyValue(player, "id"),
+    safeOwnPropertyValue(player, "player_id"),
+    safeOwnPropertyValue(player, "playerId"),
   ];
 };
 
@@ -444,17 +468,17 @@ const getParticipantIdentity = (participant, fallback = null) =>
 
 const getParticipantPlayerId = (participant) => {
   if (!participant || typeof participant !== "object") return null;
-  const profile = participant.profile || {};
-  const player = participant.player || {};
+  const profile = safeOwnedPlainObject(participant, "profile") || {};
+  const player = safeOwnedPlainObject(participant, "player") || {};
   return firstNonEmptyValue([
-    participant.player_id,
-    participant.playerId,
-    player.id,
-    player.player_id,
-    player.playerId,
-    profile.player_id,
-    profile.playerId,
-    profile.id,
+    safeOwnPropertyValue(participant, "player_id"),
+    safeOwnPropertyValue(participant, "playerId"),
+    safeOwnPropertyValue(player, "id"),
+    safeOwnPropertyValue(player, "player_id"),
+    safeOwnPropertyValue(player, "playerId"),
+    safeOwnPropertyValue(profile, "player_id"),
+    safeOwnPropertyValue(profile, "playerId"),
+    safeOwnPropertyValue(profile, "id"),
   ]);
 };
 
@@ -533,23 +557,6 @@ const collectParticipantPhoneNumbers = (
     }
   };
 
-  const safeGet = (object, key) => {
-    if (!object || typeof object !== "object") return undefined;
-    try {
-      if (!Object.prototype.hasOwnProperty.call(object, key)) {
-        return undefined;
-      }
-      const descriptor = Object.getOwnPropertyDescriptor(object, key);
-      if (!descriptor) return undefined;
-      if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
-        return undefined;
-      }
-      return descriptor.value;
-    } catch (error) {
-      return undefined;
-    }
-  };
-
   const addPhoneValue = (value, depth = 0) => {
     if (value === null || value === undefined) return;
     if (typeof value === "string" || typeof value === "number") {
@@ -567,14 +574,14 @@ const collectParticipantPhoneNumbers = (
       if (depth >= MAX_PHONE_DISCOVERY_DEPTH) return;
 
       PHONE_VALUE_KEYS.forEach((key) => {
-        const candidate = safeGet(value, key);
+        const candidate = safeOwnPropertyValue(value, key);
         if (candidate !== undefined) {
           addPhoneValue(candidate, depth + 1);
         }
       });
 
       PHONE_CONTAINER_KEYS.forEach((key) => {
-        const container = safeGet(value, key);
+        const container = safeOwnPropertyValue(value, key);
         if (container !== undefined) {
           addPhoneValue(container, depth + 1);
         }
@@ -728,13 +735,16 @@ const MatchDetailsModal = ({
     return identities.filter(Boolean);
   }, [hostParticipant, match?.host_id]);
 
-  const hostProfile = match?.host_profile || hostParticipant?.profile || null;
+  const hostParticipantProfile = safeOwnedPlainObject(hostParticipant, "profile");
+  const matchHostProfile = safeOwnedPlainObject(match, "host_profile");
+  const hostProfile = matchHostProfile || hostParticipantProfile || null;
   const hostName =
-    hostProfile?.full_name ||
-    hostProfile?.fullName ||
-    match?.host_name ||
-    hostParticipant?.profile?.name ||
-    "Match Organizer";
+    firstNonEmptyValue([
+      safeOwnPropertyValue(hostProfile || {}, "full_name"),
+      safeOwnPropertyValue(hostProfile || {}, "fullName"),
+      safeOwnPropertyValue(match, "host_name"),
+      safeOwnPropertyValue(hostParticipantProfile || {}, "name"),
+    ]) || "Match Organizer";
 
   const hostAvatar =
     getProfileImageFromSource(hostProfile) ||
@@ -1429,33 +1439,37 @@ const MatchDetailsModal = ({
 
   const playersList = useMemo(() => {
     const list = committedParticipants.map((participant, index) => {
-      const profile = participant.profile || {};
+      const profile = safeOwnedPlainObject(participant, "profile") || {};
       const playerId = getParticipantPlayerId(participant);
       const id = getParticipantIdentity(participant, `participant-${index}`);
       const avatar = getParticipantProfileImage(participant);
       const profileUrl = getParticipantProfileUrl(participant, playerId);
+      const nameCandidates = [
+        safeOwnPropertyValue(profile, "full_name"),
+        safeOwnPropertyValue(profile, "fullName"),
+        safeOwnPropertyValue(profile, "preferred_name"),
+        safeOwnPropertyValue(profile, "preferredName"),
+        safeOwnPropertyValue(participant, "full_name"),
+        safeOwnPropertyValue(participant, "fullName"),
+        safeOwnPropertyValue(profile, "name"),
+        safeOwnPropertyValue(participant, "name"),
+      ];
+      const ratingCandidates = [
+        safeOwnPropertyValue(profile, "usta_rating"),
+        safeOwnPropertyValue(profile, "rating"),
+        safeOwnPropertyValue(profile, "skill_rating"),
+        safeOwnPropertyValue(profile, "ntrp_rating"),
+        safeOwnPropertyValue(participant, "rating"),
+      ];
       return {
         id,
         playerId,
         name:
-          profile.full_name ||
-          profile.fullName ||
-          profile.preferred_name ||
-          profile.preferredName ||
-          participant.full_name ||
-          participant.fullName ||
-          profile.name ||
-          participant.name ||
+          firstNonEmptyValue(nameCandidates) ||
           (playerId ? `Player ${playerId}` : `Player ${index + 1}`),
         avatar,
         isHost: match?.host_id ? idsMatch(playerId, match.host_id) : false,
-        rating:
-          profile.usta_rating ||
-          profile.rating ||
-          profile.skill_rating ||
-          profile.ntrp_rating ||
-          participant.rating ||
-          null,
+        rating: firstNonEmptyValue(ratingCandidates),
         profileUrl,
         participant,
       };
