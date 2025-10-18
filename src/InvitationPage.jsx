@@ -710,17 +710,47 @@ export default function InvitationPage() {
     }
     setAuthSubmitting(true);
     try {
-      const data = await signup({
+      const fallbackDetails = {
+        email: trimmedEmail,
+        name: trimmedName,
+        phone: trimmedPhone,
+      };
+
+      const hasSessionToken = (payload) => {
+        if (!payload) return false;
+        const tokenCandidates = [
+          payload.access_token,
+          payload.token,
+          payload.accessToken,
+        ];
+        return tokenCandidates.some(
+          (candidate) => typeof candidate === "string" && candidate.trim(),
+        );
+      };
+
+      let authPayload = await signup({
         email: trimmedEmail,
         password: signUpPassword,
         name: trimmedName,
         phone: trimmedPhone,
       });
-      const destination = await completeJoin(data, {
-        email: trimmedEmail,
-        name: trimmedName,
-        phone: trimmedPhone,
-      });
+
+      if (!hasSessionToken(authPayload)) {
+        try {
+          const fallbackLogin = await login(trimmedEmail, signUpPassword);
+          authPayload = { ...authPayload, ...fallbackLogin };
+        } catch (fallbackError) {
+          console.error("Automatic login after signup failed", fallbackError);
+        }
+      }
+
+      if (!hasSessionToken(authPayload)) {
+        throw new Error(
+          "We created your account but couldn't start your session automatically. Please sign in with your new credentials to join this match.",
+        );
+      }
+
+      const destination = await completeJoin(authPayload, fallbackDetails);
       await handleJoinSuccess(destination);
     } catch (err) {
       if (isMatchArchivedError(err)) {
