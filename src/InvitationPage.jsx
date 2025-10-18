@@ -1809,12 +1809,25 @@ function getActiveParticipants(match, preview) {
   const acceptedInvitees = uniqueAcceptedInvitees(inviteeSource);
 
   if (!filteredParticipants.length && !acceptedInvitees.length) {
+    const fallback = filterDisplayableParticipants(participantSource);
+    if (fallback.length) {
+      return fallback;
+    }
     return [];
   }
 
-  return filterDisplayableParticipants(
+  const combined = filterDisplayableParticipants(
     uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
   );
+
+  if (!combined.length) {
+    const fallback = filterDisplayableParticipants(participantSource);
+    if (fallback.length) {
+      return fallback;
+    }
+  }
+
+  return combined;
 }
 
 function getRosterParticipants(match, preview) {
@@ -1865,6 +1878,10 @@ function getRosterParticipants(match, preview) {
   ]);
 
   if (!filteredParticipants.length && !acceptedInvitees.length) {
+    const fallback = filterDisplayableParticipants(participantSource);
+    if (fallback.length) {
+      return fallback;
+    }
     return [];
   }
 
@@ -1876,9 +1893,18 @@ function getRosterParticipants(match, preview) {
     return filterDisplayableParticipants(acceptedInvitees);
   }
 
-  return filterDisplayableParticipants(
+  const combined = filterDisplayableParticipants(
     uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
   );
+
+  if (!combined.length) {
+    const fallback = filterDisplayableParticipants(participantSource);
+    if (fallback.length) {
+      return fallback;
+    }
+  }
+
+  return combined;
 }
 
 const OPEN_MATCH_PENDING_STATUS_VALUES = new Set([
