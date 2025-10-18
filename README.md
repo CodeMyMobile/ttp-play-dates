@@ -59,3 +59,32 @@ This project can be hosted on GitHub Pages. Run the deploy script to build the s
 ```
 npm run deploy
 ```
+
+## Invite Players flow
+
+The match details screen now includes an **Invite players** button for hosts. The feature opens a modal with multiple tabs that progressively enhance depending on browser capabilities:
+
+- **Device** – Uses the Contact Picker API (`navigator.contacts.select`) when available. Contacts are only requested after the host explicitly taps the picker button and are discarded when the modal closes.
+- **Share** – Uses the Web Share API if supported. It always exposes the existing _Copy invite link_ action and quick SMS/Email deep links as fallbacks.
+- **Paste** – Accepts phone numbers or emails (one per line), validates each entry, and lets the host edit before sending.
+- **Upload** – Parses CSV or VCF files client-side to bootstrap the contact list. Files are never uploaded to a server.
+
+All flows build the same short invite message:
+
+```
+Join my tennis match!
+When: {localDateTime}
+Where: {location}
+Level: {level}
+Join: {inviteUrl}
+```
+
+### Browser support
+
+- Contact Picker and Web Share tabs appear only when the corresponding API is detected.
+- SMS and email fallbacks use standard `sms:` and `mailto:` URLs to work on desktop and mobile.
+- The modal works over HTTPS and gracefully degrades to copy/paste if modern APIs are unavailable.
+
+### Optional server hook
+
+`src/features/invite/useContactInvites.ts` exports `sendServerInvite`. It is a no-op by default, but you can replace it with a thin adapter that posts invites to your backend if one exists.

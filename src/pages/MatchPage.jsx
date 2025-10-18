@@ -1,5 +1,5 @@
 // src/pages/MatchPage.jsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   useMutation,
@@ -45,6 +45,7 @@ import {
 import { combineDateAndTimeToIso } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
+import InviteButton from "../features/invite/InviteButton.jsx";
 
 const DEFAULT_FORM = {
   date: "",
@@ -121,6 +122,7 @@ export default function MatchPage() {
   const [shareCopied, setShareCopied] = useState(false);
   const [removingId, setRemovingId] = useState(null);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+  const inviteLinkRef = useRef("");
 
   const [currentUser] = useState(() => {
     try {
@@ -282,6 +284,27 @@ export default function MatchPage() {
       setFeedback({ type: "error", message });
     },
   });
+
+  useEffect(() => {
+    if (shareLink) {
+      inviteLinkRef.current = shareLink;
+    }
+  }, [shareLink]);
+
+  const getInviteLinkForModal = useCallback(async () => {
+    if (!match?.id) {
+      throw new Error("Match is still loading.");
+    }
+    if (inviteLinkRef.current) return inviteLinkRef.current;
+    const response = await getShareLink(match.id);
+    const link =
+      response?.shareUrl || response?.share_url || response?.url || "";
+    if (!link) {
+      throw new Error("We couldn't generate an invite link.");
+    }
+    inviteLinkRef.current = link;
+    return link;
+  }, [match?.id]);
 
   const handleEditToggle = () => {
     if (!canEdit) return;
@@ -770,13 +793,19 @@ export default function MatchPage() {
                 <p className="text-sm text-gray-600">
                   Use the invite flow to add players directly.
                 </p>
-                <Link
-                  to={`/matches/${match.id}/invite`}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-                >
-                  <Users className="h-4 w-4 text-white" />
-                  Open invite manager
-                </Link>
+                <div className="flex flex-wrap items-center gap-3">
+                  <InviteButton
+                    match={match}
+                    getInviteUrl={getInviteLinkForModal}
+                  />
+                  <Link
+                    to={`/matches/${match.id}/invite`}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+                  >
+                    <Users className="h-4 w-4 text-white" />
+                    Open invite manager
+                  </Link>
+                </div>
               </div>
             )}
           </section>
