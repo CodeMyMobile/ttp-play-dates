@@ -4506,6 +4506,11 @@ const TennisMatchApp = () => {
   const SignInModal = () => {
     if (!showSignInModal) return null;
 
+    const overlayClassName =
+      "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:items-center sm:py-10";
+    const baseModalClassName =
+      "relative w-full max-w-md rounded-2xl bg-white p-6 sm:p-8 shadow-lg animate-slideUp max-h-[calc(100vh-3rem)] overflow-y-auto";
+
     const handleOAuthSignIn = (provider) => {
       // Simulate OAuth response
       if (provider === "google") {
@@ -4549,8 +4554,8 @@ const TennisMatchApp = () => {
     // OAuth completion step
     if (signInStep === "oauth-complete") {
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => {
                 setSignInStep("initial");
@@ -4675,8 +4680,8 @@ const TennisMatchApp = () => {
       };
 
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => setSignInStep("initial")}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -4741,8 +4746,8 @@ const TennisMatchApp = () => {
 
     if (signInStep === "forgot") {
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => setSignInStep("login")}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -4801,8 +4806,8 @@ const TennisMatchApp = () => {
 
     if (signInStep === "form") {
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => {
                 setSignInStep("initial");
@@ -4966,8 +4971,8 @@ const TennisMatchApp = () => {
     // 'verify' step removed
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+      <div className={overlayClassName}>
+        <div className={baseModalClassName}>
           <button
             onClick={() => {
               setShowSignInModal(false);
@@ -5079,6 +5084,10 @@ const TennisMatchApp = () => {
     const [hostId, setHostId] = React.useState(null);
     const [loadingParts, setLoadingParts] = React.useState(true);
     const [removeErr, setRemoveErr] = React.useState("");
+    const overlayClassName =
+      "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:items-center sm:py-10";
+    const modalClassName =
+      "relative w-full max-w-lg rounded-2xl bg-white p-5 sm:p-6 shadow-lg animate-slideUp max-h-[calc(100vh-3rem)] overflow-y-auto";
 
     React.useEffect(() => {
       if (!isOpen || !matchId) return;
@@ -5167,8 +5176,8 @@ const TennisMatchApp = () => {
     if (!isOpen || !matchId) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+      <div className={overlayClassName}>
+        <div className={modalClassName}>
           <button
             onClick={() => {
               setShowParticipantsModal(false);
@@ -5243,6 +5252,11 @@ const TennisMatchApp = () => {
     const [hostId, setHostId] = React.useState(null);
     const [loadingParts, setLoadingParts] = React.useState(true);
     const [removeErr, setRemoveErr] = React.useState("");
+
+    const overlayClassName =
+      "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:items-center sm:py-10";
+    const modalClassName =
+      "relative w-full max-w-xl rounded-2xl bg-white p-5 sm:p-6 shadow-lg animate-slideUp max-h-[calc(100vh-3rem)] overflow-y-auto";
 
     React.useEffect(() => {
       if (!isOpen || !matchToEdit?.id) return;
@@ -5354,8 +5368,8 @@ const TennisMatchApp = () => {
     };
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+      <div className={overlayClassName}>
+        <div className={modalClassName}>
           <button
             onClick={() => {
               setShowEditModal(false);

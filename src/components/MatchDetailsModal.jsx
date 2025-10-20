@@ -2610,7 +2610,7 @@ const MatchDetailsModal = ({
 
       <section className="rounded-2xl border border-gray-100 bg-white p-4">
         <p className="text-sm font-black text-gray-900">Add to calendar</p>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-sm font-semibold">
+        <div className="mt-3 grid grid-cols-1 gap-3 text-sm font-semibold sm:grid-cols-2">
           <button
             type="button"
             onClick={() => handleCalendarAction("google")}
@@ -2664,7 +2664,7 @@ const MatchDetailsModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6 sm:py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 sm:items-center sm:py-10"
       role="dialog"
       aria-modal="true"
       aria-labelledby="match-details-heading"
@@ -2674,7 +2674,7 @@ const MatchDetailsModal = ({
         }
       }}
     >
-      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl max-h-[calc(100vh-3rem)]">
         <button
           type="button"
           onClick={onClose}
@@ -2683,7 +2683,7 @@ const MatchDetailsModal = ({
         >
           <X className="h-5 w-5" />
         </button>
-        <div className="max-h-[80vh] overflow-y-auto px-5 pb-6 pt-10 sm:px-8">
+        <div className="flex-1 overflow-y-auto px-5 pb-6 pt-10 sm:px-8">
           {status === "success" ? renderSuccessView() : renderDefaultView()}
         </div>
       </div>
