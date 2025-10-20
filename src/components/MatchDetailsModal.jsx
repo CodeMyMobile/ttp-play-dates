@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Ban,
   Calendar,
+  Clock,
   Check,
   CheckCircle2,
   ClipboardList,
@@ -39,6 +40,7 @@ import {
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
   uniqueParticipants,
+  uniqueInvitees,
 } from "../utils/participants";
 import { collectMemberIds, memberIsMatchHost } from "../utils/memberIdentity";
 import {
@@ -435,6 +437,209 @@ const participantMatchesMember = (participant, memberIdentity) => {
   );
 };
 
+const getInviteIdentityCandidates = (invite) => {
+  if (!invite || typeof invite !== "object") return [];
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const invitee = invite.invitee || {};
+  return [
+    invite.match_participant_id,
+    invite.matchParticipantId,
+    invite.participant_id,
+    invite.participantId,
+    invite.invitee_id,
+    invite.inviteeId,
+    invite.player_id,
+    invite.playerId,
+    invite.id,
+    invite.token,
+    invite.invite_token,
+    invite.inviteToken,
+    invite.invitation_token,
+    invite.invitationToken,
+    profile.id,
+    profile.player_id,
+    profile.playerId,
+    invitee.id,
+    invitee.player_id,
+    invitee.playerId,
+    player.id,
+    player.player_id,
+    player.playerId,
+  ];
+};
+
+const getInviteIdentity = (invite, fallback = null) =>
+  firstNonEmptyValue(getInviteIdentityCandidates(invite)) ?? fallback;
+
+const getInviteStatus = (invite) => {
+  if (!invite || typeof invite !== "object") return "";
+  const statusCandidates = [
+    invite.status,
+    invite.invite_status,
+    invite.inviteStatus,
+    invite.invitation_status,
+    invite.invitationStatus,
+    invite.state,
+  ];
+  for (const candidate of statusCandidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const normalized = candidate.toString().trim().toLowerCase();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+
+const ACCEPTED_INVITE_STATUSES = new Set([
+  "accepted",
+  "confirmed",
+  "joined",
+  "attending",
+  "yes",
+]);
+
+const DECLINED_INVITE_STATUSES = new Set([
+  "declined",
+  "rejected",
+  "withdrawn",
+  "canceled",
+  "cancelled",
+  "expired",
+  "inactive",
+]);
+
+const isInviteAwaitingResponse = (status) => {
+  if (!status) return true;
+  const normalized = status.toString().trim().toLowerCase();
+  if (!normalized) return true;
+  if (ACCEPTED_INVITE_STATUSES.has(normalized)) return false;
+  if (DECLINED_INVITE_STATUSES.has(normalized)) return false;
+  return true;
+};
+
+const formatInviteStatusLabel = (status) => {
+  const normalized = status ? status.toString().trim().toLowerCase() : "";
+  if (!normalized) return "Awaiting response";
+  const friendlyLabels = new Map([
+    ["pending", "Awaiting response"],
+    ["invited", "Invite sent"],
+    ["requested", "Request pending"],
+    ["waiting", "Waiting for reply"],
+    ["sent", "Invite sent"],
+    ["delivered", "Invite delivered"],
+  ]);
+  if (friendlyLabels.has(normalized)) {
+    return friendlyLabels.get(normalized);
+  }
+  return normalized
+    .split(/[_\s-]+/)
+    .map((segment) =>
+      segment.length > 0
+        ? segment.charAt(0).toUpperCase() + segment.slice(1)
+        : segment,
+    )
+    .join(" ");
+};
+
+const getInviteEmail = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const contact = invite.contact || {};
+  return (
+    firstNonEmptyValue([
+      invite.email,
+      invite.invitee_email,
+      invite.inviteeEmail,
+      invite.contact_email,
+      invite.contactEmail,
+      invitee.email,
+      profile.email,
+      player.email,
+      contact.email,
+    ]) || null
+  );
+};
+
+const getInvitePhone = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const contact = invite.contact || {};
+  return (
+    firstNonEmptyValue([
+      invite.phone,
+      invite.invitee_phone,
+      invite.inviteePhone,
+      invite.contact_phone,
+      invite.contactPhone,
+      invitee.phone,
+      profile.phone,
+      player.phone,
+      contact.phone,
+    ]) || null
+  );
+};
+
+const getInviteDisplayName = (invite, fallback = null) => {
+  if (!invite || typeof invite !== "object") return fallback;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const candidates = [
+    invite.full_name,
+    invite.fullName,
+    invite.name,
+    invite.display_name,
+    invite.displayName,
+    invite.invitee_full_name,
+    invite.inviteeFullName,
+    invite.invitee_name,
+    invite.inviteeName,
+    invitee.full_name,
+    invitee.fullName,
+    invitee.preferred_name,
+    invitee.preferredName,
+    invitee.name,
+    profile.full_name,
+    profile.fullName,
+    profile.preferred_name,
+    profile.preferredName,
+    profile.name,
+    profile.display_name,
+    profile.displayName,
+    player.full_name,
+    player.fullName,
+    player.name,
+    player.display_name,
+    player.displayName,
+  ];
+  const resolved = firstNonEmptyValue(candidates);
+  if (resolved) return resolved;
+  const email = getInviteEmail(invite);
+  if (email) return email;
+  const phone = getInvitePhone(invite);
+  if (phone) return phone;
+  return fallback ?? "Invited player";
+};
+
+const inviteMatchesParticipant = (invite, participant) => {
+  if (!invite || !participant) return false;
+  const inviteIds = getInviteIdentityCandidates(invite).filter((value) =>
+    isNonEmptyValue(value),
+  );
+  if (inviteIds.length === 0) return false;
+  const participantIds = getParticipantIdentityCandidates(participant).filter(
+    (value) => isNonEmptyValue(value),
+  );
+  if (participantIds.length === 0) return false;
+  return inviteIds.some((inviteId) =>
+    participantIds.some((participantId) => idsMatch(inviteId, participantId)),
+  );
+};
+
 const buildInitialEditForm = (match) => {
   if (!match) return { ...DEFAULT_EDIT_FORM };
   const latitude =
@@ -520,6 +725,11 @@ const MatchDetailsModal = ({
     if (Array.isArray(match?.invitees)) return match.invitees;
     return [];
   }, [matchData, match]);
+
+  const normalizedInvitees = useMemo(
+    () => uniqueInvitees(invitees),
+    [invitees],
+  );
 
   const viewerInviteToken = useMemo(() => {
     if (!viewerInvite || typeof viewerInvite !== "object") return null;
@@ -627,6 +837,25 @@ const MatchDetailsModal = ({
     () => uniqueAcceptedInvitees(invitees),
     [invitees],
   );
+
+  const pendingInvitees = useMemo(() => {
+    if (normalizedInvitees.length === 0) return [];
+    return normalizedInvitees.filter((invite) => {
+      if (!invite || typeof invite !== "object") return false;
+      const status = getInviteStatus(invite);
+      if (!isInviteAwaitingResponse(status)) {
+        return false;
+      }
+      if (
+        committedParticipants.some((participant) =>
+          inviteMatchesParticipant(invite, participant),
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [committedParticipants, normalizedInvitees]);
 
   const capacityInfo = useMemo(() => {
     if (!match?.capacity || typeof match.capacity !== "object") return null;
@@ -1278,6 +1507,27 @@ const MatchDetailsModal = ({
     return list;
   }, [committedParticipants, match?.host_id, remainingSpots]);
 
+  const pendingInvitesList = useMemo(() => {
+    if (pendingInvitees.length === 0) return [];
+    return pendingInvitees.map((invite, index) => {
+      const id = getInviteIdentity(invite, `pending-invite-${index}`);
+      const name = getInviteDisplayName(
+        invite,
+        `Invited player ${index + 1}`,
+      );
+      const email = getInviteEmail(invite);
+      const phone = getInvitePhone(invite);
+      const contactLabel = [email, phone].filter(Boolean).join(" • ");
+      const status = getInviteStatus(invite);
+      return {
+        id,
+        name,
+        contactLabel,
+        statusLabel: formatInviteStatusLabel(status),
+      };
+    });
+  }, [pendingInvitees]);
+
   if (!isOpen || !match) return null;
 
   const handleCalendarAction = (type) => {
@@ -1619,6 +1869,40 @@ const MatchDetailsModal = ({
     </div>
   );
 
+  const renderPendingInvites = () => (
+    <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+      <div className="flex items-center gap-2">
+        <Mail className="h-4 w-4 text-blue-600" />
+        <p className="text-sm font-black text-blue-900">
+          Waiting on responses ({pendingInvitesList.length})
+        </p>
+      </div>
+      <div className="space-y-2">
+        {pendingInvitesList.map((invite) => (
+          <div
+            key={invite.id}
+            className="rounded-xl border border-blue-100 bg-white px-3 py-2"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-gray-900">{invite.name}</p>
+                {invite.contactLabel && (
+                  <p className="text-xs font-semibold text-gray-500">
+                    {invite.contactLabel}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-xs font-semibold text-blue-700">
+                <Clock className="h-3.5 w-3.5" />
+                <span>{invite.statusLabel}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
   const headerChips = (
     <div className="flex flex-wrap items-center gap-2">
       {startDate && (
@@ -1896,6 +2180,10 @@ const MatchDetailsModal = ({
             </div>
             {renderPlayers()}
           </section>
+
+          {isHost && matchPrivacy === "private" && pendingInvitesList.length > 0 && (
+            renderPendingInvites()
+          )}
 
           {!isArchived && !isCancelled && (
             isOpenMatch ? (
