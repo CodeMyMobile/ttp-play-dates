@@ -1519,11 +1519,24 @@ const MatchDetailsModal = ({
       const name = explicitName || `Invited player ${index + 1}`;
       const email = getInviteEmail(invite);
       const identity = getInviteIdentity(invite);
+      const normalizedExplicitName = explicitName
+        ? (() => {
+            const trimmed = explicitName.trim();
+            if (!trimmed) return null;
+            if (/^invited player/i.test(trimmed)) return null;
+            return trimmed.toLowerCase();
+          })()
+        : null;
       const identityCandidates = [
         phoneDigits ? `phone:${phoneDigits}` : null,
         email ? `email:${email.toLowerCase()}` : null,
         identity ? `identity:${identity}` : null,
+        normalizedExplicitName ? `name:${normalizedExplicitName}` : null,
       ].filter(Boolean);
+
+      if (identityCandidates.length === 0) {
+        return list;
+      }
 
       if (identityCandidates.some((candidate) => seen.has(candidate))) {
         return list;
