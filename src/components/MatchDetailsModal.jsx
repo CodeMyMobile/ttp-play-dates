@@ -1511,6 +1511,10 @@ const MatchDetailsModal = ({
       if (!name) {
         return list;
       }
+      const normalizedName = name.replace(/\s+/g, " ").toLowerCase();
+      if (normalizedName === "invited player") {
+        return list;
+      }
       const phoneRaw = getInvitePhone(invite);
       const phoneDigits = getPhoneDigits(phoneRaw);
       if (!phoneDigits) {
