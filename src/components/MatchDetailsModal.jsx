@@ -1507,16 +1507,17 @@ const MatchDetailsModal = ({
         return list;
       }
       const explicitName = getInviteDisplayName(invite, null);
-      const phoneRaw = getInvitePhone(invite);
-      const phoneDigits = getPhoneDigits(phoneRaw);
-      const phoneDisplay = phoneDigits
-        ? formatPhoneDisplay(phoneDigits)
-        : formatPhoneDisplay(phoneRaw);
-      const phone = phoneDisplay || phoneRaw || null;
-      if (!explicitName && !phone) {
+      const name = explicitName ? explicitName.trim() : "";
+      if (!name) {
         return list;
       }
-      const name = explicitName || `Invited player ${index + 1}`;
+      const phoneRaw = getInvitePhone(invite);
+      const phoneDigits = getPhoneDigits(phoneRaw);
+      if (!phoneDigits) {
+        return list;
+      }
+      const phoneDisplay = formatPhoneDisplay(phoneDigits) || phoneDigits;
+      const phone = phoneDisplay || null;
       const email = getInviteEmail(invite);
       const identity = getInviteIdentity(invite);
       const normalizedExplicitName = explicitName
