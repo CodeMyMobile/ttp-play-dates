@@ -471,6 +471,11 @@ const MatchDetailsModal = ({
   onToast,
   formatDateTime,
   onManageInvites,
+  onDeclineInvite,
+  declineInviteLabel,
+  declineInviteLoading = false,
+  declineInviteDisabled = false,
+  declineInviteHelpText,
   initialStatus,
   onViewPlayerProfile,
 }) => {
@@ -733,6 +738,16 @@ const MatchDetailsModal = ({
   }, [capacityInfo, remainingSpots]);
   const matchId = match?.id ?? null;
   const canManageInvites = Boolean(onManageInvites) && isHost && matchId;
+  const showDeclineInvite = typeof onDeclineInvite === "function";
+  const declineInviteBusy = Boolean(declineInviteLoading);
+  const declineInviteDisabledProp = Boolean(declineInviteDisabled);
+  const declineInviteActionDisabled =
+    declineInviteBusy || declineInviteDisabledProp || isArchived || isCancelled;
+  const declineInviteButtonLabel =
+    declineInviteLabel ||
+    (declineInviteBusy
+      ? "Declining invite..."
+      : "Can't make it? Decline invite");
 
   const handleManageInvites = useCallback(() => {
     if (!canManageInvites || !matchId) return;
@@ -1940,13 +1955,30 @@ const MatchDetailsModal = ({
               {status === "details" && disabledReason && (
                 <p className="mt-2 text-center text-xs font-semibold text-gray-500">{disabledReason}</p>
               )}
-              {remainingSpots !== null && (
-                <p className="mt-2 text-center text-xs font-semibold text-gray-500">
-                  {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
-                </p>
-              )}
-            </>
-          )}
+                {remainingSpots !== null && (
+                  <p className="mt-2 text-center text-xs font-semibold text-gray-500">
+                    {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
+                  </p>
+                )}
+                {showDeclineInvite && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={onDeclineInvite}
+                      disabled={declineInviteActionDisabled}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {declineInviteButtonLabel}
+                    </button>
+                    {declineInviteHelpText && (
+                      <p className="mt-2 text-center text-xs font-semibold text-slate-500">
+                        {declineInviteHelpText}
+                      </p>
+                    )}
+                  </>
+                )}
+              </>
+            )}
         </div>
       </div>
     );

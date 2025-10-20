@@ -991,6 +991,9 @@ export default function InvitationPage() {
   const inviterFirstName = inviterName.split(" ").filter(Boolean)[0] || "";
   const inviterInitials = getAvatarInitials(inviterName || "Matchplay");
   const inviterAvatarUrl = getAvatarUrlFromPlayer(preview?.inviter);
+  const declineInviteMessage = `Can't make it? We'll let ${
+    inviterFirstName || "the host"
+  } know when you decline.`;
 
   const maskedIdentifier = preview?.maskedIdentifier;
   const isInviteeClaim = inviteeRequiresAccountClaim;
@@ -1600,9 +1603,7 @@ export default function InvitationPage() {
                   <p className="text-xs text-slate-500">
                     You'll be asked to sign in or create a free account to claim your spot.
                   </p>
-                  <p className="text-xs text-amber-900/80">
-                    Can't make it? We'll let {inviterFirstName || "the host"} know when you decline.
-                  </p>
+                  <p className="text-xs text-amber-900/80">{declineInviteMessage}</p>
                 </>
               )}
             </div>
@@ -1622,6 +1623,10 @@ export default function InvitationPage() {
           onToast={handleToast}
           formatDateTime={formatSuccessDateTime}
           onManageInvites={() => {}}
+          onDeclineInvite={handleDecline}
+          declineInviteLoading={declining}
+          declineInviteDisabled={isArchivedMatch}
+          declineInviteHelpText={declineInviteMessage}
           initialStatus="success"
         />
       )}
