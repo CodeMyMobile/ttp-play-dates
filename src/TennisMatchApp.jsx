@@ -654,6 +654,11 @@ const TennisMatchApp = () => {
   const [viewMatch, setViewMatch] = useState(null);
   const [showMatchDetailsModal, setShowMatchDetailsModal] = useState(false);
   const [matchDetailsOrigin, setMatchDetailsOrigin] = useState("browse");
+  const [viewInviteContext, setViewInviteContext] = useState(null);
+  const [acceptingInviteFromDetails, setAcceptingInviteFromDetails] =
+    useState(false);
+  const [decliningInviteFromDetails, setDecliningInviteFromDetails] =
+    useState(false);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState("");
@@ -1795,6 +1800,9 @@ const TennisMatchApp = () => {
   const closeMatchDetailsModal = useCallback(() => {
     setShowMatchDetailsModal(false);
     setViewMatch(null);
+    setViewInviteContext(null);
+    setAcceptingInviteFromDetails(false);
+    setDecliningInviteFromDetails(false);
     if (matchDetailsOrigin === "browse") {
       goToBrowse({ replace: true });
     } else if (matchDetailsOrigin === "invites") {
@@ -1804,6 +1812,110 @@ const TennisMatchApp = () => {
     }
     setMatchDetailsOrigin("browse");
   }, [goToBrowse, goToInvites, matchDetailsOrigin]);
+
+  const handleAcceptInviteFromDetails = useCallback(async () => {
+    const token = viewInviteContext?.token;
+    if (!token) return null;
+    const matchIdFromContext =
+      viewInviteContext?.matchId ||
+      viewMatch?.match?.id ||
+      viewMatch?.id ||
+      null;
+    setAcceptingInviteFromDetails(true);
+    try {
+      await acceptInvite(token);
+      displayToast("Invite accepted! See you on the court. 🎾");
+      await Promise.all([fetchPendingInvites(), fetchMatches()]);
+      setViewInviteContext((prev) =>
+        prev
+          ? {
+              ...prev,
+              invite: {
+                ...(prev.invite || {}),
+                status: "accepted",
+                accepted: true,
+                rejected: false,
+              },
+            }
+          : prev,
+      );
+      if (matchIdFromContext) {
+        const updated = await fetchMatchDetailsWithArchivedFallback(
+          matchIdFromContext,
+        );
+        if (updated) {
+          setViewMatch(updated);
+          return updated;
+        }
+      }
+      return null;
+    } catch (err) {
+      let message;
+      if (
+        isMatchArchivedError(err) ||
+        err?.response?.data?.error === MATCH_ARCHIVED_ERROR
+      ) {
+        message =
+          "This match has been archived. Invites can no longer be updated.";
+      } else {
+        message =
+          err?.response?.data?.message ||
+          err?.data?.message ||
+          err?.message ||
+          "Failed to accept invite";
+      }
+      displayToast(message, "error");
+      const errorObject = new Error(message);
+      errorObject.silent = true;
+      throw errorObject;
+    } finally {
+      setAcceptingInviteFromDetails(false);
+    }
+  }, [
+    viewInviteContext,
+    viewMatch,
+    displayToast,
+    fetchPendingInvites,
+    fetchMatches,
+    fetchMatchDetailsWithArchivedFallback,
+  ]);
+
+  const handleDeclineInviteFromDetails = useCallback(async () => {
+    const token = viewInviteContext?.token;
+    if (!token) return;
+    setDecliningInviteFromDetails(true);
+    try {
+      await rejectInvite(token);
+      displayToast("Invite declined", "info");
+      await Promise.all([fetchPendingInvites(), fetchMatches()]);
+      setViewInviteContext(null);
+      closeMatchDetailsModal();
+    } catch (err) {
+      const message = (() => {
+        if (
+          isMatchArchivedError(err) ||
+          err?.response?.data?.error === MATCH_ARCHIVED_ERROR
+        ) {
+          return "This match has been archived. Invites can no longer be updated.";
+        }
+        return (
+          err?.response?.data?.message ||
+          err?.data?.message ||
+          err?.message ||
+          "Failed to decline invite"
+        );
+      })();
+      displayToast(message, "error");
+    } finally {
+      setDecliningInviteFromDetails(false);
+    }
+  }, [
+    viewInviteContext,
+    displayToast,
+    fetchPendingInvites,
+    fetchMatches,
+    closeMatchDetailsModal,
+  ]);
 
   const handleManageInvitesFromDetails = useCallback(
     (matchId) => {
@@ -1907,6 +2019,9 @@ const TennisMatchApp = () => {
               const data = await fetchMatchDetailsWithArchivedFallback(matchId);
               if (data) {
                 setMatchDetailsOrigin("browse");
+                setViewInviteContext({ token, matchId, invite });
+                setAcceptingInviteFromDetails(false);
+                setDecliningInviteFromDetails(false);
                 setViewMatch(data);
                 setShowMatchDetailsModal(true);
               }
@@ -1915,10 +2030,15 @@ const TennisMatchApp = () => {
                 throw error;
               }
             }
+          } else {
+            setViewInviteContext({ token, invite });
           }
         })
         .catch(() => {
           displayToast("Failed to open match", "error");
+          setViewInviteContext(null);
+          setAcceptingInviteFromDetails(false);
+          setDecliningInviteFromDetails(false);
         });
     }
   }, [
@@ -1927,7 +2047,8 @@ const TennisMatchApp = () => {
     fetchMatchDetailsWithArchivedFallback,
   ]);
 
-  const handleViewDetails = async (matchId) => {
+  const handleViewDetails = async (matchId, options = {}) => {
+    const { inviteToken, invite, origin } = options;
     try {
       const data = await fetchMatchDetailsWithArchivedFallback(matchId);
       if (!data) {
@@ -1937,10 +2058,22 @@ const TennisMatchApp = () => {
       if ((data.match || {}).status === "archived" && activeFilter !== "archived") {
         setActiveFilter("archived");
       }
-      setMatchDetailsOrigin(currentScreen);
+      if (inviteToken) {
+        setViewInviteContext({ token: inviteToken, matchId, invite: invite || null });
+      } else {
+        setViewInviteContext(null);
+      }
+      setAcceptingInviteFromDetails(false);
+      setDecliningInviteFromDetails(false);
+      setMatchDetailsOrigin(origin ?? currentScreen);
       setViewMatch(data);
       setShowMatchDetailsModal(true);
     } catch (err) {
+      if (inviteToken) {
+        setViewInviteContext(null);
+      }
+      setAcceptingInviteFromDetails(false);
+      setDecliningInviteFromDetails(false);
       if (isMatchArchivedError(err)) {
         displayToast("This match has been archived.", "error");
       } else {
@@ -2312,7 +2445,12 @@ const TennisMatchApp = () => {
                           </button>
                           {invite.match?.id && (
                             <button
-                              onClick={() => handleViewDetails(invite.match.id)}
+                              onClick={() =>
+                                handleViewDetails(invite.match.id, {
+                                  inviteToken: invite.token,
+                                  invite,
+                                })
+                              }
                               className="w-full px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold text-xs border border-white/30 hover:bg-white/20 transition-colors"
                             >
                               View & manage
@@ -5555,6 +5693,38 @@ const TennisMatchApp = () => {
     }
   `;
 
+  const inviteDetails = viewInviteContext?.invite || null;
+  const inviteTokenForDetails = viewInviteContext?.token || null;
+  const inviteAccepted =
+    inviteDetails?.accepted === true ||
+    (typeof inviteDetails?.status === "string" &&
+      inviteDetails.status.toLowerCase() === "accepted") ||
+    (typeof inviteDetails?.state === "string" &&
+      inviteDetails.state.toLowerCase() === "accepted");
+  const inviteRejected =
+    inviteDetails?.rejected === true ||
+    (typeof inviteDetails?.status === "string" &&
+      inviteDetails.status.toLowerCase() === "rejected") ||
+    (typeof inviteDetails?.state === "string" &&
+      inviteDetails.state.toLowerCase() === "rejected");
+  const inviteIsPending = !inviteAccepted && !inviteRejected;
+  const shouldShowInviteActions = Boolean(inviteTokenForDetails && inviteIsPending);
+  const matchRecord = (viewMatch && viewMatch.match) || viewMatch || {};
+  const matchStatus = (matchRecord.status || "").toString().toLowerCase();
+  const inviteActionsDisabled =
+    matchStatus === "archived" || matchStatus === "cancelled";
+  const hostFullName =
+    matchRecord?.host_profile?.full_name ||
+    matchRecord?.host_name ||
+    viewMatch?.host_profile?.full_name ||
+    viewMatch?.host_name ||
+    inviteDetails?.inviter?.full_name ||
+    "";
+  const hostFirstName = hostFullName.trim().split(/\s+/)[0] || "the host";
+  const declineInviteHelpText = shouldShowInviteActions
+    ? `Can't make it? We'll let ${hostFirstName} know when you decline.`
+    : undefined;
+
   const shouldShowLanding = !currentUser && currentScreen === "browse";
 
   return (
@@ -5631,6 +5801,19 @@ const TennisMatchApp = () => {
         onToast={displayToast}
         formatDateTime={formatDateTime}
         onManageInvites={handleManageInvitesFromDetails}
+        onDeclineInvite={
+          shouldShowInviteActions ? handleDeclineInviteFromDetails : undefined
+        }
+        declineInviteLabel="Decline invite"
+        declineInviteLoading={decliningInviteFromDetails}
+        declineInviteDisabled={inviteActionsDisabled}
+        declineInviteHelpText={declineInviteHelpText}
+        onAcceptInvite={
+          shouldShowInviteActions ? handleAcceptInviteFromDetails : undefined
+        }
+        acceptInviteLabel="Accept invite"
+        acceptInviteLoading={acceptingInviteFromDetails}
+        acceptInviteDisabled={inviteActionsDisabled}
       />
       {Toast()}
       <ProfileManager
