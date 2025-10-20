@@ -30,6 +30,7 @@ import {
   removeParticipant,
   updateMatch,
 } from "../services/matches";
+import { rejectInvite } from "../services/invites";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
@@ -488,6 +489,7 @@ const MatchDetailsModal = ({
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [cancellingMatch, setCancellingMatch] = useState(false);
+  const [decliningInvite, setDecliningInvite] = useState(false);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
@@ -501,6 +503,7 @@ const MatchDetailsModal = ({
   );
 
   const match = matchData?.match || null;
+  const viewerInvite = matchData?.viewerInvite || null;
   const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
   const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
   const participants = useMemo(() => {
@@ -517,6 +520,49 @@ const MatchDetailsModal = ({
     if (Array.isArray(match?.invitees)) return match.invitees;
     return [];
   }, [matchData, match]);
+
+  const viewerInviteToken = useMemo(() => {
+    if (!viewerInvite || typeof viewerInvite !== "object") return null;
+    const tokenCandidates = [
+      viewerInvite.token,
+      viewerInvite.invite_token,
+      viewerInvite.inviteToken,
+      viewerInvite.invitation_token,
+      viewerInvite.invitationToken,
+    ];
+    for (const candidate of tokenCandidates) {
+      if (!candidate) continue;
+      const normalized = candidate.toString().trim();
+      if (normalized) return normalized;
+    }
+    return null;
+  }, [viewerInvite]);
+
+  const viewerInviteStatus = useMemo(() => {
+    if (!viewerInvite || typeof viewerInvite !== "object") return null;
+    const statusCandidates = [
+      viewerInvite.status,
+      viewerInvite.invite_status,
+      viewerInvite.inviteStatus,
+      viewerInvite.invitation_status,
+      viewerInvite.invitationStatus,
+      viewerInvite.state,
+    ];
+    for (const candidate of statusCandidates) {
+      if (candidate === undefined || candidate === null) continue;
+      const normalized = candidate.toString().trim().toLowerCase();
+      if (normalized) return normalized;
+    }
+    return null;
+  }, [viewerInvite]);
+
+  const inviteIsPending = useMemo(() => {
+    if (!viewerInvite) return false;
+    if (!viewerInviteStatus) return true;
+    return ["pending", "invited", "requested", "waiting"].includes(
+      viewerInviteStatus,
+    );
+  }, [viewerInvite, viewerInviteStatus]);
 
   const originalEditForm = useMemo(() => buildInitialEditForm(match), [match]);
   const availableMatchFormats = useMemo(
@@ -797,6 +843,7 @@ const MatchDetailsModal = ({
       setStatus(normalizedInitialStatus);
       setJoining(false);
       setLeaving(false);
+      setDecliningInvite(false);
       return;
     }
     if (initialStatus && status === initialStatus) return;
@@ -1276,6 +1323,91 @@ const MatchDetailsModal = ({
     if (!isUpcoming) return "This match is no longer accepting players.";
     if (isFull) return "This match is currently full.";
     return null;
+  };
+
+  const canDeclineInvite =
+    Boolean(viewerInviteToken) &&
+    inviteIsPending &&
+    !isHost &&
+    !isJoined &&
+    !isArchived &&
+    !isCancelled;
+
+  const handleDeclineInvite = async () => {
+    if (!viewerInviteToken) return;
+    if (!currentUser) {
+      onRequireSignIn?.();
+      return;
+    }
+    const confirmed = window.confirm(
+      "Are you sure you want to decline this invite?",
+    );
+    if (!confirmed) return;
+    try {
+      setDecliningInvite(true);
+      await rejectInvite(viewerInviteToken);
+      onToast?.("Invite declined", "info");
+      onUpdateMatch?.((previous) => {
+        if (!previous || typeof previous !== "object") return previous;
+        const existingInvite =
+          viewerInvite ||
+          previous.viewerInvite ||
+          previous.viewer_invite ||
+          null;
+        if (!existingInvite || typeof existingInvite !== "object") {
+          return { ...previous, viewerInvite: null };
+        }
+        const nextInvite = {
+          ...existingInvite,
+          status: "declined",
+          invite_status: "declined",
+          inviteStatus: "declined",
+          invitation_status: "declined",
+          invitationStatus: "declined",
+        };
+        return { ...previous, viewerInvite: nextInvite };
+      });
+      await onMatchRefresh?.();
+      if (onReloadMatch) {
+        try {
+          const updated = await onReloadMatch(match.id, {
+            includeArchived: false,
+          });
+          if (updated) {
+            onUpdateMatch?.((prev) => {
+              if (!prev || typeof prev !== "object") return updated;
+              if (
+                prev.viewerInvite &&
+                !updated.viewerInvite &&
+                typeof updated === "object"
+              ) {
+                return { ...updated, viewerInvite: prev.viewerInvite };
+              }
+              return updated;
+            });
+          }
+        } catch (error) {
+          if (!isMatchArchivedError(error)) {
+            console.error(error);
+          }
+        }
+      }
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        onToast?.(
+          "This match has been archived. Invites can no longer be updated.",
+          "error",
+        );
+      } else {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to decline invite";
+        onToast?.(message, "error");
+      }
+    } finally {
+      setDecliningInvite(false);
+    }
   };
 
   const handleJoin = async () => {
@@ -1929,14 +2061,16 @@ const MatchDetailsModal = ({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={handleJoin}
-                disabled={joining || !!disabledReason || status !== "details"}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {joining ? "Joining match..." : "Join this match"}
-              </button>
+              {isOpenMatch && (
+                <button
+                  type="button"
+                  onClick={handleJoin}
+                  disabled={joining || !!disabledReason || status !== "details"}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {joining ? "Joining match..." : "Join this match"}
+                </button>
+              )}
               {status === "details" && disabledReason && (
                 <p className="mt-2 text-center text-xs font-semibold text-gray-500">{disabledReason}</p>
               )}
@@ -1944,6 +2078,16 @@ const MatchDetailsModal = ({
                 <p className="mt-2 text-center text-xs font-semibold text-gray-500">
                   {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
                 </p>
+              )}
+              {canDeclineInvite && (
+                <button
+                  type="button"
+                  onClick={handleDeclineInvite}
+                  disabled={decliningInvite}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-6 py-3 text-sm font-black text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {decliningInvite ? "Declining invite..." : "Decline invite"}
+                </button>
               )}
             </>
           )}
