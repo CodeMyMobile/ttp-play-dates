@@ -1506,16 +1506,17 @@ const MatchDetailsModal = ({
       if (!invite || typeof invite !== "object") {
         return list;
       }
-      const name = getInviteDisplayName(
-        invite,
-        `Invited player ${index + 1}`,
-      );
+      const explicitName = getInviteDisplayName(invite, null);
       const phoneRaw = getInvitePhone(invite);
       const phoneDigits = getPhoneDigits(phoneRaw);
       const phoneDisplay = phoneDigits
         ? formatPhoneDisplay(phoneDigits)
         : formatPhoneDisplay(phoneRaw);
       const phone = phoneDisplay || phoneRaw || null;
+      if (!explicitName && !phone) {
+        return list;
+      }
+      const name = explicitName || `Invited player ${index + 1}`;
       const email = getInviteEmail(invite);
       const identity = getInviteIdentity(invite);
       const identityCandidates = [
