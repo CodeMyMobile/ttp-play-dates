@@ -471,6 +471,15 @@ const MatchDetailsModal = ({
   onToast,
   formatDateTime,
   onManageInvites,
+  onDeclineInvite,
+  declineInviteLabel,
+  declineInviteLoading = false,
+  declineInviteDisabled = false,
+  declineInviteHelpText,
+  onAcceptInvite,
+  acceptInviteLabel,
+  acceptInviteLoading = false,
+  acceptInviteDisabled = false,
   initialStatus,
   onViewPlayerProfile,
 }) => {
@@ -733,6 +742,25 @@ const MatchDetailsModal = ({
   }, [capacityInfo, remainingSpots]);
   const matchId = match?.id ?? null;
   const canManageInvites = Boolean(onManageInvites) && isHost && matchId;
+  const showDeclineInvite = typeof onDeclineInvite === "function";
+  const showAcceptInvite = typeof onAcceptInvite === "function";
+  const acceptInviteBusy = Boolean(acceptInviteLoading);
+  const acceptInviteDisabledProp = Boolean(acceptInviteDisabled);
+  const acceptInviteActionDisabled =
+    acceptInviteBusy || acceptInviteDisabledProp || isArchived || isCancelled;
+  const declineInviteBusy = Boolean(declineInviteLoading);
+  const declineInviteDisabledProp = Boolean(declineInviteDisabled);
+  const declineInviteActionDisabled =
+    declineInviteBusy ||
+    acceptInviteBusy ||
+    declineInviteDisabledProp ||
+    isArchived ||
+    isCancelled;
+  const declineInviteButtonLabel =
+    declineInviteLabel ||
+    (declineInviteBusy
+      ? "Declining invite..."
+      : "Can't make it? Decline invite");
 
   const handleManageInvites = useCallback(() => {
     if (!canManageInvites || !matchId) return;
@@ -1270,7 +1298,9 @@ const MatchDetailsModal = ({
   };
 
   const joinDisabledReason = () => {
-    if (!isOpenMatch) return "Private matches require an invite.";
+    if (!isOpenMatch && !showAcceptInvite) {
+      return "Private matches require an invite.";
+    }
     if (isArchived) return "This match has been archived.";
     if (isCancelled) return "This match has been cancelled.";
     if (!isUpcoming) return "This match is no longer accepting players.";
@@ -1279,7 +1309,8 @@ const MatchDetailsModal = ({
   };
 
   const handleJoin = async () => {
-    if (!match?.id) return;
+    const matchIdValue = match?.id;
+    if (!matchIdValue) return;
     if (!currentUser) {
       onRequireSignIn?.();
       return;
@@ -1289,13 +1320,41 @@ const MatchDetailsModal = ({
       onToast?.(reason, "error");
       return;
     }
+    if (showAcceptInvite) {
+      if (acceptInviteActionDisabled) return;
+      try {
+        const result = await onAcceptInvite(match);
+        setStatus("success");
+        await onMatchRefresh?.();
+        if (result && onUpdateMatch) {
+          onUpdateMatch(result);
+        } else if (onReloadMatch && onUpdateMatch) {
+          const updated = await onReloadMatch(matchIdValue, {
+            includeArchived: false,
+          });
+          if (updated) {
+            onUpdateMatch(updated);
+          }
+        }
+      } catch (error) {
+        if (!error?.silent) {
+          const message =
+            error?.response?.data?.message ||
+            error?.data?.message ||
+            error?.message ||
+            "We couldn't accept this invite. Try again later.";
+          onToast?.(message, "error");
+        }
+      }
+      return;
+    }
     try {
       setJoining(true);
-      await joinMatch(match.id);
+      await joinMatch(matchIdValue);
       setStatus("success");
       await onMatchRefresh?.();
       if (onReloadMatch && onUpdateMatch) {
-        const updated = await onReloadMatch(match.id, { includeArchived: false });
+        const updated = await onReloadMatch(matchIdValue, { includeArchived: false });
         if (updated) {
           onUpdateMatch(updated);
         }
@@ -1683,6 +1742,17 @@ const MatchDetailsModal = ({
 
   const renderDefaultView = () => {
     const disabledReason = joinDisabledReason();
+    const joinButtonDisabled =
+      status !== "details" ||
+      !!disabledReason ||
+      (showAcceptInvite ? acceptInviteActionDisabled : joining);
+    const joinButtonLabel = (() => {
+      if (showAcceptInvite) {
+        if (acceptInviteBusy) return "Accepting invite...";
+        return acceptInviteLabel || "Accept invite";
+      }
+      return joining ? "Joining match..." : "Join this match";
+    })();
     return (
       <div className="flex flex-col">
         <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
@@ -1932,21 +2002,38 @@ const MatchDetailsModal = ({
               <button
                 type="button"
                 onClick={handleJoin}
-                disabled={joining || !!disabledReason || status !== "details"}
+                disabled={joinButtonDisabled}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {joining ? "Joining match..." : "Join this match"}
+                {joinButtonLabel}
               </button>
               {status === "details" && disabledReason && (
                 <p className="mt-2 text-center text-xs font-semibold text-gray-500">{disabledReason}</p>
               )}
-              {remainingSpots !== null && (
-                <p className="mt-2 text-center text-xs font-semibold text-gray-500">
-                  {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
-                </p>
-              )}
-            </>
-          )}
+                {remainingSpots !== null && (
+                  <p className="mt-2 text-center text-xs font-semibold text-gray-500">
+                    {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
+                  </p>
+                )}
+                {showDeclineInvite && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={onDeclineInvite}
+                      disabled={declineInviteActionDisabled}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {declineInviteButtonLabel}
+                    </button>
+                    {declineInviteHelpText && (
+                      <p className="mt-2 text-center text-xs font-semibold text-slate-500">
+                        {declineInviteHelpText}
+                      </p>
+                    )}
+                  </>
+                )}
+              </>
+            )}
         </div>
       </div>
     );

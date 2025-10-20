@@ -17,6 +17,7 @@ import {
   getInvitePreview,
   claimInvite,
   acceptInvite,
+  rejectInvite,
 } from "./services/invites";
 import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
@@ -49,6 +50,7 @@ export default function InvitationPage() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [archivedNotice, setArchivedNotice] = useState(false);
+  const [declining, setDeclining] = useState(false);
   const [authMode, setAuthMode] = useState("signIn");
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
@@ -823,6 +825,56 @@ export default function InvitationPage() {
     }
   };
 
+  const handleDecline = useCallback(async () => {
+    if (!token) return;
+    setError("");
+    setToast(null);
+    setDeclining(true);
+    try {
+      await rejectInvite(token);
+      setPreview((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "rejected",
+            }
+          : prev,
+      );
+      setPhase("preview");
+      setAuthMode("signIn");
+      setShowForgotPassword(false);
+    } catch (err) {
+      if (isMatchArchivedError(err)) {
+        setArchivedNotice(true);
+        const archivedMessage = "This match has been archived. Invites are read-only.";
+        setError(archivedMessage);
+        setToast({ type: "error", message: archivedMessage });
+      } else if (
+        err?.status === 404 ||
+        err?.response?.status === 404 ||
+        err?.message === "not_found"
+      ) {
+        setPreview(null);
+        setLoadError({
+          emoji: "🔍",
+          title: "Invite not found",
+          message:
+            "This invite is no longer available. Ask the host to send a new link.",
+        });
+      } else {
+        setToast({
+          type: "error",
+          message:
+            err?.response?.data?.message ||
+            err?.message ||
+            "We couldn't decline this invite. Try again later.",
+        });
+      }
+    } finally {
+      setDeclining(false);
+    }
+  }, [token]);
+
   // Render states
   if (loading)
     return (
@@ -877,6 +929,20 @@ export default function InvitationPage() {
         />
       </InvitationLayout>
     );
+  if (preview.status === "rejected") {
+    const hostName = (preview?.inviter?.full_name || "").trim();
+    const hostFirstName = hostName.split(" ").filter(Boolean)[0] || "";
+    const hostDisplay = hostFirstName || "the host";
+    return (
+      <InvitationLayout>
+        <StatusCard
+          emoji="👋"
+          title="Invite declined"
+          message={`We've let ${hostDisplay} know you can't make this match. You're welcome back anytime.`}
+        />
+      </InvitationLayout>
+    );
+  }
 
   const startDate = match.start_date_time
     ? new Date(match.start_date_time)
@@ -925,6 +991,9 @@ export default function InvitationPage() {
   const inviterFirstName = inviterName.split(" ").filter(Boolean)[0] || "";
   const inviterInitials = getAvatarInitials(inviterName || "Matchplay");
   const inviterAvatarUrl = getAvatarUrlFromPlayer(preview?.inviter);
+  const declineInviteMessage = `Can't make it? We'll let ${
+    inviterFirstName || "the host"
+  } know when you decline.`;
 
   const maskedIdentifier = preview?.maskedIdentifier;
   const isInviteeClaim = inviteeRequiresAccountClaim;
@@ -1078,6 +1147,14 @@ export default function InvitationPage() {
           </>
         )}
       </PrimaryButton>
+      <button
+        type="button"
+        onClick={handleDecline}
+        disabled={declining || claiming || isArchivedMatch}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {declining ? "Declining invite..." : "Can't make it? Decline invite"}
+      </button>
       {error && <ErrorText>{error}</ErrorText>}
     </form>
   );
@@ -1304,6 +1381,14 @@ export default function InvitationPage() {
           </PrimaryButton>
         </form>
       )}
+      <button
+        type="button"
+        onClick={handleDecline}
+        disabled={declining || authSubmitting || isArchivedMatch}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {declining ? "Declining invite..." : "Can't make it? Decline invite"}
+      </button>
       {error && <ErrorText>{error}</ErrorText>}
     </div>
   );
@@ -1507,9 +1592,18 @@ export default function InvitationPage() {
                     Join Match &amp; Play
                     <ArrowRight className="h-4 w-4" />
                   </PrimaryButton>
+                  <button
+                    type="button"
+                    onClick={handleDecline}
+                    disabled={declining || isArchivedMatch}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {declining ? "Declining invite..." : "Can't make it? Decline invite"}
+                  </button>
                   <p className="text-xs text-slate-500">
                     You'll be asked to sign in or create a free account to claim your spot.
                   </p>
+                  <p className="text-xs text-amber-900/80">{declineInviteMessage}</p>
                 </>
               )}
             </div>
@@ -1529,6 +1623,10 @@ export default function InvitationPage() {
           onToast={handleToast}
           formatDateTime={formatSuccessDateTime}
           onManageInvites={() => {}}
+          onDeclineInvite={handleDecline}
+          declineInviteLoading={declining}
+          declineInviteDisabled={isArchivedMatch}
+          declineInviteHelpText={declineInviteMessage}
           initialStatus="success"
         />
       )}
