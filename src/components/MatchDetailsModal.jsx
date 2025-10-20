@@ -4,7 +4,6 @@ import {
   AlertCircle,
   Ban,
   Calendar,
-  Clock,
   Check,
   CheckCircle2,
   ClipboardList,
@@ -66,6 +65,7 @@ import {
   getAvatarInitials,
   getProfileImageFromSource,
 } from "../utils/avatar";
+import { formatPhoneDisplay, getPhoneDigits } from "../services/phone";
 
 const safeDate = (value) => {
   if (!value) return null;
@@ -517,30 +517,6 @@ const isInviteAwaitingResponse = (status) => {
   return true;
 };
 
-const formatInviteStatusLabel = (status) => {
-  const normalized = status ? status.toString().trim().toLowerCase() : "";
-  if (!normalized) return "Awaiting response";
-  const friendlyLabels = new Map([
-    ["pending", "Awaiting response"],
-    ["invited", "Invite sent"],
-    ["requested", "Request pending"],
-    ["waiting", "Waiting for reply"],
-    ["sent", "Invite sent"],
-    ["delivered", "Invite delivered"],
-  ]);
-  if (friendlyLabels.has(normalized)) {
-    return friendlyLabels.get(normalized);
-  }
-  return normalized
-    .split(/[_\s-]+/)
-    .map((segment) =>
-      segment.length > 0
-        ? segment.charAt(0).toUpperCase() + segment.slice(1)
-        : segment,
-    )
-    .join(" ");
-};
-
 const getInviteEmail = (invite) => {
   if (!invite || typeof invite !== "object") return null;
   const invitee = invite.invitee || {};
@@ -623,6 +599,22 @@ const getInviteDisplayName = (invite, fallback = null) => {
   const phone = getInvitePhone(invite);
   if (phone) return phone;
   return fallback ?? "Invited player";
+};
+
+const getInviteAvatar = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const sources = [
+    invite,
+    invite.profile,
+    invite.invitee,
+    invite.player,
+    invite.contact,
+  ];
+  for (const source of sources) {
+    const image = getProfileImageFromSource(source);
+    if (image) return image;
+  }
+  return null;
 };
 
 const inviteMatchesParticipant = (invite, participant) => {
@@ -1509,23 +1501,46 @@ const MatchDetailsModal = ({
 
   const pendingInvitesList = useMemo(() => {
     if (pendingInvitees.length === 0) return [];
-    return pendingInvitees.map((invite, index) => {
-      const id = getInviteIdentity(invite, `pending-invite-${index}`);
+    const seen = new Set();
+    return pendingInvitees.reduce((list, invite, index) => {
+      if (!invite || typeof invite !== "object") {
+        return list;
+      }
       const name = getInviteDisplayName(
         invite,
         `Invited player ${index + 1}`,
       );
+      const phoneRaw = getInvitePhone(invite);
+      const phoneDigits = getPhoneDigits(phoneRaw);
+      const phoneDisplay = phoneDigits
+        ? formatPhoneDisplay(phoneDigits)
+        : formatPhoneDisplay(phoneRaw);
+      const phone = phoneDisplay || phoneRaw || null;
       const email = getInviteEmail(invite);
-      const phone = getInvitePhone(invite);
-      const contactLabel = [email, phone].filter(Boolean).join(" • ");
-      const status = getInviteStatus(invite);
-      return {
-        id,
+      const identity = getInviteIdentity(invite);
+      const identityCandidates = [
+        phoneDigits ? `phone:${phoneDigits}` : null,
+        email ? `email:${email.toLowerCase()}` : null,
+        identity ? `identity:${identity}` : null,
+      ].filter(Boolean);
+
+      if (identityCandidates.some((candidate) => seen.has(candidate))) {
+        return list;
+      }
+
+      identityCandidates.forEach((candidate) => seen.add(candidate));
+
+      const key =
+        identity ?? identityCandidates[0] ?? `pending-invite-${index}`;
+
+      list.push({
+        key,
         name,
-        contactLabel,
-        statusLabel: formatInviteStatusLabel(status),
-      };
-    });
+        phone,
+        avatar: getInviteAvatar(invite),
+      });
+      return list;
+    }, []);
   }, [pendingInvitees]);
 
   if (!isOpen || !match) return null;
@@ -1880,22 +1895,22 @@ const MatchDetailsModal = ({
       <div className="space-y-2">
         {pendingInvitesList.map((invite) => (
           <div
-            key={invite.id}
-            className="rounded-xl border border-blue-100 bg-white px-3 py-2"
+            key={invite.key}
+            className="flex items-center gap-3 rounded-xl border border-blue-100 bg-white px-3 py-2"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-black text-gray-900">{invite.name}</p>
-                {invite.contactLabel && (
-                  <p className="text-xs font-semibold text-gray-500">
-                    {invite.contactLabel}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-1 text-xs font-semibold text-blue-700">
-                <Clock className="h-3.5 w-3.5" />
-                <span>{invite.statusLabel}</span>
-              </div>
+            <PlayerAvatar
+              name={invite.name}
+              imageUrl={invite.avatar}
+              fallback={getAvatarInitials(invite.name)}
+              variant="indigo"
+            />
+            <div>
+              <p className="text-sm font-black text-gray-900">{invite.name}</p>
+              {invite.phone && (
+                <p className="text-xs font-semibold text-gray-500">
+                  Cell {invite.phone}
+                </p>
+              )}
             </div>
           </div>
         ))}
