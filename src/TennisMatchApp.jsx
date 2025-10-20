@@ -651,7 +651,24 @@ const TennisMatchApp = () => {
   // Track players already part of the match (participants or previously invited)
   const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
-  const [viewMatch, setViewMatch] = useState(null);
+  const [viewMatch, setViewMatchState] = useState(null);
+  const setViewMatch = useCallback((value) => {
+    setViewMatchState((previous) => {
+      const nextValue =
+        typeof value === "function" ? value(previous) : value;
+      if (
+        nextValue &&
+        typeof nextValue === "object" &&
+        previous &&
+        typeof previous === "object" &&
+        previous.viewerInvite &&
+        !nextValue.viewerInvite
+      ) {
+        return { ...nextValue, viewerInvite: previous.viewerInvite };
+      }
+      return nextValue;
+    });
+  }, []);
   const [showMatchDetailsModal, setShowMatchDetailsModal] = useState(false);
   const [matchDetailsOrigin, setMatchDetailsOrigin] = useState("browse");
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -1907,7 +1924,11 @@ const TennisMatchApp = () => {
               const data = await fetchMatchDetailsWithArchivedFallback(matchId);
               if (data) {
                 setMatchDetailsOrigin("browse");
-                setViewMatch(data);
+                const nextData =
+                  data && typeof data === "object"
+                    ? { ...data, viewerInvite: invite }
+                    : data;
+                setViewMatch(nextData);
                 setShowMatchDetailsModal(true);
               }
             } catch (error) {
@@ -1927,7 +1948,16 @@ const TennisMatchApp = () => {
     fetchMatchDetailsWithArchivedFallback,
   ]);
 
-  const handleViewDetails = async (matchId) => {
+  const matchIdsEqual = (a, b) => {
+    if (a === undefined || a === null) return false;
+    if (b === undefined || b === null) return false;
+    if (a === b) return true;
+    const aString = a.toString();
+    const bString = b.toString();
+    return aString === bString;
+  };
+
+  const handleViewDetails = async (matchId, options = {}) => {
     try {
       const data = await fetchMatchDetailsWithArchivedFallback(matchId);
       if (!data) {
@@ -1937,8 +1967,20 @@ const TennisMatchApp = () => {
       if ((data.match || {}).status === "archived" && activeFilter !== "archived") {
         setActiveFilter("archived");
       }
+      const viewerInvite = (() => {
+        if (options.pendingInvite) return options.pendingInvite;
+        return pendingInvites.find((invite) => {
+          const inviteMatchId =
+            invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
+          return matchIdsEqual(inviteMatchId, matchId);
+        });
+      })();
       setMatchDetailsOrigin(currentScreen);
-      setViewMatch(data);
+      const nextData =
+        viewerInvite && data && typeof data === "object"
+          ? { ...data, viewerInvite }
+          : data;
+      setViewMatch(nextData);
       setShowMatchDetailsModal(true);
     } catch (err) {
       if (isMatchArchivedError(err)) {
@@ -2312,7 +2354,11 @@ const TennisMatchApp = () => {
                           </button>
                           {invite.match?.id && (
                             <button
-                              onClick={() => handleViewDetails(invite.match.id)}
+                              onClick={() =>
+                                handleViewDetails(invite.match.id, {
+                                  pendingInvite: invite,
+                                })
+                              }
                               className="w-full px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold text-xs border border-white/30 hover:bg-white/20 transition-colors"
                             >
                               View & manage
@@ -2703,7 +2749,16 @@ const TennisMatchApp = () => {
                       );
                       if (data) {
                         setMatchDetailsOrigin(currentScreen);
-                        setViewMatch(data);
+                        const viewerInvite = pendingInvites.find((invite) => {
+                          const inviteMatchId =
+                            invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
+                          return matchIdsEqual(inviteMatchId, match.id);
+                        });
+                        const nextData =
+                          viewerInvite && data && typeof data === "object"
+                            ? { ...data, viewerInvite }
+                            : data;
+                        setViewMatch(nextData);
                         setShowMatchDetailsModal(true);
                       }
                     } catch (detailsError) {
