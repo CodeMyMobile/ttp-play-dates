@@ -5,6 +5,7 @@ import {
   Users,
   Check,
   Copy,
+  Search,
   User,
   X,
   Send,
@@ -137,7 +138,11 @@ const InviteScreen = ({
   }, [matchId, onToast]);
 
   useEffect(() => {
-    if (searchTerm === "" || searchTerm.length >= 2) {
+    const shouldSearch =
+      (!isPrivateMatch && (searchTerm === "" || searchTerm.length >= 2)) ||
+      (isPrivateMatch && searchTerm.length >= 2);
+
+    if (shouldSearch) {
       searchPlayers({ search: searchTerm, page, perPage })
         .then((data) => {
           setPlayers(data.players || []);
@@ -153,7 +158,7 @@ const InviteScreen = ({
       setPlayers([]);
       setPagination(null);
     }
-  }, [searchTerm, page, onToast]);
+  }, [searchTerm, page, onToast, isPrivateMatch]);
 
   // Focus the search box when the invite screen opens, but don't steal focus
   // from other inputs while the host is typing.
@@ -382,20 +387,187 @@ const InviteScreen = ({
             </div>
           )}
 
-          <div>
-            <input
-              ref={searchInputRef}
-              type="search"
-              aria-label="Search players"
-              autoComplete="off"
-              placeholder="Search players..."
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setPage(1);
-              }}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
-            />
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+            <div className="space-y-5">
+              <div>
+                <label className="mb-3 block text-sm font-black uppercase tracking-wider text-gray-900">
+                  Search & invite players
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    aria-label="Search players"
+                    autoComplete="off"
+                    placeholder="Search players..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setPage(1);
+                    }}
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 pl-11 font-semibold text-gray-800 focus:border-green-500 focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+                <p className="mt-2 text-xs font-semibold text-gray-500">
+                  {isPrivateMatch
+                    ? "Type at least two letters to search your player list."
+                    : "Browse or search the player community to add invitees."}
+                </p>
+              </div>
+
+              {isPrivateMatch ? (
+                <div className="space-y-3">
+                  {searchTerm.length < 2 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
+                      Start typing a name to search players.
+                    </div>
+                  ) : players.length > 0 ? (
+                    <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-100">
+                      {players.map((player) => {
+                        const name = player.full_name || "Unknown player";
+                        const pid = Number(player.user_id);
+                        const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                        return (
+                          <li key={player.user_id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!Number.isFinite(pid) || pid <= 0) return;
+                                setSelectedPlayers((prev) => {
+                                  const next = new Map(prev);
+                                  if (next.has(pid)) next.delete(pid);
+                                  else next.set(pid, { ...player, user_id: pid });
+                                  return next;
+                                });
+                              }}
+                              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
+                                selected
+                                  ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700"
+                                  : "bg-white hover:bg-gray-50"
+                              }`}
+                            >
+                              <div
+                                className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black shadow-md ${
+                                  selected
+                                    ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
+                                    : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                                }`}
+                              >
+                                {name
+                                  .split(" ")
+                                  .filter(Boolean)
+                                  .map((part) => part[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </div>
+                              <span className="text-sm font-bold text-gray-700">{name}</span>
+                              {selected && <Check className="ml-auto h-4 w-4 text-green-600" />}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
+                      No players found. Try another search.
+                    </div>
+                  )}
+
+                  {pagination && pagination.total > pagination.perPage && (
+                    <div className="flex items-center justify-between text-xs font-semibold text-gray-500">
+                      <button
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="rounded-lg border border-gray-200 px-3 py-1 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <span>
+                        Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
+                      </span>
+                      <button
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={pagination.page >= Math.ceil(pagination.total / pagination.perPage)}
+                        className="rounded-lg border border-gray-200 px-3 py-1 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {players.map((player) => {
+                      const name = player.full_name || "Unknown player";
+                      const pid = Number(player.user_id);
+                      const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                      return (
+                        <button
+                          key={player.user_id}
+                          onClick={() => {
+                            if (!Number.isFinite(pid) || pid <= 0) return;
+                            setSelectedPlayers((prev) => {
+                              const next = new Map(prev);
+                              if (next.has(pid)) next.delete(pid);
+                              else next.set(pid, { ...player, user_id: pid });
+                              return next;
+                            });
+                          }}
+                          className={`flex items-center gap-2 rounded-xl border-2 px-4 py-3 transition-all hover:scale-105 ${
+                            selected
+                              ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
+                              : "border-gray-200 hover:border-gray-300 bg-white"
+                          }`}
+                        >
+                          <div
+                            className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-black shadow-md ${
+                              selected
+                                ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
+                                : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                            }`}
+                          >
+                            {name
+                              .split(" ")
+                              .filter(Boolean)
+                              .map((part) => part[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <span className="text-sm font-bold text-gray-700">{name}</span>
+                          {selected && <Check className="ml-auto h-4 w-4 text-green-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {pagination && (
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <button
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-sm font-semibold text-gray-600">
+                        Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
+                      </span>
+                      <button
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={pagination.page >= Math.ceil(pagination.total / pagination.perPage)}
+                        className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           {isPrivateMatch ? (
@@ -478,76 +650,6 @@ const InviteScreen = ({
               </div>
             </div>
           )}
-
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Players</h3>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {players.map((player) => {
-                const name = player.full_name;
-                const pid = Number(player.user_id);
-                const selected = selectedPlayers.has(pid);
-                return (
-                  <button
-                    key={player.user_id}
-                    onClick={() => {
-                      if (!Number.isFinite(pid) || pid <= 0) return;
-                      setSelectedPlayers((prev) => {
-                        const newMap = new Map(prev);
-                        if (newMap.has(pid)) newMap.delete(pid);
-                        else newMap.set(pid, { ...player, user_id: pid });
-                        return newMap;
-                      });
-                    }}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
-                      selected
-                        ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
-                        : "border-gray-200 hover:border-gray-300 bg-white"
-                    }`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
-                        selected
-                          ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                          : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
-                      }`}
-                    >
-                      {name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .toUpperCase()}
-                    </div>
-                    <span className="text-sm text-gray-700 font-bold">{name}</span>
-                    {selected && <Check className="w-4 h-4 text-green-600 ml-auto" />}
-                  </button>
-                );
-              })}
-            </div>
-
-            {pagination && (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-                >
-                  Previous
-                </button>
-                <span className="text-sm font-semibold text-gray-600">
-                  Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
-                </span>
-                <button
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={pagination.page >= Math.ceil(pagination.total / pagination.perPage)}
-                  className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </div>
 
           {selectedPlayers.size > 0 && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
