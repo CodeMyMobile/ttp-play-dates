@@ -90,6 +90,7 @@ import {
 } from "./utils/memberIdentity";
 import { getMatchPrivacy } from "./utils/matchPrivacy";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
+import { buildRecentPartnerSuggestions } from "./utils/inviteSuggestions";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -3783,6 +3784,9 @@ const TennisMatchApp = () => {
     const [participantsLoading, setParticipantsLoading] = useState(false);
     const [participantsError, setParticipantsError] = useState("");
     const [hostId, setHostId] = useState(null);
+    const [suggestedPlayers, setSuggestedPlayers] = useState([]);
+    const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+    const [suggestionsError, setSuggestionsError] = useState("");
 
     const matchType =
       typeof matchData?.type === "string" ? matchData.type.toLowerCase() : "";
@@ -3882,6 +3886,48 @@ const TennisMatchApp = () => {
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
+    const fetchSuggestedPlayers = useCallback(
+      async (aliveCheck = () => true) => {
+        if (!aliveCheck()) return;
+        if (!isPrivateMatch || !currentUser) {
+          if (aliveCheck()) {
+            setSuggestedPlayers([]);
+            setSuggestionsError("");
+            setSuggestionsLoading(false);
+          }
+          return;
+        }
+
+        setSuggestionsLoading(true);
+        setSuggestionsError("");
+
+        try {
+          const data = await listMatches("my", { perPage: 25 });
+          if (!aliveCheck()) return;
+          const matches = Array.isArray(data?.matches) ? data.matches : [];
+          const suggestions = buildRecentPartnerSuggestions({
+            matches,
+            currentUser,
+            memberIdentities: memberIdentityIds,
+          });
+          if (!aliveCheck()) return;
+          setSuggestedPlayers(suggestions);
+        } catch (error) {
+          console.error("Failed to load suggested players", error);
+          if (!aliveCheck()) return;
+          setSuggestedPlayers([]);
+          setSuggestionsError(
+            "We couldn't load suggestions right now. Try refreshing.",
+          );
+        } finally {
+          if (aliveCheck()) {
+            setSuggestionsLoading(false);
+          }
+        }
+      },
+      [isPrivateMatch, currentUser, memberIdentityIds],
+    );
+
     const toastShareError = React.useCallback(
       (error) => {
         onToast(
@@ -3974,6 +4020,51 @@ const TennisMatchApp = () => {
       if (isEditingAnotherField) return;
       input.focus();
     }, []);
+
+    useEffect(() => {
+      let alive = true;
+      const aliveCheck = () => alive;
+      fetchSuggestedPlayers(aliveCheck);
+      return () => {
+        alive = false;
+      };
+    }, [fetchSuggestedPlayers, matchId]);
+
+    const filteredSuggestions = useMemo(() => {
+      if (!Array.isArray(suggestedPlayers) || suggestedPlayers.length === 0) {
+        return [];
+      }
+      const blockedIds =
+        existingPlayerIds instanceof Set
+          ? existingPlayerIds
+          : new Set(existingPlayerIds || []);
+      return suggestedPlayers.filter((player) => {
+        const pid = Number(player.user_id);
+        if (!Number.isFinite(pid) || pid <= 0) return false;
+        if (blockedIds.has(pid)) return false;
+        if (selectedPlayers.has(pid)) return false;
+        return true;
+      });
+    }, [suggestedPlayers, existingPlayerIds, selectedPlayers]);
+
+    const topSuggestions = useMemo(
+      () => filteredSuggestions.slice(0, 6),
+      [filteredSuggestions],
+    );
+
+    const handleAddSuggestedPlayer = useCallback(
+      (player) => {
+        const pid = Number(player.user_id);
+        if (!Number.isFinite(pid) || pid <= 0) return;
+        setSelectedPlayers((prev) => {
+          if (prev.has(pid)) return prev;
+          const next = new Map(prev);
+          next.set(pid, { ...player, user_id: pid });
+          return next;
+        });
+      },
+      [setSelectedPlayers],
+    );
 
     const participantIsHost = (participant) => {
       if (!participant) return false;
@@ -4292,23 +4383,83 @@ const TennisMatchApp = () => {
             {/* Quick Share */}
             {isPrivateMatch ? (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h3 className="text-sm font-black text-gray-900 mb-3 uppercase tracking-wider flex items-center gap-2">
-                  <Phone className="w-4 h-4" /> Text invite link
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  We'll open your messaging app with a private RSVP link you can send directly to players.
-                </p>
-                <button
-                  onClick={openSMS}
-                  disabled={!shareLink}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-black transition-all ${
-                    shareLink
-                      ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
-                      : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                  }`}
-                >
-                  <Phone className="w-5 h-5" /> Send text invite
-                </button>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" /> Suggested players
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => fetchSuggestedPlayers(() => true)}
+                    disabled={suggestionsLoading}
+                    className="text-xs font-bold text-blue-600 transition-colors hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                {suggestionsLoading ? (
+                  <p className="text-sm text-gray-500">
+                    Finding players you've teamed up with recently…
+                  </p>
+                ) : suggestionsError ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 sm:flex-row sm:items-center sm:justify-between">
+                    <span>{suggestionsError}</span>
+                    <button
+                      type="button"
+                      onClick={() => fetchSuggestedPlayers(() => true)}
+                      className="text-xs font-bold text-red-700 hover:text-red-800"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : topSuggestions.length > 0 ? (
+                  <ul className="space-y-3">
+                    {topSuggestions.map((player) => {
+                      const name = player.full_name || "Unknown player";
+                      const pid = Number(player.user_id);
+                      const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                      return (
+                        <li
+                          key={pid}
+                          className="flex items-center gap-3 rounded-xl border border-gray-100 px-4 py-3"
+                        >
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-xs font-black text-gray-700">
+                            {name
+                              .split(" ")
+                              .filter(Boolean)
+                              .map((part) => part[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-800">{name}</p>
+                            {player.lastPlayedAt && (
+                              <p className="text-xs font-semibold text-gray-500">
+                                Last played {formatDateTime(player.lastPlayedAt)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddSuggestedPlayer(player)}
+                            disabled={selected}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-black transition-all ${
+                              selected
+                                ? "bg-gray-100 text-gray-400 cursor-default"
+                                : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-md hover:scale-105"
+                            }`}
+                          >
+                            {selected ? "Added" : "Invite"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
+                    We'll suggest partners you recently played with once we have a little more history.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
