@@ -53,6 +53,10 @@ const InviteScreen = ({
   const [hostId, setHostId] = useState(null);
   const [isArchived, setIsArchived] = useState(false);
 
+  const matchType =
+    typeof matchData?.type === "string" ? matchData.type.toLowerCase() : "";
+  const isPrivateMatch = matchType === "closed" || matchType === "private";
+
   const memberIdentities = useMemo(
     () => collectMemberIds(currentUser),
     [currentUser],
@@ -340,41 +344,43 @@ const InviteScreen = ({
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
-              <Users className="w-4 h-4" /> Current Participants
-            </h3>
-            {participantsLoading ? (
-              <p className="text-sm text-gray-500">Loading…</p>
-            ) : participantsError ? (
-              <p className="text-sm text-red-600">{participantsError}</p>
-            ) : participants.length ? (
-              <ul className="divide-y divide-gray-100 border rounded-xl">
-                {participants.map((p) => (
-                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                    <span className="text-gray-800">
-                      {p.profile?.full_name || `Player ${p.player_id}`}
-                      {participantIsHost(p) && (
-                        <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+          {!isPrivateMatch && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-4 h-4" /> Current Participants
+              </h3>
+              {participantsLoading ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : participantsError ? (
+                <p className="text-sm text-red-600">{participantsError}</p>
+              ) : participants.length ? (
+                <ul className="divide-y divide-gray-100 border rounded-xl">
+                  {participants.map((p) => (
+                    <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                      <span className="text-gray-800">
+                        {p.profile?.full_name || `Player ${p.player_id}`}
+                        {participantIsHost(p) && (
+                          <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                        )}
+                      </span>
+                      {canRemove(p.player_id) ? (
+                        <button
+                          onClick={() => handleRemoveParticipant(p.player_id)}
+                          className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
+                        >
+                          <X className="w-4 h-4" /> Remove
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400">No actions</span>
                       )}
-                    </span>
-                    {canRemove(p.player_id) ? (
-                      <button
-                        onClick={() => handleRemoveParticipant(p.player_id)}
-                        className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
-                      >
-                        <X className="w-4 h-4" /> Remove
-                      </button>
-                    ) : (
-                      <span className="text-xs text-gray-400">No actions</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-gray-500">No participants yet.</p>
-            )}
-          </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No participants yet.</p>
+              )}
+            </div>
+          )}
 
           <div>
             <input
@@ -392,64 +398,86 @@ const InviteScreen = ({
             />
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">Share Link</h3>
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-              <input
-                type="text"
-                value={shareLink}
-                readOnly
-                className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-600 sm:flex-1"
-              />
-              <button
-                onClick={copyLink}
-                disabled={!shareLink}
-                className={`w-full rounded-xl px-5 py-3 font-black transition-all sm:w-auto ${
-                  copiedLink
-                    ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
-                    : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
-                }`}
-              >
-                {copiedLink ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <button
-                onClick={openWhatsApp}
-                disabled={!shareLink}
-                className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                  shareLink
-                    ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
-                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                }`}
-              >
-                WHATSAPP
-              </button>
+          {isPrivateMatch ? (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-sm font-black text-gray-900 mb-3 uppercase tracking-wider flex items-center gap-2">
+                <Phone className="w-4 h-4" /> Text invite link
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                We'll open your messaging app with a private RSVP link you can send directly to players.
+              </p>
               <button
                 onClick={openSMS}
                 disabled={!shareLink}
-                className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-black transition-all ${
                   shareLink
-                    ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
-                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                    ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
+                    : "bg-gray-200 text-gray-500 cursor-not-allowed"
                 }`}
               >
-                SMS
-              </button>
-              <button
-                onClick={openEmail}
-                disabled={!shareLink}
-                className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                  shareLink
-                    ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
-                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                }`}
-              >
-                EMAIL
+                <Phone className="w-5 h-5" /> Send text invite
               </button>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">Share Link</h3>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+                <input
+                  type="text"
+                  value={shareLink}
+                  readOnly
+                  className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-600 sm:flex-1"
+                />
+                <button
+                  onClick={copyLink}
+                  disabled={!shareLink}
+                  className={`w-full rounded-xl px-5 py-3 font-black transition-all sm:w-auto ${
+                    copiedLink
+                      ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
+                      : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
+                  }`}
+                >
+                  {copiedLink ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <button
+                  onClick={openWhatsApp}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  WHATSAPP
+                </button>
+                <button
+                  onClick={openSMS}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  SMS
+                </button>
+                <button
+                  onClick={openEmail}
+                  disabled={!shareLink}
+                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                    shareLink
+                      ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
+                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  EMAIL
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
