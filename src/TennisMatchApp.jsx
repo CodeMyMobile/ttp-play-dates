@@ -6035,6 +6035,8 @@ const TennisMatchApp = () => {
               setMatchData={setMatchData}
               selectedPlayers={selectedPlayers}
               setSelectedPlayers={setSelectedPlayers}
+              manualContacts={manualContacts}
+              setManualContacts={setManualContacts}
               existingPlayerIds={existingPlayerIds}
               setExistingPlayerIds={setExistingPlayerIds}
               onToast={displayToast}

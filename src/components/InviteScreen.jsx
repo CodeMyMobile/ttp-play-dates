@@ -9,6 +9,7 @@ import {
   X,
   Send,
   Phone,
+  Plus,
 } from "lucide-react";
 import {
   getMatch,
@@ -25,6 +26,10 @@ import {
   memberMatchesAnyId,
   memberMatchesParticipant,
 } from "../utils/memberIdentity";
+import {
+  formatPhoneDisplay,
+  normalizePhoneValue,
+} from "../services/phone";
 
 const InviteScreen = ({
   matchId,
@@ -33,6 +38,8 @@ const InviteScreen = ({
   setMatchData,
   selectedPlayers,
   setSelectedPlayers,
+  manualContacts,
+  setManualContacts,
   existingPlayerIds,
   setExistingPlayerIds,
   onToast,
@@ -58,11 +65,55 @@ const InviteScreen = ({
     [currentUser],
   );
 
-  // Local state for manual phone invites (isolated from search input)
+  const manualContactSelections =
+    manualContacts instanceof Map ? manualContacts : new Map();
+
   const totalSelectedInvitees = useMemo(
-    () => selectedPlayers.size,
-    [selectedPlayers]
+    () => selectedPlayers.size + manualContactSelections.size,
+    [selectedPlayers, manualContactSelections]
   );
+
+  const [localContactName, setLocalContactName] = useState("");
+  const [localContactPhone, setLocalContactPhone] = useState("");
+  const [localContactError, setLocalContactError] = useState("");
+
+  const addManualContact = () => {
+    setLocalContactError("");
+    const normalized = normalizePhoneValue(localContactPhone);
+    if (!normalized) {
+      setLocalContactError(
+        "Enter a valid phone number with country code or 10 digits.",
+      );
+      return;
+    }
+    if (manualContactSelections.has(normalized)) {
+      setLocalContactError("That phone number is already selected.");
+      return;
+    }
+    const name = localContactName.trim();
+    if (typeof setManualContacts === "function") {
+      setManualContacts((prev) => {
+        const next = new Map(prev);
+        next.set(normalized, {
+          key: normalized,
+          phone: normalized,
+          name,
+        });
+        return next;
+      });
+    }
+    setLocalContactName("");
+    setLocalContactPhone("");
+  };
+
+  const handleRemoveManualContact = (key) => {
+    if (typeof setManualContacts !== "function") return;
+    setManualContacts((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
 
   const copyLink = () => {
     if (!shareLink) return;
@@ -496,11 +547,11 @@ const InviteScreen = ({
                   </button>
                 );
               })}
-            </div>
+          </div>
 
-            {pagination && (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <button
+          {pagination && (
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
                   className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -521,14 +572,81 @@ const InviteScreen = ({
             )}
           </div>
 
-          {selectedPlayers.size > 0 && (
+          <form
+            className="bg-white rounded-2xl shadow-lg border border-blue-100 p-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              addManualContact();
+            }}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Phone className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
+                  Invite by phone number
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Enter a mobile number and we'll text them a magic link so they can RSVP instantly.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <input
+                type="text"
+                value={localContactName}
+                onChange={(e) => {
+                  setLocalContactName(e.target.value);
+                  setLocalContactError("");
+                }}
+                placeholder="Full name (optional)"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
+              />
+              <input
+                type="tel"
+                value={localContactPhone}
+                onChange={(e) => {
+                  setLocalContactPhone(e.target.value);
+                  setLocalContactError("");
+                }}
+                placeholder="+15551234567"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-300"
+              />
+            </div>
+            {localContactError && (
+              <p className="text-xs font-semibold text-red-600 mb-2">{localContactError}</p>
+            )}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-xs text-gray-500">
+                Phone-only contacts will still get SMS reminders and a magic-link login.
+              </p>
+              <button
+                type="submit"
+                disabled={!localContactPhone.trim()}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add contact
+              </button>
+            </div>
+          </form>
+
+          {totalSelectedInvitees > 0 && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
                   Selected ({totalSelectedInvitees})
                 </h3>
                 <button
-                  onClick={() => setSelectedPlayers(new Map())}
+                  onClick={() => {
+                    setSelectedPlayers(new Map());
+                    if (typeof setManualContacts === "function") {
+                      setManualContacts(new Map());
+                    }
+                    setLocalContactName("");
+                    setLocalContactPhone("");
+                    setLocalContactError("");
+                  }}
                   className="w-full text-left text-sm font-bold text-gray-500 transition-colors hover:text-gray-700 sm:w-auto sm:text-right"
                 >
                   Clear all
@@ -567,6 +685,23 @@ const InviteScreen = ({
                       )}
                     </span>
                   ))}
+                {Array.from(manualContactSelections.values()).map((contact) => (
+                  <span
+                    key={contact.key}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-sm font-bold text-blue-700"
+                  >
+                    {contact.name || formatPhoneDisplay(contact.phone)}
+                    <span className="ml-1 text-xs text-blue-500">SMS</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveManualContact(contact.key)}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                      aria-label={`Remove ${contact.name || contact.phone}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
               </div>
             </div>
           )}
@@ -582,8 +717,8 @@ const InviteScreen = ({
             </button>
             <button
               onClick={async () => {
-                if (selectedPlayers.size === 0) {
-                  onToast("Please select at least one player", "error");
+                if (totalSelectedInvitees === 0) {
+                  onToast("Please add at least one invitee", "error");
                   return;
                 }
                 if (!matchId) {
@@ -600,21 +735,33 @@ const InviteScreen = ({
                     .filter(
                       (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id)
                     );
-                  if (newIds.length === 0) {
-                    onToast("No new players selected", "error");
+                  const phoneNumbers = Array.from(
+                    manualContactSelections.values(),
+                  ).map((contact) =>
+                    contact.name
+                      ? { phone: contact.phone, fullName: contact.name }
+                      : contact.phone,
+                  );
+                  if (newIds.length === 0 && phoneNumbers.length === 0) {
+                    onToast("Everyone you picked is already invited", "error");
                     return;
                   }
                   await updateMatch(matchId, { status: "upcoming" });
                   const response = await sendInvites(matchId, {
                     playerIds: newIds,
-                    phoneNumbers: [],
+                    phoneNumbers,
                   });
+                  const inviteCount = newIds.length + phoneNumbers.length;
                   const message = response?.message
                     ? response.message
-                    : `Invites sent to ${newIds.length} ${
-                        newIds.length === 1 ? "player" : "players"
+                    : `Invites sent to ${inviteCount} ${
+                        inviteCount === 1 ? "player" : "players"
                       }! 🎾`;
                   onToast(message);
+                  setSelectedPlayers(new Map());
+                  if (typeof setManualContacts === "function") {
+                    setManualContacts(new Map());
+                  }
                   onDone?.("sent");
                 } catch (err) {
                   if (isMatchArchivedError(err)) {
