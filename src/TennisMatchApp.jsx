@@ -1310,6 +1310,7 @@ const TennisMatchApp = () => {
       let hiddenPrivateMatches = 0;
       const memberIds = memberIdentityIds;
 
+      const now = Date.now();
       let transformed = rawMatches.map((m) => {
         const activeParticipants = uniqueActiveParticipants(m.participants);
         const acceptedInvitees = uniqueAcceptedInvitees(m.invitees);
@@ -1337,6 +1338,25 @@ const TennisMatchApp = () => {
           Number.isFinite(confirmedFromCapacity) && confirmedFromCapacity >= 0
             ? confirmedFromCapacity
             : fallbackOccupied;
+
+        const normalizedPlayerLimit = (() => {
+          if (Number.isFinite(limitFromCapacity) && limitFromCapacity > 0) {
+            return limitFromCapacity;
+          }
+          const raw = m.player_limit;
+          const numeric =
+            typeof raw === "string" ? Number.parseInt(raw, 10) : raw;
+          return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+        })();
+
+        const rosterSpotsRemaining =
+          normalizedPlayerLimit !== null
+            ? Math.max(normalizedPlayerLimit - fallbackOccupied, 0)
+            : null;
+
+        const computedSpotsAvailable = Number.isFinite(openFromCapacity)
+          ? Math.max(openFromCapacity, 0)
+          : rosterSpotsRemaining;
 
         const matchId = m.match_id || m.id;
         const normalizedUserEmail = currentUser?.email
@@ -1371,10 +1391,27 @@ const TennisMatchApp = () => {
         })();
         const isHost = hostMatchByIds || matchesHostEmail || matchesHostPhone;
 
-          const hasActiveParticipant = activeParticipants.some((participant) =>
-            memberMatchesParticipant(currentUser, participant, memberIds),
-          );
-          const hasAcceptedInvite = acceptedInvitees.some((invite) =>
+        const matchStartDate = (() => {
+          if (!m || !m.start_date_time) return null;
+          const candidate = new Date(m.start_date_time);
+          return Number.isNaN(candidate.getTime()) ? null : candidate;
+        })();
+        const startTimestamp = matchStartDate ? matchStartDate.getTime() : null;
+        const hoursUntilStartRaw =
+          startTimestamp !== null ? (startTimestamp - now) / (1000 * 60 * 60) : null;
+        const hoursUntilStart =
+          hoursUntilStartRaw !== null
+            ? Math.max(Math.round(hoursUntilStartRaw * 10) / 10, 0)
+            : null;
+        const isUpcomingSoon =
+          hoursUntilStartRaw !== null &&
+          hoursUntilStartRaw >= 0 &&
+          hoursUntilStartRaw <= 48;
+
+        const hasActiveParticipant = activeParticipants.some((participant) =>
+          memberMatchesParticipant(currentUser, participant, memberIds),
+        );
+        const hasAcceptedInvite = acceptedInvitees.some((invite) =>
             memberMatchesInvite(currentUser, invite, memberIds),
           );
           const inviteMatchesCurrentUser = (invite) => {
@@ -1467,6 +1504,13 @@ const TennisMatchApp = () => {
           return null;
         }
 
+        const lowOccupancyAlertActive =
+          isHost &&
+          isUpcomingSoon &&
+          rosterSpotsRemaining !== null &&
+          rosterSpotsRemaining > 0 &&
+          (m.status || "upcoming")?.toString().toLowerCase() === "upcoming";
+
         return {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
@@ -1503,31 +1547,36 @@ const TennisMatchApp = () => {
           notes: m.notes,
           invitees: m.invitees || [],
           participants: m.participants || [],
-          playerLimit: (() => {
-            if (Number.isFinite(limitFromCapacity) && limitFromCapacity > 0) {
-              return limitFromCapacity;
-            }
-            const raw = m.player_limit;
-            const numeric =
-              typeof raw === "string" ? Number.parseInt(raw, 10) : raw;
-            return Number.isFinite(numeric) ? numeric : null;
-          })(),
+          playerLimit: normalizedPlayerLimit,
           occupied,
-          spotsAvailable: (() => {
-            if (Number.isFinite(openFromCapacity)) {
-              return Math.max(openFromCapacity, 0);
-            }
-            const limit = Number.isFinite(limitFromCapacity)
-              ? limitFromCapacity
-              : typeof m.player_limit === "number"
-              ? m.player_limit
-              : Number.parseInt(m.player_limit, 10);
-            return Number.isFinite(limit)
-              ? Math.max(limit - occupied, 0)
-              : null;
-          })(),
+          rosterCount: fallbackOccupied,
+          rosterSpotsRemaining,
+          spotsAvailable: computedSpotsAvailable,
           capacity: capacityInfo,
           isInvited,
+          alerts: {
+            ...(lowOccupancyAlertActive
+              ? {
+                  lowOccupancy: {
+                    active: true,
+                    spotsNeeded: rosterSpotsRemaining,
+                    rosterCount: fallbackOccupied,
+                    playerLimit: normalizedPlayerLimit,
+                    hoursUntilStart,
+                    startTime: matchStartDate ? matchStartDate.toISOString() : null,
+                  },
+                }
+              : {
+                  lowOccupancy: {
+                    active: false,
+                    spotsNeeded: rosterSpotsRemaining,
+                    rosterCount: fallbackOccupied,
+                    playerLimit: normalizedPlayerLimit,
+                    hoursUntilStart,
+                    startTime: matchStartDate ? matchStartDate.toISOString() : null,
+                  },
+                }),
+          },
         };
       }).filter(Boolean);
       if (activeFilter === "draft") {
@@ -1874,6 +1923,27 @@ const TennisMatchApp = () => {
     });
   };
 
+  const formatHoursUntilStart = useCallback((hours) => {
+    if (hours === null || hours === undefined) return null;
+    if (!Number.isFinite(hours)) return null;
+    if (hours < 0) return null;
+    if (hours < 1) {
+      return "in under 1 hour";
+    }
+    if (hours < 24) {
+      const rounded = Math.round(hours);
+      return `in ${rounded} hour${rounded === 1 ? "" : "s"}`;
+    }
+    const days = Math.floor(hours / 24);
+    const remainingHours = Math.round(hours % 24);
+    if (remainingHours <= 0) {
+      return `in ${days} day${days === 1 ? "" : "s"}`;
+    }
+    return `in ${days} day${days === 1 ? "" : "s"} ${remainingHours} hour${
+      remainingHours === 1 ? "" : "s"
+    }`;
+  }, []);
+
   const fetchMatchDetails = useCallback(
     async (matchId, { includeArchived = false } = {}) => {
       if (!matchId) return null;
@@ -2060,6 +2130,27 @@ const TennisMatchApp = () => {
   const activeLocationLabel = hasLocationFilter
     ? locationFilter?.label || "Saved location"
     : "";
+
+  const matchesNeedingAttention = useMemo(() => {
+    const getTimestamp = (match) => {
+      const alertStart = match?.alerts?.lowOccupancy?.startTime;
+      if (alertStart) {
+        const parsed = new Date(alertStart);
+        const ts = parsed.getTime();
+        if (!Number.isNaN(ts)) return ts;
+      }
+      if (match?.dateTime) {
+        const parsed = new Date(match.dateTime);
+        const ts = parsed.getTime();
+        if (!Number.isNaN(ts)) return ts;
+      }
+      return Number.POSITIVE_INFINITY;
+    };
+
+    return matches
+      .filter((match) => match?.alerts?.lowOccupancy?.active)
+      .sort((a, b) => getTimestamp(a) - getTimestamp(b));
+  }, [matches]);
 
   const getMatchCount = useCallback(
     (filterId) => {
@@ -2497,6 +2588,73 @@ const TennisMatchApp = () => {
           </div>
         )}
 
+        {matchesNeedingAttention.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500 text-white shadow-md">
+                <Bell className="h-5 w-5" />
+              </div>
+              <div className="flex-1 space-y-4">
+                <div>
+                  <p className="text-sm font-black text-amber-900">
+                    Last-minute roster alerts
+                  </p>
+                  <p className="text-xs font-semibold text-amber-800">
+                    These matches start soon and still need players. Fill the open spots before they begin.
+                  </p>
+                </div>
+                <ul className="space-y-3">
+                  {matchesNeedingAttention.slice(0, 3).map((match) => {
+                    const lowOccupancy = match?.alerts?.lowOccupancy;
+                    const spotsNeeded = lowOccupancy?.spotsNeeded ?? match.rosterSpotsRemaining ?? 0;
+                    const timeLabel = formatHoursUntilStart(
+                      lowOccupancy?.hoursUntilStart ?? null,
+                    );
+                    return (
+                      <li
+                        key={match.id}
+                        className="rounded-xl border border-amber-100 bg-white/90 p-4 shadow-sm"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-black text-amber-900">
+                              Need {spotsNeeded}{" "}
+                              {spotsNeeded === 1 ? "player" : "players"}{" "}
+                              {timeLabel ? timeLabel : "soon"}
+                            </p>
+                            <p className="text-xs font-semibold text-amber-700">
+                              {formatDateTime(match.dateTime)} • {match.location || "Location TBA"}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => openInviteScreen(match.id)}
+                              className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50"
+                            >
+                              Manage invites
+                            </button>
+                            <button
+                              onClick={() => handleViewDetails(match.id)}
+                              className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow hover:bg-amber-600"
+                            >
+                              View match
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {matchesNeedingAttention.length > 3 && (
+                  <p className="text-xs font-semibold text-amber-700">
+                    And {matchesNeedingAttention.length - 3} more matches need attention.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {displayedMatches.map((match) => (
             <MatchCard key={match.id} match={match} />
@@ -2559,11 +2717,244 @@ const TennisMatchApp = () => {
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
     const isJoined = match.type === "joined";
-    const isArchived = match.status === "archived";
-    const isUpcoming = match.status === "upcoming";
+    const statusValue = typeof match.status === "string" ? match.status.toLowerCase() : match.status;
+    const isArchived = statusValue === "archived";
+    const isUpcoming = statusValue === "upcoming";
     const playerCapacityLabel = Number.isFinite(match.playerLimit)
       ? `${match.occupied}/${match.playerLimit} players`
       : `${match.occupied} players`;
+
+    const lowOccupancy = match?.alerts?.lowOccupancy;
+    const hasLowOccupancyAlert = Boolean(lowOccupancy?.active);
+    const rosterCount = lowOccupancy?.rosterCount ?? match.rosterCount ?? match.occupied;
+    const playerLimit = lowOccupancy?.playerLimit ?? match.playerLimit ?? null;
+    const spotsNeeded = lowOccupancy?.spotsNeeded ?? match.rosterSpotsRemaining ?? 0;
+    const hoursUntilStart = lowOccupancy?.hoursUntilStart ?? null;
+    const timeUntilStartLabel = useMemo(
+      () => formatHoursUntilStart(hoursUntilStart),
+      [formatHoursUntilStart, hoursUntilStart],
+    );
+
+    const existingPlayerIds = useMemo(() => {
+      const ids = new Set();
+      uniqueActiveParticipants(match.participants || []).forEach((participant) => {
+        const candidate = Number(
+          participant?.player_id ??
+            participant?.user_id ??
+            participant?.id ??
+            participant?.profile?.player_id ??
+            participant?.profile?.id,
+        );
+        if (Number.isFinite(candidate) && candidate > 0) {
+          ids.add(candidate);
+        }
+      });
+      uniqueInvitees(match.invitees || []).forEach((invite) => {
+        const candidate = Number(
+          invite?.invitee_id ??
+            invite?.player_id ??
+            invite?.user_id ??
+            invite?.id ??
+            invite?.profile?.player_id ??
+            invite?.profile?.id,
+        );
+        if (Number.isFinite(candidate) && candidate > 0) {
+          ids.add(candidate);
+        }
+      });
+      return ids;
+    }, [match.invitees, match.participants]);
+
+    const [showRecommendations, setShowRecommendations] = useState(false);
+    const [recommendationStatus, setRecommendationStatus] = useState("idle");
+    const [recommendationError, setRecommendationError] = useState("");
+    const [recommendations, setRecommendations] = useState([]);
+    const [inviteProgress, setInviteProgress] = useState({});
+
+    const loadRecommendations = useCallback(async () => {
+      if (!hasLowOccupancyAlert) return;
+      if (!currentUser) {
+        setRecommendationStatus("empty");
+        setRecommendationError("");
+        return;
+      }
+      setRecommendationStatus("loading");
+      setRecommendationError("");
+
+      const suggestionMeta = new Map();
+      let suggestedIds = [];
+
+      try {
+        const history = await listMatches("my", { perPage: 25 });
+        const matches = Array.isArray(history?.matches) ? history.matches : [];
+        const suggestions = buildRecentPartnerSuggestions({
+          matches,
+          currentUser,
+          memberIdentities: memberIdentityIds,
+        });
+        suggestedIds = suggestions
+          .map((player) => Number(player.user_id))
+          .filter(
+            (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id),
+          );
+        suggestions.forEach((suggestion) => {
+          const id = Number(suggestion.user_id);
+          if (Number.isFinite(id) && id > 0) {
+            suggestionMeta.set(id, suggestion);
+          }
+        });
+      } catch (historyError) {
+        console.error("Failed to load match history for suggestions", historyError);
+      }
+
+      try {
+        let players = [];
+        if (suggestedIds.length > 0) {
+          const limitedIds = suggestedIds.slice(0, 12);
+          const data = await searchPlayers({ ids: limitedIds, perPage: limitedIds.length });
+          players = Array.isArray(data?.players) ? data.players : [];
+        }
+
+        if (!players.length) {
+          const fallbackTerm = (() => {
+            if (typeof match.skillLevel === "string" && match.skillLevel.trim()) {
+              const [ntrp] = match.skillLevel.split(" - ");
+              return ntrp || match.skillLevel;
+            }
+            if (typeof match.format === "string" && match.format.trim()) {
+              return match.format;
+            }
+            return "tennis";
+          })();
+          const fallback = await searchPlayers({ search: fallbackTerm, perPage: 12 });
+          players = Array.isArray(fallback?.players) ? fallback.players : [];
+        }
+
+        const filtered = players.filter((player) => {
+          const pid = Number(
+            player?.user_id ??
+              player?.id ??
+              player?.player_id ??
+              player?.playerId ??
+              player?.profile?.player_id ??
+              player?.profile?.id,
+          );
+          if (!Number.isFinite(pid) || pid <= 0) return false;
+          if (existingPlayerIds.has(pid)) return false;
+          if (currentUser && memberMatchesAnyId(currentUser, pid, memberIdentityIds)) {
+            return false;
+          }
+          return true;
+        });
+
+        if (filtered.length === 0) {
+          setRecommendations([]);
+          setRecommendationStatus("empty");
+          return;
+        }
+
+        const limitedFiltered = filtered.slice(0, 6).map((player) => {
+          const pid = Number(
+            player?.user_id ??
+              player?.id ??
+              player?.player_id ??
+              player?.playerId ??
+              player?.profile?.player_id ??
+              player?.profile?.id,
+          );
+          const meta = Number.isFinite(pid) ? suggestionMeta.get(pid) : null;
+          if (meta && meta.lastPlayedAt) {
+            return { ...player, lastPlayedAt: meta.lastPlayedAt };
+          }
+          return player;
+        });
+
+        setRecommendations(limitedFiltered);
+        setRecommendationStatus("ready");
+      } catch (error) {
+        console.error("Failed to load recommendations", error);
+        setRecommendationError(
+          error?.response?.data?.message ||
+            error?.message ||
+            "Failed to load recommendations",
+        );
+        setRecommendationStatus("error");
+      }
+    }, [
+      currentUser,
+      existingPlayerIds,
+      hasLowOccupancyAlert,
+      match.format,
+      match.skillLevel,
+      memberIdentityIds,
+    ]);
+
+    useEffect(() => {
+      if (showRecommendations && recommendationStatus === "idle") {
+        loadRecommendations();
+      }
+    }, [loadRecommendations, recommendationStatus, showRecommendations]);
+
+    useEffect(() => {
+      setShowRecommendations(false);
+      setRecommendationStatus("idle");
+      setRecommendationError("");
+      setRecommendations([]);
+      setInviteProgress({});
+    }, [match.id]);
+
+    const handleQuickInvite = useCallback(
+      async (player) => {
+        const pid = Number(
+          player?.user_id ??
+            player?.id ??
+            player?.player_id ??
+            player?.playerId ??
+            player?.profile?.player_id ??
+            player?.profile?.id,
+        );
+        if (!Number.isFinite(pid) || pid <= 0) {
+          displayToast("We couldn't determine this player's account", "error");
+          return;
+        }
+
+        setInviteProgress((prev) => ({ ...prev, [pid]: "sending" }));
+
+        try {
+          await sendInvites(match.id, { playerIds: [pid] });
+          setInviteProgress((prev) => ({ ...prev, [pid]: "sent" }));
+          setRecommendations((prev) =>
+            prev.filter((candidate) => {
+              const candidateId = Number(
+                candidate?.user_id ??
+                  candidate?.id ??
+                  candidate?.player_id ??
+                  candidate?.playerId ??
+                  candidate?.profile?.player_id ??
+                  candidate?.profile?.id,
+              );
+              return candidateId !== pid;
+            }),
+          );
+          displayToast(
+            `Invite sent to ${
+              player?.full_name || player?.name || `Player ${pid}`
+            }!`,
+          );
+          fetchMatches();
+        } catch (error) {
+          console.error("Failed to send invite", error);
+          setInviteProgress((prev) => ({ ...prev, [pid]: "error" }));
+          displayToast(
+            error?.response?.data?.message ||
+              error?.message ||
+              "Failed to send invite",
+            "error",
+          );
+        }
+      },
+      [displayToast, fetchMatches, match.id],
+    );
 
     const getNTRPDisplay = (skillLevel) => {
       if (!skillLevel || skillLevel === "Any Level") return null;
@@ -2609,12 +3000,12 @@ const TennisMatchApp = () => {
                 PRIVATE
               </span>
             )}
-            {match.status === "draft" && (
+            {statusValue === "draft" && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-yellow-50 to-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-black">
                 DRAFT
               </span>
             )}
-            {match.status === "cancelled" && (
+            {statusValue === "cancelled" && (
               <span className="px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
                 CANCELLED
               </span>
@@ -2644,16 +3035,124 @@ const TennisMatchApp = () => {
               className="relative rounded-lg p-2 transition-colors hover:bg-gray-100"
             >
               <MoreVertical className="w-4 h-4 text-gray-400" />
-                {showMatchMenu === match.id && (
-                  <MatchMenu
-                    type={isHosted ? "host" : "player"}
-                    matchId={match.id}
-                    onClose={() => setShowMatchMenu(null)}
-                  />
-                )}
+              {showMatchMenu === match.id && (
+                <MatchMenu
+                  type={isHosted ? "host" : "player"}
+                  matchId={match.id}
+                  onClose={() => setShowMatchMenu(null)}
+                />
+              )}
             </button>
           )}
         </div>
+
+        {hasLowOccupancyAlert && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-black text-amber-900">
+                    Need {spotsNeeded}{" "}
+                    {spotsNeeded === 1 ? "player" : "players"}{" "}
+                    {timeUntilStartLabel || "soon"}
+                  </p>
+                  <p className="text-xs font-semibold text-amber-700">
+                    Roster: {rosterCount}
+                    {playerLimit ? ` / ${playerLimit}` : ""} players confirmed
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => openInviteScreen(match.id)}
+                    className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50"
+                  >
+                    Manage invites
+                  </button>
+                  <button
+                    onClick={() => setShowRecommendations((prev) => !prev)}
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-amber-600"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {showRecommendations ? "Hide recommendations" : "Smart invite suggestions"}
+                  </button>
+                </div>
+                {showRecommendations && (
+                  <div className="space-y-3 rounded-lg bg-white/80 p-3">
+                    {recommendationStatus === "loading" ? (
+                      <p className="flex items-center gap-2 text-xs font-semibold text-amber-700">
+                        <Sparkles className="h-4 w-4 animate-spin" /> Finding likely substitutes…
+                      </p>
+                    ) : recommendationStatus === "error" ? (
+                      <p className="text-xs font-semibold text-red-600">{recommendationError}</p>
+                    ) : recommendationStatus === "empty" ? (
+                      <p className="text-xs font-semibold text-amber-700">
+                        We couldn't find ready-made recommendations. Try the full invite tool for more options.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {recommendations.map((player) => {
+                          const pid = Number(
+                            player?.user_id ??
+                              player?.id ??
+                              player?.player_id ??
+                              player?.playerId ??
+                              player?.profile?.player_id ??
+                              player?.profile?.id,
+                          );
+                          const inviteState = inviteProgress[pid];
+                          return (
+                            <li
+                              key={`${match.id}-${pid}`}
+                              className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-100 bg-white/70 px-3 py-2"
+                            >
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-xs font-black text-amber-800">
+                                {getAvatarInitials(player).slice(0, 2)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-bold text-amber-900">
+                                  {player?.full_name || player?.name || (Number.isFinite(pid) ? `Player ${pid}` : "Unknown player")}
+                                </p>
+                                {player?.lastPlayedAt && (
+                                  <p className="text-[11px] font-semibold text-amber-600">
+                                    Last played {formatDateTime(player.lastPlayedAt)}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleQuickInvite(player)}
+                                disabled={inviteState === "sending" || inviteState === "sent"}
+                                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                                  inviteState === "sent"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : inviteState === "sending"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-amber-500 text-white hover:bg-amber-600"
+                                }`}
+                              >
+                                {inviteState === "sent" ? (
+                                  <>
+                                    <Check className="h-3.5 w-3.5" /> Sent
+                                  </>
+                                ) : inviteState === "sending" ? (
+                                  "Sending…"
+                                ) : (
+                                  <>
+                                    <Send className="h-3.5 w-3.5" /> Invite
+                                  </>
+                                )}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 mb-4">
           <div className="flex items-start gap-3">
@@ -2686,126 +3185,128 @@ const TennisMatchApp = () => {
                     match.location
                   )
                 ) : (
-                  "Location TBA"
+                  <span className="text-gray-500">Location details coming soon</span>
                 )}
               </p>
               <p className="text-xs font-semibold text-gray-500">{locationSubtitle}</p>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3 pb-4 mb-4 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-amber-500" />
-            <span className="text-sm font-bold text-gray-700">
-              {match.format}
-            </span>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex items-center justify-center">
+              <Users className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-gray-900">{playerCapacityLabel}</p>
+              {match.spotsAvailable !== null && (
+                <p className="text-xs font-semibold text-gray-500">
+                  {match.spotsAvailable > 0
+                    ? `${match.spotsAvailable} spot${
+                        match.spotsAvailable === 1 ? "" : "s"
+                      } available`
+                    : "Roster is full"}
+                </p>
+              )}
+            </div>
           </div>
-          {match.type === "open" && getNTRPDisplay(match.skillLevel) && (
-            <>
-              <span className="text-gray-300">•</span>
-              <span className="text-sm font-black text-gray-900 bg-gradient-to-r from-amber-50 to-orange-50 px-2.5 py-1 rounded-lg">
-                NTRP {getNTRPDisplay(match.skillLevel)}
-              </span>
-            </>
+          {match.skillLevel && (
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl flex items-center justify-center">
+                <Star className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-gray-900">
+                  Skill level: {match.skillLevel}
+                </p>
+                {getNTRPDisplay(match.skillLevel) && (
+                  <p className="text-xs font-semibold text-gray-500">
+                    Suggested NTRP {getNTRPDisplay(match.skillLevel)}
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
-            <Users className="w-4 h-4" /> {playerCapacityLabel}
-          </div>
-          <span className="text-xs text-gray-600 font-bold">
-            {isArchived
-              ? "ARCHIVED"
-              : Number.isFinite(match.spotsAvailable)
-              ? match.spotsAvailable === 0
-                ? "FULL"
-                : `${match.spotsAvailable} SPOT${
-                    match.spotsAvailable === 1 ? "" : "S"
-                  } LEFT`
-              : ""}
-          </span>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => handleViewDetails(match.id)}
-            className="w-full rounded-xl border-2 border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 sm:w-auto"
-          >
-            View & manage
-          </button>
-          {match.type === "available" && isUpcoming && !isArchived && (
+        <div className="border-t border-gray-100 pt-4 mt-4">
+          <p className="text-sm font-semibold text-gray-600 mb-3">Actions</p>
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={async () => {
-                if (!currentUser) {
-                  setShowSignInModal(true);
-                } else {
-                  try {
-                    await joinMatch(match.id);
-
+              onClick={() => handleViewDetails(match.id)}
+              className="w-full rounded-xl border-2 border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 sm:w-auto"
+            >
+              View & manage
+            </button>
+            {match.type === "available" && isUpcoming && !isArchived && (
+              <button
+                onClick={async () => {
+                  if (!currentUser) {
+                    setShowSignInModal(true);
+                  } else {
                     try {
-                      const data = await fetchMatchDetailsWithArchivedFallback(
-                        match.id,
-                      );
-                      if (data) {
-                        setMatchDetailsOrigin(currentScreen);
-                        const viewerInvite = pendingInvites.find((invite) => {
-                          const inviteMatchId =
-                            invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
-                          return matchIdsEqual(inviteMatchId, match.id);
-                        });
-                        const nextData =
-                          viewerInvite && data && typeof data === "object"
-                            ? { ...data, viewerInvite }
-                            : data;
-                        setViewMatch(nextData);
-                        setShowMatchDetailsModal(true);
-                      }
-                    } catch (detailsError) {
-                      console.error(detailsError);
-                      displayToast(
-                        "Joined the match, but we couldn't load the details. Try again in a moment.",
-                        "info",
-                      );
-                    }
+                      await joinMatch(match.id);
 
-                    await Promise.all([
-                      fetchMatches(),
-                      fetchPendingInvites(),
-                    ]);
-                  } catch (err) {
-                    if (isMatchArchivedError(err)) {
+                      try {
+                        const data = await fetchMatchDetailsWithArchivedFallback(
+                          match.id,
+                        );
+                        if (data) {
+                          setMatchDetailsOrigin(currentScreen);
+                          const viewerInvite = pendingInvites.find((invite) => {
+                            const inviteMatchId =
+                              invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
+                            return matchIdsEqual(inviteMatchId, match.id);
+                          });
+                          const nextData =
+                            viewerInvite && data && typeof data === "object"
+                              ? { ...data, viewerInvite }
+                              : data;
+                          setViewMatch(nextData);
+                          setShowMatchDetailsModal(true);
+                        }
+                      } catch (detailsError) {
+                        console.error(detailsError);
+                        displayToast(
+                          "Joined the match, but we couldn't load the details. Try again in a moment.",
+                          "info",
+                        );
+                      }
+
+                      await Promise.all([
+                        fetchMatches(),
+                        fetchPendingInvites(),
+                      ]);
+                    } catch (err) {
+                      if (isMatchArchivedError(err)) {
+                        displayToast(
+                          "This match has been archived. You can't join.",
+                          "error",
+                        );
+                        fetchMatches();
+                        return;
+                      }
                       displayToast(
-                        "This match has been archived. You can't join.",
+                        err.response?.data?.message || "Failed to join match",
                         "error",
                       );
-                      fetchMatches();
-                      return;
                     }
-                    displayToast(
-                      err.response?.data?.message || "Failed to join match",
-                      "error",
-                    );
                   }
-                }
-              }}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl sm:w-auto"
-            >
-              <Zap className="w-4 h-4" />
-              Join match
-            </button>
-          )}
-          {isArchived && (
-            <span className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600">
-              Archived matches are read-only
-            </span>
-          )}
+                }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl sm:w-auto"
+              >
+                <Zap className="w-4 h-4" />
+                Join match
+              </button>
+            )}
+            {isArchived && (
+              <span className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600">
+                Archived matches are read-only
+              </span>
+            )}
+          </div>
         </div>
       </div>
     );
   };
-
   const MatchMenu = ({ type, matchId, onClose }) => {
     useEffect(() => {
       const handleClickOutside = (e) => {
