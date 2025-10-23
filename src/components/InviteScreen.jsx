@@ -10,6 +10,7 @@ import {
   X,
   Send,
   Sparkles,
+  AlertCircle,
 } from "lucide-react";
 import {
   getMatch,
@@ -21,13 +22,19 @@ import {
   listMatches,
 } from "../services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
-import { idsMatch, uniqueActiveParticipants } from "../utils/participants";
+import {
+  idsMatch,
+  uniqueActiveParticipants,
+  uniqueInvitees,
+  countUniqueMatchOccupants,
+} from "../utils/participants";
 import {
   collectMemberIds,
   memberMatchesAnyId,
   memberMatchesParticipant,
 } from "../utils/memberIdentity";
 import { buildRecentPartnerSuggestions } from "../utils/inviteSuggestions";
+import { evaluateLowOccupancyAlert } from "../utils/matchAlerts";
 
 const InviteScreen = ({
   matchId,
@@ -53,11 +60,15 @@ const InviteScreen = ({
   const [participants, setParticipants] = useState([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState("");
+  const [invitees, setInvitees] = useState([]);
   const [hostId, setHostId] = useState(null);
   const [isArchived, setIsArchived] = useState(false);
   const [suggestedPlayers, setSuggestedPlayers] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsError, setSuggestionsError] = useState("");
+  const [smartRecommendations, setSmartRecommendations] = useState([]);
+  const [smartRecommendationsLoading, setSmartRecommendationsLoading] = useState(false);
+  const [smartRecommendationsError, setSmartRecommendationsError] = useState("");
 
   const matchType =
     typeof matchData?.type === "string" ? matchData.type.toLowerCase() : "";
@@ -66,6 +77,205 @@ const InviteScreen = ({
   const memberIdentities = useMemo(
     () => collectMemberIds(currentUser),
     [currentUser],
+  );
+
+  const formatTimeUntil = (hours) => {
+    if (!Number.isFinite(hours) || hours <= 0) {
+      return "less than an hour";
+    }
+    if (hours < 1) {
+      const minutes = Math.max(Math.round(hours * 60), 1);
+      return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+    }
+    if (hours < 24) {
+      const rounded = Math.round(hours);
+      return `${rounded} hour${rounded === 1 ? "" : "s"}`;
+    }
+    const days = Math.round(hours / 24);
+    return `${days} day${days === 1 ? "" : "s"}`;
+  };
+
+  const lowOccupancy = matchData?.lowOccupancy ?? null;
+  const lowOccupancyStyles = {
+    urgent: {
+      container: "border-red-200 bg-red-50 text-red-700",
+      badge: "bg-red-500 text-white",
+      button: "bg-red-500 text-white hover:bg-red-600",
+    },
+    warning: {
+      container: "border-amber-200 bg-amber-50 text-amber-700",
+      badge: "bg-amber-500 text-white",
+      button: "bg-amber-500 text-white hover:bg-amber-600",
+    },
+    soon: {
+      container: "border-blue-200 bg-blue-50 text-blue-700",
+      badge: "bg-blue-500 text-white",
+      button: "bg-blue-500 text-white hover:bg-blue-600",
+    },
+  };
+  const lowOccupancySeverity = lowOccupancy?.severity ?? "warning";
+  const lowOccupancyTokens =
+    lowOccupancyStyles[lowOccupancySeverity] || lowOccupancyStyles.warning;
+  const lowOccupancyLabel =
+    lowOccupancySeverity === "urgent"
+      ? "Act now"
+      : lowOccupancySeverity === "warning"
+      ? "Needs attention"
+      : "Monitor";
+  const lowOccupancyTimeLabel = lowOccupancy
+    ? formatTimeUntil(lowOccupancy.hoursUntil)
+    : "";
+  const outstandingShortfall = lowOccupancy?.shortfall ?? 0;
+  const outstandingInvites = lowOccupancy?.inviteCoverage ?? 0;
+
+  const buildSmartSearchTerms = useCallback(() => {
+    const terms = new Set();
+    const skill = matchData?.skillLevel;
+    if (typeof skill === "string") {
+      const trimmed = skill.trim();
+      if (trimmed && trimmed.toLowerCase() !== "any level") {
+        terms.add(trimmed);
+        const rating = trimmed.split(/[\s-]/)[0];
+        if (rating) terms.add(rating);
+      }
+    }
+    const format = matchData?.format;
+    if (typeof format === "string") {
+      const trimmed = format.trim();
+      if (trimmed) terms.add(trimmed);
+    }
+    const locationText = matchData?.location;
+    if (typeof locationText === "string") {
+      const primary = locationText.split(",")[0].trim();
+      if (primary.length >= 3) terms.add(primary);
+    }
+    terms.add("");
+    return Array.from(terms);
+  }, [matchData?.format, matchData?.location, matchData?.skillLevel]);
+
+  const recalcLowOccupancy = useCallback(
+    (nextParticipants = participants, nextInvitees = invitees) => {
+      setMatchData((prev) => {
+        if (!prev) return prev;
+        const status = prev.status || "upcoming";
+        const lowOccupancyData = evaluateLowOccupancyAlert({
+          status,
+          startDateTime: prev.dateTime,
+          playerLimit: prev.playerCount,
+          activeParticipants: nextParticipants,
+          dedupedInvitees: nextInvitees,
+        });
+        const occupiedCount = countUniqueMatchOccupants(
+          nextParticipants,
+          nextInvitees,
+        );
+        return {
+          ...prev,
+          occupied: occupiedCount,
+          lowOccupancy: lowOccupancyData,
+        };
+      });
+    },
+    [invitees, participants, setMatchData],
+  );
+
+  const fetchSmartRecommendations = useCallback(
+    async (aliveCheck = () => true) => {
+      if (!lowOccupancy || outstandingShortfall <= 0) {
+        if (aliveCheck()) {
+          setSmartRecommendations([]);
+          setSmartRecommendationsError("");
+          setSmartRecommendationsLoading(false);
+        }
+        return;
+      }
+
+      const desired = Math.max(outstandingShortfall + 2, 4);
+      const perPage = Math.max(desired * 2, 12);
+      const searchTerms = buildSmartSearchTerms();
+      const blockedIds = new Set(
+        existingPlayerIds instanceof Set
+          ? existingPlayerIds
+          : Array.isArray(existingPlayerIds)
+          ? existingPlayerIds
+          : [],
+      );
+      participants.forEach((participant) => {
+        const pid = Number(participant.player_id);
+        if (Number.isFinite(pid) && pid > 0) {
+          blockedIds.add(pid);
+        }
+      });
+      invitees.forEach((invite) => {
+        const pid = Number(invite.invitee_id || invite.player_id || invite.id);
+        if (Number.isFinite(pid) && pid > 0) {
+          blockedIds.add(pid);
+        }
+      });
+      if (currentUser?.id) {
+        const uid = Number(currentUser.id);
+        if (Number.isFinite(uid) && uid > 0) {
+          blockedIds.add(uid);
+        }
+      }
+
+      setSmartRecommendationsLoading(true);
+      setSmartRecommendationsError("");
+
+      const collected = [];
+      const seen = new Set();
+      let lastError = null;
+
+      for (const term of searchTerms) {
+        if (!aliveCheck()) return;
+        try {
+          const data = await searchPlayers({
+            search: term,
+            page: 1,
+            perPage,
+          });
+          const players = Array.isArray(data?.players) ? data.players : [];
+          players.forEach((player) => {
+            const pid = Number(player.user_id ?? player.id);
+            if (!Number.isFinite(pid) || pid <= 0) return;
+            if (blockedIds.has(pid) || seen.has(pid)) return;
+            seen.add(pid);
+            collected.push({ ...player, user_id: pid });
+          });
+          if (collected.length >= desired) break;
+        } catch (error) {
+          console.error("Failed to load smart invite recommendations", error);
+          lastError = error;
+        }
+      }
+
+      if (!aliveCheck()) return;
+
+      if (collected.length === 0) {
+        setSmartRecommendations([]);
+        setSmartRecommendationsError(
+          lastError
+            ? "We couldn't load recommendations right now. Try refreshing."
+            : "No ready substitutes found yet. Try searching manually or refreshing soon.",
+        );
+      } else {
+        setSmartRecommendations(collected.slice(0, desired));
+        setSmartRecommendationsError("");
+      }
+
+      if (aliveCheck()) {
+        setSmartRecommendationsLoading(false);
+      }
+    },
+    [
+      buildSmartSearchTerms,
+      currentUser,
+      existingPlayerIds,
+      invitees,
+      lowOccupancy,
+      outstandingShortfall,
+      participants,
+    ],
   );
 
   const fetchSuggestedPlayers = useCallback(
@@ -158,16 +368,62 @@ const InviteScreen = ({
         setIsArchived(archived);
         if (archived) {
           setParticipants([]);
+          setInvitees([]);
           setParticipantsError("This match has been archived. Invites are read-only.");
           onToast("This match has been archived. Invites are read-only.", "error");
           return;
         }
-        setParticipants(uniqueActiveParticipants(data.participants));
+        const participantList = uniqueActiveParticipants(data.participants);
+        const inviteList = uniqueInvitees(
+          Array.isArray(data.invitees)
+            ? data.invitees
+            : Array.isArray(data.match?.invitees)
+            ? data.match.invitees
+            : [],
+        );
+        setParticipants(participantList);
+        setInvitees(inviteList);
         setHostId(data.match?.host_id ?? null);
+        setExistingPlayerIds(() => {
+          const ids = new Set();
+          participantList.forEach((participant) => {
+            const pid = Number(participant.player_id);
+            if (Number.isFinite(pid) && pid > 0) ids.add(pid);
+          });
+          inviteList.forEach((invite) => {
+            const pid = Number(
+              invite.invitee_id ?? invite.player_id ?? invite.id,
+            );
+            if (Number.isFinite(pid) && pid > 0) ids.add(pid);
+          });
+          return ids;
+        });
+        setMatchData((prev) => {
+          if (!prev) return prev;
+          const status = data.match?.status || prev.status || "upcoming";
+          const lowOccupancyData = evaluateLowOccupancyAlert({
+            status,
+            startDateTime: data.match?.start_date_time || prev.dateTime,
+            playerLimit: prev.playerCount,
+            activeParticipants: participantList,
+            dedupedInvitees: inviteList,
+          });
+          const occupiedCount = countUniqueMatchOccupants(
+            participantList,
+            inviteList,
+          );
+          return {
+            ...prev,
+            status,
+            occupied: occupiedCount,
+            lowOccupancy: lowOccupancyData,
+          };
+        });
       } catch (error) {
         console.error(error);
         if (!alive) return;
         setParticipants([]);
+        setInvitees([]);
         if (isMatchArchivedError(error)) {
           setIsArchived(true);
           setParticipantsError("This match has been archived. Invites are read-only.");
@@ -183,6 +439,22 @@ const InviteScreen = ({
       alive = false;
     };
   }, [matchId, onToast]);
+
+  useEffect(() => {
+    let alive = true;
+    if (isArchived) {
+      setSmartRecommendations([]);
+      setSmartRecommendationsError("");
+      setSmartRecommendationsLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
+    fetchSmartRecommendations(() => alive);
+    return () => {
+      alive = false;
+    };
+  }, [fetchSmartRecommendations, isArchived, lowOccupancy?.shortfall]);
 
   useEffect(() => {
     const shouldSearch =
@@ -268,6 +540,75 @@ const InviteScreen = ({
     [setSelectedPlayers],
   );
 
+  const filteredSmartRecommendations = useMemo(() => {
+    const blocked =
+      existingPlayerIds instanceof Set
+        ? new Set(existingPlayerIds)
+        : new Set(existingPlayerIds || []);
+    const selectedIds = new Set(
+      Array.from(selectedPlayers.keys()).map((id) => Number(id)),
+    );
+    if (currentUser?.id) {
+      const uid = Number(currentUser.id);
+      if (Number.isFinite(uid) && uid > 0) {
+        blocked.add(uid);
+      }
+    }
+    return smartRecommendations.filter((player) => {
+      const pid = Number(player.user_id);
+      if (!Number.isFinite(pid) || pid <= 0) return false;
+      if (blocked.has(pid)) return false;
+      if (selectedIds.has(pid)) return false;
+      return true;
+    });
+  }, [smartRecommendations, existingPlayerIds, selectedPlayers, currentUser]);
+
+  const recommendationLimit = Math.max(
+    Math.min(outstandingShortfall + 2, 6),
+    Math.min(filteredSmartRecommendations.length, 3),
+  );
+
+  const displayedSmartRecommendations = useMemo(
+    () => filteredSmartRecommendations.slice(0, recommendationLimit),
+    [filteredSmartRecommendations, recommendationLimit],
+  );
+
+  const handleAddSmartPlayer = useCallback(
+    (player) => {
+      const pid = Number(player.user_id);
+      if (!Number.isFinite(pid) || pid <= 0) return;
+      setSelectedPlayers((prev) => {
+        if (prev.has(pid)) return prev;
+        const next = new Map(prev);
+        next.set(pid, { ...player, user_id: pid });
+        return next;
+      });
+    },
+    [setSelectedPlayers],
+  );
+
+  const handleAddAllSmartPlayers = useCallback(() => {
+    if (displayedSmartRecommendations.length === 0) return;
+    let added = 0;
+    setSelectedPlayers((prev) => {
+      const next = new Map(prev);
+      displayedSmartRecommendations.forEach((player) => {
+        const pid = Number(player.user_id);
+        if (!Number.isFinite(pid) || pid <= 0) return;
+        if (next.has(pid)) return;
+        next.set(pid, { ...player, user_id: pid });
+        added += 1;
+      });
+      return next;
+    });
+    if (added > 0) {
+      onToast?.(
+        `Added ${added} recommended substitute${added === 1 ? "" : "s"} to your invite list.`,
+        "success",
+      );
+    }
+  }, [displayedSmartRecommendations, onToast, setSelectedPlayers]);
+
   const participantIsHost = (participant) => {
     if (!participant) return false;
     if (hostId) {
@@ -312,18 +653,16 @@ const InviteScreen = ({
     }
     try {
       await removeParticipant(matchId, playerId);
-      setParticipants((prev) =>
-        prev.filter((p) => !idsMatch(p.player_id, playerId)),
-      );
+      setParticipants((prev) => {
+        const next = prev.filter((p) => !idsMatch(p.player_id, playerId));
+        recalcLowOccupancy(next, invitees);
+        return next;
+      });
       setExistingPlayerIds((prev) => {
         const next = new Set([...prev]);
         next.delete(playerId);
         return next;
       });
-      setMatchData((prev) => ({
-        ...prev,
-        occupied: Math.max((prev.occupied || 1) - 1, 0),
-      }));
       onToast("Participant removed");
     } catch (err) {
       if (isMatchArchivedError(err)) {
@@ -410,6 +749,100 @@ const InviteScreen = ({
             Need {matchData.playerCount - matchData.occupied} more{" "}
             {matchData.playerCount - matchData.occupied === 1 ? "player" : "players"}
           </p>
+          {lowOccupancy && !isArchived && (
+            <div
+              className={`mb-4 rounded-2xl border px-4 py-4 text-sm font-semibold ${lowOccupancyTokens.container}`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="text-sm font-black">Low occupancy alert</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${lowOccupancyTokens.badge}`}
+                  >
+                    {lowOccupancyLabel}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchSmartRecommendations(() => true)}
+                  disabled={smartRecommendationsLoading}
+                  className="text-xs font-bold underline-offset-2 text-current hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Refresh suggestions
+                </button>
+              </div>
+              <p className="mt-2 text-sm font-semibold">
+                Need {lowOccupancy.openSpots} more player
+                {lowOccupancy.openSpots === 1 ? "" : "s"} before the match starts in {lowOccupancyTimeLabel}. {" "}
+                {outstandingInvites > 0
+                  ? `Only ${outstandingInvites} outstanding invite${
+                      outstandingInvites === 1 ? "" : "s"
+                    } are out right now.`
+                  : "No outstanding invites are out yet."}
+              </p>
+              <div className="mt-4 space-y-3">
+                {smartRecommendationsLoading ? (
+                  <p className="text-sm">Finding ready-to-play substitutes…</p>
+                ) : smartRecommendationsError ? (
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {smartRecommendationsError}
+                  </div>
+                ) : displayedSmartRecommendations.length > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span>Smart substitutes</span>
+                      <button
+                        type="button"
+                        onClick={handleAddAllSmartPlayers}
+                        className={`rounded-lg px-3 py-1 font-black transition-colors ${lowOccupancyTokens.button}`}
+                      >
+                        Invite all
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {displayedSmartRecommendations.map((player) => {
+                        const name = player.full_name || "Unknown player";
+                        const skill = player.skill_level || player.ntrp || "";
+                        const pid = Number(player.user_id);
+                        return (
+                          <div
+                            key={pid}
+                            className="rounded-xl border border-white/60 bg-white/60 px-3 py-3 shadow-sm backdrop-blur"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-bold text-gray-900">{name}</p>
+                                {skill && (
+                                  <p className="text-xs font-semibold text-gray-500">NTRP {skill}</p>
+                                )}
+                                {player.home_court && (
+                                  <p className="text-xs font-semibold text-gray-400">
+                                    {player.home_court}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAddSmartPlayer(player)}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-black transition-all ${lowOccupancyTokens.button}`}
+                              >
+                                Invite
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm">
+                    We'll surface nearby substitutes as soon as we spot good matches. Try searching manually in the meantime.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           {isArchived && (
             <div className="mb-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
               <span className="font-black">ARCHIVED</span>
