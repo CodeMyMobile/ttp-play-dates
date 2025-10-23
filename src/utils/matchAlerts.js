@@ -4,9 +4,30 @@ import {
   dedupeByIdentity,
 } from "./participants";
 
-const DEFAULT_LOOKAHEAD_HOURS = 48;
+const DEFAULT_LOOKAHEAD_HOURS = 24 * 7; // one week lookahead by default
 const URGENT_THRESHOLD_HOURS = 12;
 const WARNING_THRESHOLD_HOURS = 24;
+const DRAFT_STATUS = "draft";
+const FINALIZED_STATUS_KEYWORDS = [
+  "archive",
+  "cancel",
+  "complete",
+  "finish",
+  "final",
+  "closed",
+  "past",
+  "expired",
+];
+
+const isInactiveMatchStatus = (status) => {
+  if (!status) return false;
+  const normalized = status.toString().trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === DRAFT_STATUS) return true;
+  return FINALIZED_STATUS_KEYWORDS.some((keyword) =>
+    normalized.includes(keyword),
+  );
+};
 
 const toDate = (value) => {
   if (!value) return null;
@@ -42,7 +63,7 @@ export const evaluateLowOccupancyAlert = ({
 } = {}) => {
   const normalizedStatus =
     typeof status === "string" ? status.trim().toLowerCase() : "";
-  if (normalizedStatus && normalizedStatus !== "upcoming") {
+  if (isInactiveMatchStatus(normalizedStatus)) {
     return null;
   }
 
