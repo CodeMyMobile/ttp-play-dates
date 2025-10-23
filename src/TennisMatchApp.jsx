@@ -90,6 +90,8 @@ import {
   memberMatchesParticipant,
 } from "./utils/memberIdentity";
 import { getMatchPrivacy } from "./utils/matchPrivacy";
+import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
+import { buildRecentPartnerSuggestions } from "./utils/inviteSuggestions";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -540,17 +542,6 @@ const collectHostContactDetails = (match) => {
   return { emails, normalizedPhones, phoneDigits };
 };
 
-const createInitials = (name, fallbackEmail) => {
-  const source = (name || fallbackEmail || "").trim();
-  if (!source) return "MP";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "MP";
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
-
 const toPlainObject = (value) =>
   value && typeof value === "object" ? { ...value } : null;
 
@@ -664,7 +655,14 @@ const buildLocalUser = ({
     email,
     phone: phone || "",
     skillLevel: skillLevel || "",
-    avatar: createInitials(safeName, email),
+    avatar: getAvatarInitials(safeName, email),
+    avatarUrl: getAvatarUrlFromPlayer({
+      profile: normalizedProfile,
+      player: normalizedProfile,
+      user: normalizedUserRecord,
+      account: normalizedAccount,
+      member: normalizedMember,
+    }),
     rating: 4.2,
     profile: normalizedProfile,
     account: normalizedAccount,
@@ -918,7 +916,24 @@ const TennisMatchApp = () => {
   // Track players already part of the match (participants or previously invited)
   const [existingPlayerIds, setExistingPlayerIds] = useState(new Set());
   const [editMatch, setEditMatch] = useState(null);
-  const [viewMatch, setViewMatch] = useState(null);
+  const [viewMatch, setViewMatchState] = useState(null);
+  const setViewMatch = useCallback((value) => {
+    setViewMatchState((previous) => {
+      const nextValue =
+        typeof value === "function" ? value(previous) : value;
+      if (
+        nextValue &&
+        typeof nextValue === "object" &&
+        previous &&
+        typeof previous === "object" &&
+        previous.viewerInvite &&
+        !nextValue.viewerInvite
+      ) {
+        return { ...nextValue, viewerInvite: previous.viewerInvite };
+      }
+      return nextValue;
+    });
+  }, []);
   const [showMatchDetailsModal, setShowMatchDetailsModal] = useState(false);
   const [matchDetailsOrigin, setMatchDetailsOrigin] = useState("browse");
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -2245,7 +2260,11 @@ const TennisMatchApp = () => {
               const data = await fetchMatchDetailsWithArchivedFallback(matchId);
               if (data) {
                 setMatchDetailsOrigin("browse");
-                setViewMatch(data);
+                const nextData =
+                  data && typeof data === "object"
+                    ? { ...data, viewerInvite: invite }
+                    : data;
+                setViewMatch(nextData);
                 setShowMatchDetailsModal(true);
               }
             } catch (error) {
@@ -2265,7 +2284,16 @@ const TennisMatchApp = () => {
     fetchMatchDetailsWithArchivedFallback,
   ]);
 
-  const handleViewDetails = async (matchId) => {
+  const matchIdsEqual = (a, b) => {
+    if (a === undefined || a === null) return false;
+    if (b === undefined || b === null) return false;
+    if (a === b) return true;
+    const aString = a.toString();
+    const bString = b.toString();
+    return aString === bString;
+  };
+
+  const handleViewDetails = async (matchId, options = {}) => {
     try {
       const data = await fetchMatchDetailsWithArchivedFallback(matchId);
       if (!data) {
@@ -2275,8 +2303,20 @@ const TennisMatchApp = () => {
       if ((data.match || {}).status === "archived" && activeFilter !== "archived") {
         setActiveFilter("archived");
       }
+      const viewerInvite = (() => {
+        if (options.pendingInvite) return options.pendingInvite;
+        return pendingInvites.find((invite) => {
+          const inviteMatchId =
+            invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
+          return matchIdsEqual(inviteMatchId, matchId);
+        });
+      })();
       setMatchDetailsOrigin(currentScreen);
-      setViewMatch(data);
+      const nextData =
+        viewerInvite && data && typeof data === "object"
+          ? { ...data, viewerInvite }
+          : data;
+      setViewMatch(nextData);
       setShowMatchDetailsModal(true);
     } catch (err) {
       if (isMatchArchivedError(err)) {
@@ -2740,7 +2780,11 @@ const TennisMatchApp = () => {
                           </button>
                           {invite.match?.id && (
                             <button
-                              onClick={() => handleViewDetails(invite.match.id)}
+                              onClick={() =>
+                                handleViewDetails(invite.match.id, {
+                                  pendingInvite: invite,
+                                })
+                              }
                               className="w-full px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold text-xs border border-white/30 hover:bg-white/20 transition-colors"
                             >
                               View & manage
@@ -3138,7 +3182,16 @@ const TennisMatchApp = () => {
                       );
                       if (data) {
                         setMatchDetailsOrigin(currentScreen);
-                        setViewMatch(data);
+                        const viewerInvite = pendingInvites.find((invite) => {
+                          const inviteMatchId =
+                            invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
+                          return matchIdsEqual(inviteMatchId, match.id);
+                        });
+                        const nextData =
+                          viewerInvite && data && typeof data === "object"
+                            ? { ...data, viewerInvite }
+                            : data;
+                        setViewMatch(nextData);
                         setShowMatchDetailsModal(true);
                       }
                     } catch (detailsError) {
@@ -4163,6 +4216,13 @@ const TennisMatchApp = () => {
     const [participantsLoading, setParticipantsLoading] = useState(false);
     const [participantsError, setParticipantsError] = useState("");
     const [hostId, setHostId] = useState(null);
+    const [suggestedPlayers, setSuggestedPlayers] = useState([]);
+    const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+    const [suggestionsError, setSuggestionsError] = useState("");
+
+    const matchType =
+      typeof matchData?.type === "string" ? matchData.type.toLowerCase() : "";
+    const isPrivateMatch = matchType === "closed" || matchType === "private";
 
     // Local state for manual phone invites (isolated from search input)
     const [localContactName, setLocalContactName] = useState("");
@@ -4258,6 +4318,48 @@ const TennisMatchApp = () => {
       setTimeout(() => setCopiedLink(false), 2000);
     };
 
+    const fetchSuggestedPlayers = useCallback(
+      async (aliveCheck = () => true) => {
+        if (!aliveCheck()) return;
+        if (!isPrivateMatch || !currentUser) {
+          if (aliveCheck()) {
+            setSuggestedPlayers([]);
+            setSuggestionsError("");
+            setSuggestionsLoading(false);
+          }
+          return;
+        }
+
+        setSuggestionsLoading(true);
+        setSuggestionsError("");
+
+        try {
+          const data = await listMatches("my", { perPage: 25 });
+          if (!aliveCheck()) return;
+          const matches = Array.isArray(data?.matches) ? data.matches : [];
+          const suggestions = buildRecentPartnerSuggestions({
+            matches,
+            currentUser,
+            memberIdentities: memberIdentityIds,
+          });
+          if (!aliveCheck()) return;
+          setSuggestedPlayers(suggestions);
+        } catch (error) {
+          console.error("Failed to load suggested players", error);
+          if (!aliveCheck()) return;
+          setSuggestedPlayers([]);
+          setSuggestionsError(
+            "We couldn't load suggestions right now. Try refreshing.",
+          );
+        } finally {
+          if (aliveCheck()) {
+            setSuggestionsLoading(false);
+          }
+        }
+      },
+      [isPrivateMatch, currentUser, memberIdentityIds],
+    );
+
     const toastShareError = React.useCallback(
       (error) => {
         onToast(
@@ -4313,7 +4415,11 @@ const TennisMatchApp = () => {
     }, [matchId, onToast]);
 
     useEffect(() => {
-      if (searchTerm === "" || searchTerm.length >= 2) {
+      const shouldSearch =
+        (!isPrivateMatch && (searchTerm === "" || searchTerm.length >= 2)) ||
+        (isPrivateMatch && searchTerm.length >= 2);
+
+      if (shouldSearch) {
         searchPlayers({ search: searchTerm, page, perPage })
           .then((data) => {
             setPlayers(data.players || []);
@@ -4329,7 +4435,7 @@ const TennisMatchApp = () => {
         setPlayers([]);
         setPagination(null);
       }
-    }, [searchTerm, page, onToast]);
+    }, [searchTerm, page, onToast, isPrivateMatch]);
 
     // Focus the search box when the invite screen opens, but don't steal focus
     // from other inputs (like the phone contact form) while the host is typing.
@@ -4346,6 +4452,51 @@ const TennisMatchApp = () => {
       if (isEditingAnotherField) return;
       input.focus();
     }, []);
+
+    useEffect(() => {
+      let alive = true;
+      const aliveCheck = () => alive;
+      fetchSuggestedPlayers(aliveCheck);
+      return () => {
+        alive = false;
+      };
+    }, [fetchSuggestedPlayers, matchId]);
+
+    const filteredSuggestions = useMemo(() => {
+      if (!Array.isArray(suggestedPlayers) || suggestedPlayers.length === 0) {
+        return [];
+      }
+      const blockedIds =
+        existingPlayerIds instanceof Set
+          ? existingPlayerIds
+          : new Set(existingPlayerIds || []);
+      return suggestedPlayers.filter((player) => {
+        const pid = Number(player.user_id);
+        if (!Number.isFinite(pid) || pid <= 0) return false;
+        if (blockedIds.has(pid)) return false;
+        if (selectedPlayers.has(pid)) return false;
+        return true;
+      });
+    }, [suggestedPlayers, existingPlayerIds, selectedPlayers]);
+
+    const topSuggestions = useMemo(
+      () => filteredSuggestions.slice(0, 6),
+      [filteredSuggestions],
+    );
+
+    const handleAddSuggestedPlayer = useCallback(
+      (player) => {
+        const pid = Number(player.user_id);
+        if (!Number.isFinite(pid) || pid <= 0) return;
+        setSelectedPlayers((prev) => {
+          if (prev.has(pid)) return prev;
+          const next = new Map(prev);
+          next.set(pid, { ...player, user_id: pid });
+          return next;
+        });
+      },
+      [setSelectedPlayers],
+    );
 
     const participantIsHost = (participant) => {
       if (!participant) return false;
@@ -4436,207 +4587,378 @@ const TennisMatchApp = () => {
 
           <div className="space-y-6">
             {/* Current Participants */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
-                <Users className="w-4 h-4" /> Current Participants
-              </h3>
-              {participantsLoading ? (
-                <p className="text-sm text-gray-500">Loading…</p>
-              ) : participantsError ? (
-                <p className="text-sm text-red-600">{participantsError}</p>
-              ) : participants.length ? (
-                <ul className="divide-y divide-gray-100 border rounded-xl">
-                  {participants.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                      <span className="text-gray-800">
-                        {p.profile?.full_name || `Player ${p.player_id}`}
-                        {participantIsHost(p) && (
-                          <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+            {!isPrivateMatch && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                  <Users className="w-4 h-4" /> Current Participants
+                </h3>
+                {participantsLoading ? (
+                  <p className="text-sm text-gray-500">Loading…</p>
+                ) : participantsError ? (
+                  <p className="text-sm text-red-600">{participantsError}</p>
+                ) : participants.length ? (
+                  <ul className="divide-y divide-gray-100 border rounded-xl">
+                    {participants.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                        <span className="text-gray-800">
+                          {p.profile?.full_name || `Player ${p.player_id}`}
+                          {participantIsHost(p) && (
+                            <span className="ml-2 text-blue-700 text-xs font-bold">Host</span>
+                          )}
+                        </span>
+                        {canRemove(p.player_id) ? (
+                          <button
+                            onClick={() => handleRemoveParticipant(p.player_id)}
+                            className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
+                          >
+                            <X className="w-4 h-4" /> Remove
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400">No actions</span>
                         )}
-                      </span>
-                      {canRemove(p.player_id) ? (
-                        <button
-                          onClick={() => handleRemoveParticipant(p.player_id)}
-                          className="px-2 py-1 text-red-600 hover:text-red-800 rounded-lg hover:bg-red-50 flex items-center gap-1"
-                        >
-                          <X className="w-4 h-4" /> Remove
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-400">No actions</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-500">No participants yet.</p>
-              )}
-            </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500">No participants yet.</p>
+                )}
+              </div>
+            )}
 
             {/* Search players to invite */}
-            <div>
-              <input
-                ref={searchInputRef}
-                type="search"
-                aria-label="Search players"
-                autoComplete="off"
-                placeholder="Search players..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
-              />
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-black text-gray-900 uppercase tracking-wider mb-3">
+                    Search & invite players
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      ref={searchInputRef}
+                      type="search"
+                      aria-label="Search players"
+                      autoComplete="off"
+                      placeholder="Search players..."
+                      value={searchTerm}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setPage(1);
+                      }}
+                      className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs font-semibold text-gray-500">
+                    {isPrivateMatch
+                      ? "Type at least two letters to search your player list."
+                      : "Browse or search the player community to add invitees."}
+                  </p>
+                </div>
+
+                {isPrivateMatch ? (
+                  <div className="space-y-3">
+                    {searchTerm.length < 2 ? (
+                      <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
+                        Start typing a name to search players.
+                      </div>
+                    ) : players.length > 0 ? (
+                      <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-100">
+                        {players.map((player) => {
+                          const name = player.full_name || "Unknown player";
+                          const pid = Number(player.user_id);
+                          const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                          return (
+                            <li key={player.user_id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!Number.isFinite(pid) || pid <= 0) return;
+                                  setSelectedPlayers((prev) => {
+                                    const next = new Map(prev);
+                                    if (next.has(pid)) next.delete(pid);
+                                    else next.set(pid, { ...player, user_id: pid });
+                                    return next;
+                                  });
+                                }}
+                                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
+                                  selected
+                                    ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700"
+                                    : "bg-white hover:bg-gray-50"
+                                }`}
+                              >
+                                <div
+                                  className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black shadow-md ${
+                                    selected
+                                      ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
+                                      : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                                  }`}
+                                >
+                                  {name
+                                    .split(" ")
+                                    .filter(Boolean)
+                                    .map((part) => part[0])
+                                    .join("")
+                                    .slice(0, 2)
+                                    .toUpperCase()}
+                                </div>
+                                <span className="text-sm font-bold text-gray-700">{name}</span>
+                                {selected && <Check className="ml-auto h-4 w-4 text-green-600" />}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
+                        No players found. Try another search.
+                      </div>
+                    )}
+
+                    {pagination && pagination.total > pagination.perPage && (
+                      <div className="flex items-center justify-between text-xs font-semibold text-gray-500">
+                        <button
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          disabled={page === 1}
+                          className="rounded-lg border border-gray-200 px-3 py-1 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <span>
+                          Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
+                        </span>
+                        <button
+                          onClick={() => setPage((p) => p + 1)}
+                          disabled={
+                            pagination.page >= Math.ceil(pagination.total / pagination.perPage)
+                          }
+                          className="rounded-lg border border-gray-200 px-3 py-1 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {players.map((player) => {
+                        const name = player.full_name || "Unknown player";
+                        const pid = Number(player.user_id);
+                        const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                        return (
+                          <button
+                            key={player.user_id}
+                            onClick={() => {
+                              if (!Number.isFinite(pid) || pid <= 0) return;
+                              setSelectedPlayers((prev) => {
+                                const next = new Map(prev);
+                                if (next.has(pid)) next.delete(pid);
+                                else next.set(pid, { ...player, user_id: pid });
+                                return next;
+                              });
+                            }}
+                            className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
+                              selected
+                                ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
+                                : "border-gray-200 hover:border-gray-300 bg-white"
+                            }`}
+                          >
+                            <div
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
+                                selected
+                                  ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
+                                  : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                              }`}
+                            >
+                              {name
+                                .split(" ")
+                                .filter(Boolean)
+                                .map((part) => part[0])
+                                .join("")
+                                .slice(0, 2)
+                                .toUpperCase()}
+                            </div>
+                            <span className="text-sm text-gray-700 font-bold">{name}</span>
+                            {selected && <Check className="w-4 h-4 text-green-600 ml-auto" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {pagination && (
+                      <div className="flex items-center justify-between mt-4">
+                        <button
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          disabled={page === 1}
+                          className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-sm font-semibold text-gray-600">
+                          Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
+                        </span>
+                        <button
+                          onClick={() => setPage((p) => p + 1)}
+                          disabled={
+                            pagination.page >= Math.ceil(pagination.total / pagination.perPage)
+                          }
+                          className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             {/* Quick Share */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">
-                Share Link
-              </h3>
-              <div className="flex gap-3 mb-4">
-                <input
-                  type="text"
-                  value={shareLink}
-                  readOnly
-                  className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-600"
-                />
-                <button
-                  onClick={copyLink}
-                  disabled={!shareLink}
-                  className={`px-5 py-3 rounded-xl font-black transition-all ${
-                    copiedLink
-                      ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
-                      : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
-                  }`}
-                >
-                  {copiedLink ? (
-                    <Check className="w-5 h-5" />
-                  ) : (
-                    <Copy className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  onClick={openWhatsApp}
-                  disabled={!shareLink}
-                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                    shareLink
-                      ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
-                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                  }`}
-                >
-                  WHATSAPP
-                </button>
-                <button
-                  onClick={openSMS}
-                  disabled={!shareLink}
-                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                    shareLink
-                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
-                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                  }`}
-                >
-                  SMS
-                </button>
-                <button
-                  onClick={openEmail}
-                  disabled={!shareLink}
-                  className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
-                    shareLink
-                      ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
-                      : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                  }`}
-                >
-                  EMAIL
-                </button>
-              </div>
-            </div>
-
-            {/* Players list from backend */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-5">
-                <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
-                  Players
-                </h3>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {players.map((player) => {
-                  const name = player.full_name;
-                  return (
-                    <button
-                      key={player.user_id}
-                      onClick={() => {
-                        const pid = Number(player.user_id);
-                        if (!Number.isFinite(pid) || pid <= 0) return;
-                        setSelectedPlayers((prev) => {
-                          const newMap = new Map(prev);
-                          if (newMap.has(pid)) {
-                            newMap.delete(pid);
-                          } else {
-                            newMap.set(pid, { ...player, user_id: pid });
-                          }
-                          return newMap;
-                        });
-                      }}
-                      className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all hover:scale-105 ${
-
-                        selectedPlayers.has(player.user_id)
-                          ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md"
-                          : "border-gray-200 hover:border-gray-300 bg-white"
-                      }`}
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shadow-md ${
-
-                          selectedPlayers.has(player.user_id)
-
-                            ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                            : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
-                        }`}
-                      >
-                        {name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")
-                          .toUpperCase()}
-                      </div>
-                      <span className="text-sm text-gray-700 font-bold">
-                        {name}
-                      </span>
-
-                      {selectedPlayers.has(player.user_id) && (
-
-                        <Check className="w-4 h-4 text-green-600 ml-auto" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {pagination && (
-                <div className="flex items-center justify-between mt-4">
+            {isPrivateMatch ? (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" /> Suggested players
+                  </h3>
                   <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
+                    type="button"
+                    onClick={() => fetchSuggestedPlayers(() => true)}
+                    disabled={suggestionsLoading}
+                    className="text-xs font-bold text-blue-600 transition-colors hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Previous
-                  </button>
-                  <span className="text-sm font-semibold text-gray-600">
-                    Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={pagination.page >= Math.ceil(pagination.total / pagination.perPage)}
-                    className="px-3 py-1.5 rounded-lg border-2 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed border-gray-200 text-gray-700 hover:bg-gray-50"
-                  >
-                    Next
+                    Refresh
                   </button>
                 </div>
-              )}
-          </div>
+                {suggestionsLoading ? (
+                  <p className="text-sm text-gray-500">
+                    Finding players you've teamed up with recently…
+                  </p>
+                ) : suggestionsError ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 sm:flex-row sm:items-center sm:justify-between">
+                    <span>{suggestionsError}</span>
+                    <button
+                      type="button"
+                      onClick={() => fetchSuggestedPlayers(() => true)}
+                      className="text-xs font-bold text-red-700 hover:text-red-800"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : topSuggestions.length > 0 ? (
+                  <ul className="space-y-3">
+                    {topSuggestions.map((player) => {
+                      const name = player.full_name || "Unknown player";
+                      const pid = Number(player.user_id);
+                      const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                      return (
+                        <li
+                          key={pid}
+                          className="flex items-center gap-3 rounded-xl border border-gray-100 px-4 py-3"
+                        >
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-xs font-black text-gray-700">
+                            {name
+                              .split(" ")
+                              .filter(Boolean)
+                              .map((part) => part[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-800">{name}</p>
+                            {player.lastPlayedAt && (
+                              <p className="text-xs font-semibold text-gray-500">
+                                Last played {formatDateTime(player.lastPlayedAt)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddSuggestedPlayer(player)}
+                            disabled={selected}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-black transition-all ${
+                              selected
+                                ? "bg-gray-100 text-gray-400 cursor-default"
+                                : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-md hover:scale-105"
+                            }`}
+                          >
+                            {selected ? "Added" : "Invite"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
+                    We'll suggest partners you recently played with once we have a little more history.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <h3 className="text-sm font-black text-gray-900 mb-4 uppercase tracking-wider">
+                  Share Link
+                </h3>
+                <div className="flex gap-3 mb-4">
+                  <input
+                    type="text"
+                    value={shareLink}
+                    readOnly
+                    className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-600"
+                  />
+                  <button
+                    onClick={copyLink}
+                    disabled={!shareLink}
+                    className={`px-5 py-3 rounded-xl font-black transition-all ${
+                      copiedLink
+                        ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
+                        : "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105 shadow-lg"
+                    }`}
+                  >
+                    {copiedLink ? (
+                      <Check className="w-5 h-5" />
+                    ) : (
+                      <Copy className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    onClick={openWhatsApp}
+                    disabled={!shareLink}
+                    className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                      shareLink
+                        ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 hover:shadow-lg hover:scale-105"
+                        : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                    }`}
+                  >
+                    WHATSAPP
+                  </button>
+                  <button
+                    onClick={openSMS}
+                    disabled={!shareLink}
+                    className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                      shareLink
+                        ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 hover:shadow-lg hover:scale-105"
+                        : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                    }`}
+                  >
+                    SMS
+                  </button>
+                  <button
+                    onClick={openEmail}
+                    disabled={!shareLink}
+                    className={`py-3 rounded-xl text-sm font-black transition-all border-2 ${
+                      shareLink
+                        ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border-purple-300 hover:shadow-lg hover:scale-105"
+                        : "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                    }`}
+                  >
+                    EMAIL
+                  </button>
+                </div>
+              </div>
+            )}
 
           {/* Selected players display */}
           <form
@@ -4886,6 +5208,11 @@ const TennisMatchApp = () => {
   const SignInModal = () => {
     if (!showSignInModal) return null;
 
+    const overlayClassName =
+      "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:items-center sm:py-10";
+    const baseModalClassName =
+      "relative w-full max-w-md rounded-2xl bg-white p-6 sm:p-8 shadow-lg animate-slideUp max-h-[calc(100vh-3rem)] overflow-y-auto";
+
     const handleOAuthSignIn = (provider) => {
       // Simulate OAuth response
       if (provider === "google") {
@@ -4929,8 +5256,8 @@ const TennisMatchApp = () => {
     // OAuth completion step
     if (signInStep === "oauth-complete") {
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => {
                 setSignInStep("initial");
@@ -5055,8 +5382,8 @@ const TennisMatchApp = () => {
       };
 
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => setSignInStep("initial")}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -5121,8 +5448,8 @@ const TennisMatchApp = () => {
 
     if (signInStep === "forgot") {
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => setSignInStep("login")}
               className="absolute top-4 left-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -5181,8 +5508,8 @@ const TennisMatchApp = () => {
 
     if (signInStep === "form") {
       return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+        <div className={overlayClassName}>
+          <div className={baseModalClassName}>
             <button
               onClick={() => {
                 setSignInStep("initial");
@@ -5346,8 +5673,8 @@ const TennisMatchApp = () => {
     // 'verify' step removed
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-md w-full p-8 relative animate-slideUp">
+      <div className={overlayClassName}>
+        <div className={baseModalClassName}>
           <button
             onClick={() => {
               setShowSignInModal(false);
@@ -5459,6 +5786,10 @@ const TennisMatchApp = () => {
     const [hostId, setHostId] = React.useState(null);
     const [loadingParts, setLoadingParts] = React.useState(true);
     const [removeErr, setRemoveErr] = React.useState("");
+    const overlayClassName =
+      "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:items-center sm:py-10";
+    const modalClassName =
+      "relative w-full max-w-lg rounded-2xl bg-white p-5 sm:p-6 shadow-lg animate-slideUp max-h-[calc(100vh-3rem)] overflow-y-auto";
 
     React.useEffect(() => {
       if (!isOpen || !matchId) return;
@@ -5547,8 +5878,8 @@ const TennisMatchApp = () => {
     if (!isOpen || !matchId) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+      <div className={overlayClassName}>
+        <div className={modalClassName}>
           <button
             onClick={() => {
               setShowParticipantsModal(false);
@@ -5623,6 +5954,11 @@ const TennisMatchApp = () => {
     const [hostId, setHostId] = React.useState(null);
     const [loadingParts, setLoadingParts] = React.useState(true);
     const [removeErr, setRemoveErr] = React.useState("");
+
+    const overlayClassName =
+      "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:items-center sm:py-10";
+    const modalClassName =
+      "relative w-full max-w-xl rounded-2xl bg-white p-5 sm:p-6 shadow-lg animate-slideUp max-h-[calc(100vh-3rem)] overflow-y-auto";
 
     React.useEffect(() => {
       if (!isOpen || !matchToEdit?.id) return;
@@ -5734,8 +6070,8 @@ const TennisMatchApp = () => {
     };
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 relative animate-slideUp">
+      <div className={overlayClassName}>
+        <div className={modalClassName}>
           <button
             onClick={() => {
               setShowEditModal(false);

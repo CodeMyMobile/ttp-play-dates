@@ -244,7 +244,7 @@
 
 .court-finder .cf-courts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 24px;
   margin-bottom: 40px;
 }
@@ -531,5 +531,25 @@
 
   .court-finder .cf-stats-bar {
     gap: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .court-finder .cf-header {
+    padding: 16px 0;
+    margin-bottom: 24px;
+  }
+
+  .court-finder .cf-header-content,
+  .court-finder .cf-container {
+    padding: 0 16px;
+  }
+
+  .court-finder .cf-controls-section {
+    padding: 16px;
+  }
+
+  .court-finder .cf-court-card {
+    border-radius: 10px;
   }
 }

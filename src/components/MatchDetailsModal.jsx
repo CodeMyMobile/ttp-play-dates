@@ -21,6 +21,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import PlayerAvatar from "./PlayerAvatar";
 import {
   cancelMatch,
   getShareLink,
@@ -29,14 +30,17 @@ import {
   removeParticipant,
   updateMatch,
 } from "../services/matches";
+import { rejectInvite } from "../services/invites";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
+  getParticipantPhone,
   idsMatch,
   pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
   uniqueParticipants,
+  uniqueInvitees,
 } from "../utils/participants";
 import { collectMemberIds, memberIsMatchHost } from "../utils/memberIdentity";
 import {
@@ -58,15 +62,15 @@ import {
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
 import { combineDateAndTimeToIso } from "../utils/datetime";
-
-const buildAvatarLabel = (name = "") => {
-  if (!name) return "?";
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-};
+import {
+  getAvatarInitials,
+  getProfileImageFromSource,
+} from "../utils/avatar";
+import {
+  formatPhoneDisplay,
+  getPhoneDigits,
+  normalizePhoneValue,
+} from "../services/phone";
 
 const safeDate = (value) => {
   if (!value) return null;
@@ -212,39 +216,6 @@ const buildProfileUrlFromPlayerId = (playerId) => {
     }
   } catch {
     return null;
-  }
-  return null;
-};
-
-const getProfileImageFromSource = (source) => {
-  if (!source || typeof source !== "object") return null;
-  const keys = [
-    "profile_picture",
-    "profilePicture",
-    "profile_picture_url",
-    "profilePictureUrl",
-    "profile_photo",
-    "profilePhoto",
-    "profile_image",
-    "profileImage",
-    "profile_image_url",
-    "profileImageUrl",
-    "photo_url",
-    "photoUrl",
-    "image_url",
-    "imageUrl",
-    "avatar_url",
-    "avatarUrl",
-    "avatar",
-    "host_avatar",
-    "hostAvatar",
-    "picture",
-    "photo",
-  ];
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = asNonEmptyString(source[key]);
-    if (value) return value;
   }
   return null;
 };
@@ -471,6 +442,201 @@ const participantMatchesMember = (participant, memberIdentity) => {
   );
 };
 
+const getInviteIdentityCandidates = (invite) => {
+  if (!invite || typeof invite !== "object") return [];
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const invitee = invite.invitee || {};
+  return [
+    invite.match_participant_id,
+    invite.matchParticipantId,
+    invite.participant_id,
+    invite.participantId,
+    invite.invitee_id,
+    invite.inviteeId,
+    invite.player_id,
+    invite.playerId,
+    invite.id,
+    invite.token,
+    invite.invite_token,
+    invite.inviteToken,
+    invite.invitation_token,
+    invite.invitationToken,
+    profile.id,
+    profile.player_id,
+    profile.playerId,
+    invitee.id,
+    invitee.player_id,
+    invitee.playerId,
+    player.id,
+    player.player_id,
+    player.playerId,
+  ];
+};
+
+const getInviteIdentity = (invite, fallback = null) =>
+  firstNonEmptyValue(getInviteIdentityCandidates(invite)) ?? fallback;
+
+const getInviteStatus = (invite) => {
+  if (!invite || typeof invite !== "object") return "";
+  const statusCandidates = [
+    invite.status,
+    invite.invite_status,
+    invite.inviteStatus,
+    invite.invitation_status,
+    invite.invitationStatus,
+    invite.state,
+  ];
+  for (const candidate of statusCandidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const normalized = candidate.toString().trim().toLowerCase();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+
+const ACCEPTED_INVITE_STATUSES = new Set([
+  "accepted",
+  "confirmed",
+  "joined",
+  "attending",
+  "yes",
+]);
+
+const DECLINED_INVITE_STATUSES = new Set([
+  "declined",
+  "rejected",
+  "withdrawn",
+  "canceled",
+  "cancelled",
+  "expired",
+  "inactive",
+]);
+
+const isInviteAwaitingResponse = (status) => {
+  if (!status) return true;
+  const normalized = status.toString().trim().toLowerCase();
+  if (!normalized) return true;
+  if (ACCEPTED_INVITE_STATUSES.has(normalized)) return false;
+  if (DECLINED_INVITE_STATUSES.has(normalized)) return false;
+  return true;
+};
+
+const getInviteEmail = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const contact = invite.contact || {};
+  return (
+    firstNonEmptyValue([
+      invite.email,
+      invite.invitee_email,
+      invite.inviteeEmail,
+      invite.contact_email,
+      invite.contactEmail,
+      invitee.email,
+      profile.email,
+      player.email,
+      contact.email,
+    ]) || null
+  );
+};
+
+const getInvitePhone = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const contact = invite.contact || {};
+  return (
+    firstNonEmptyValue([
+      invite.phone,
+      invite.invitee_phone,
+      invite.inviteePhone,
+      invite.contact_phone,
+      invite.contactPhone,
+      invitee.phone,
+      profile.phone,
+      player.phone,
+      contact.phone,
+    ]) || null
+  );
+};
+
+const getInviteDisplayName = (invite, fallback = null) => {
+  if (!invite || typeof invite !== "object") return fallback;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const candidates = [
+    invite.full_name,
+    invite.fullName,
+    invite.name,
+    invite.display_name,
+    invite.displayName,
+    invite.invitee_full_name,
+    invite.inviteeFullName,
+    invite.invitee_name,
+    invite.inviteeName,
+    invitee.full_name,
+    invitee.fullName,
+    invitee.preferred_name,
+    invitee.preferredName,
+    invitee.name,
+    profile.full_name,
+    profile.fullName,
+    profile.preferred_name,
+    profile.preferredName,
+    profile.name,
+    profile.display_name,
+    profile.displayName,
+    player.full_name,
+    player.fullName,
+    player.name,
+    player.display_name,
+    player.displayName,
+  ];
+  const resolved = firstNonEmptyValue(candidates);
+  if (resolved) return resolved;
+  const email = getInviteEmail(invite);
+  if (email) return email;
+  const phone = getInvitePhone(invite);
+  if (phone) return phone;
+  return fallback ?? "Invited player";
+};
+
+const getInviteAvatar = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const sources = [
+    invite,
+    invite.profile,
+    invite.invitee,
+    invite.player,
+    invite.contact,
+  ];
+  for (const source of sources) {
+    const image = getProfileImageFromSource(source);
+    if (image) return image;
+  }
+  return null;
+};
+
+const inviteMatchesParticipant = (invite, participant) => {
+  if (!invite || !participant) return false;
+  const inviteIds = getInviteIdentityCandidates(invite).filter((value) =>
+    isNonEmptyValue(value),
+  );
+  if (inviteIds.length === 0) return false;
+  const participantIds = getParticipantIdentityCandidates(participant).filter(
+    (value) => isNonEmptyValue(value),
+  );
+  if (participantIds.length === 0) return false;
+  return inviteIds.some((inviteId) =>
+    participantIds.some((participantId) => idsMatch(inviteId, participantId)),
+  );
+};
+
 const buildInitialEditForm = (match) => {
   if (!match) return { ...DEFAULT_EDIT_FORM };
   const latitude =
@@ -525,6 +691,7 @@ const MatchDetailsModal = ({
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [cancellingMatch, setCancellingMatch] = useState(false);
+  const [decliningInvite, setDecliningInvite] = useState(false);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
@@ -538,6 +705,7 @@ const MatchDetailsModal = ({
   );
 
   const match = matchData?.match || null;
+  const viewerInvite = matchData?.viewerInvite || null;
   const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
   const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
   const participants = useMemo(() => {
@@ -554,6 +722,54 @@ const MatchDetailsModal = ({
     if (Array.isArray(match?.invitees)) return match.invitees;
     return [];
   }, [matchData, match]);
+
+  const normalizedInvitees = useMemo(
+    () => uniqueInvitees(invitees),
+    [invitees],
+  );
+
+  const viewerInviteToken = useMemo(() => {
+    if (!viewerInvite || typeof viewerInvite !== "object") return null;
+    const tokenCandidates = [
+      viewerInvite.token,
+      viewerInvite.invite_token,
+      viewerInvite.inviteToken,
+      viewerInvite.invitation_token,
+      viewerInvite.invitationToken,
+    ];
+    for (const candidate of tokenCandidates) {
+      if (!candidate) continue;
+      const normalized = candidate.toString().trim();
+      if (normalized) return normalized;
+    }
+    return null;
+  }, [viewerInvite]);
+
+  const viewerInviteStatus = useMemo(() => {
+    if (!viewerInvite || typeof viewerInvite !== "object") return null;
+    const statusCandidates = [
+      viewerInvite.status,
+      viewerInvite.invite_status,
+      viewerInvite.inviteStatus,
+      viewerInvite.invitation_status,
+      viewerInvite.invitationStatus,
+      viewerInvite.state,
+    ];
+    for (const candidate of statusCandidates) {
+      if (candidate === undefined || candidate === null) continue;
+      const normalized = candidate.toString().trim().toLowerCase();
+      if (normalized) return normalized;
+    }
+    return null;
+  }, [viewerInvite]);
+
+  const inviteIsPending = useMemo(() => {
+    if (!viewerInvite) return false;
+    if (!viewerInviteStatus) return true;
+    return ["pending", "invited", "requested", "waiting"].includes(
+      viewerInviteStatus,
+    );
+  }, [viewerInvite, viewerInviteStatus]);
 
   const originalEditForm = useMemo(() => buildInitialEditForm(match), [match]);
   const availableMatchFormats = useMemo(
@@ -618,6 +834,25 @@ const MatchDetailsModal = ({
     () => uniqueAcceptedInvitees(invitees),
     [invitees],
   );
+
+  const pendingInvitees = useMemo(() => {
+    if (normalizedInvitees.length === 0) return [];
+    return normalizedInvitees.filter((invite) => {
+      if (!invite || typeof invite !== "object") return false;
+      const status = getInviteStatus(invite);
+      if (!isInviteAwaitingResponse(status)) {
+        return false;
+      }
+      if (
+        committedParticipants.some((participant) =>
+          inviteMatchesParticipant(invite, participant),
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [committedParticipants, normalizedInvitees]);
 
   const capacityInfo = useMemo(() => {
     if (!match?.capacity || typeof match.capacity !== "object") return null;
@@ -834,6 +1069,7 @@ const MatchDetailsModal = ({
       setStatus(normalizedInitialStatus);
       setJoining(false);
       setLeaving(false);
+      setDecliningInvite(false);
       return;
     }
     if (initialStatus && status === initialStatus) return;
@@ -1233,6 +1469,15 @@ const MatchDetailsModal = ({
       const id = getParticipantIdentity(participant, `participant-${index}`);
       const avatar = getParticipantProfileImage(participant);
       const profileUrl = getParticipantProfileUrl(participant, playerId);
+      const phoneRaw = getParticipantPhone(participant);
+      const phoneDigits = getPhoneDigits(phoneRaw);
+      const phoneDisplay = phoneDigits
+        ? formatPhoneDisplay(phoneRaw) || phoneDigits
+        : "";
+      const phoneValue = phoneDigits
+        ? normalizePhoneValue(phoneRaw) || phoneDigits
+        : "";
+      const phoneHref = phoneValue ? `tel:${phoneValue}` : "";
       return {
         id,
         playerId,
@@ -1256,6 +1501,8 @@ const MatchDetailsModal = ({
           participant.rating ||
           null,
         profileUrl,
+        phoneDisplay,
+        phoneHref,
         participant,
       };
     });
@@ -1267,6 +1514,69 @@ const MatchDetailsModal = ({
     }
     return list;
   }, [committedParticipants, match?.host_id, remainingSpots]);
+
+  const pendingInvitesList = useMemo(() => {
+    if (pendingInvitees.length === 0) return [];
+    const seen = new Set();
+    return pendingInvitees.reduce((list, invite, index) => {
+      if (!invite || typeof invite !== "object") {
+        return list;
+      }
+      const explicitName = getInviteDisplayName(invite, null);
+      const name = explicitName ? explicitName.trim() : "";
+      if (!name) {
+        return list;
+      }
+      const normalizedName = name.replace(/\s+/g, " ").toLowerCase();
+      if (normalizedName === "invited player") {
+        return list;
+      }
+      const phoneRaw = getInvitePhone(invite);
+      const phoneDigits = getPhoneDigits(phoneRaw);
+      if (!phoneDigits) {
+        return list;
+      }
+      const phoneDisplay = formatPhoneDisplay(phoneDigits) || phoneDigits;
+      const phone = phoneDisplay || null;
+      const email = getInviteEmail(invite);
+      const identity = getInviteIdentity(invite);
+      const normalizedExplicitName = explicitName
+        ? (() => {
+            const trimmed = explicitName.trim();
+            if (!trimmed) return null;
+            if (/^invited player/i.test(trimmed)) return null;
+            return trimmed.toLowerCase();
+          })()
+        : null;
+      const identityCandidates = [
+        phoneDigits ? `phone:${phoneDigits}` : null,
+        email ? `email:${email.toLowerCase()}` : null,
+        identity ? `identity:${identity}` : null,
+        normalizedExplicitName ? `name:${normalizedExplicitName}` : null,
+      ].filter(Boolean);
+
+      if (identityCandidates.length === 0) {
+        return list;
+      }
+
+      if (identityCandidates.some((candidate) => seen.has(candidate))) {
+        return list;
+      }
+
+      identityCandidates.forEach((candidate) => seen.add(candidate));
+
+      const key =
+        identity ?? identityCandidates[0] ?? `pending-invite-${index}`;
+
+      list.push({
+        key,
+        name,
+        phone,
+        avatar: getInviteAvatar(invite),
+      });
+      return list;
+    }, []);
+  }, [pendingInvitees]);
 
   if (!isOpen || !match) return null;
 
@@ -1313,6 +1623,91 @@ const MatchDetailsModal = ({
     if (!isUpcoming) return "This match is no longer accepting players.";
     if (isFull) return "This match is currently full.";
     return null;
+  };
+
+  const canDeclineInvite =
+    Boolean(viewerInviteToken) &&
+    inviteIsPending &&
+    !isHost &&
+    !isJoined &&
+    !isArchived &&
+    !isCancelled;
+
+  const handleDeclineInvite = async () => {
+    if (!viewerInviteToken) return;
+    if (!currentUser) {
+      onRequireSignIn?.();
+      return;
+    }
+    const confirmed = window.confirm(
+      "Are you sure you want to decline this invite?",
+    );
+    if (!confirmed) return;
+    try {
+      setDecliningInvite(true);
+      await rejectInvite(viewerInviteToken);
+      onToast?.("Invite declined", "info");
+      onUpdateMatch?.((previous) => {
+        if (!previous || typeof previous !== "object") return previous;
+        const existingInvite =
+          viewerInvite ||
+          previous.viewerInvite ||
+          previous.viewer_invite ||
+          null;
+        if (!existingInvite || typeof existingInvite !== "object") {
+          return { ...previous, viewerInvite: null };
+        }
+        const nextInvite = {
+          ...existingInvite,
+          status: "declined",
+          invite_status: "declined",
+          inviteStatus: "declined",
+          invitation_status: "declined",
+          invitationStatus: "declined",
+        };
+        return { ...previous, viewerInvite: nextInvite };
+      });
+      await onMatchRefresh?.();
+      if (onReloadMatch) {
+        try {
+          const updated = await onReloadMatch(match.id, {
+            includeArchived: false,
+          });
+          if (updated) {
+            onUpdateMatch?.((prev) => {
+              if (!prev || typeof prev !== "object") return updated;
+              if (
+                prev.viewerInvite &&
+                !updated.viewerInvite &&
+                typeof updated === "object"
+              ) {
+                return { ...updated, viewerInvite: prev.viewerInvite };
+              }
+              return updated;
+            });
+          }
+        } catch (error) {
+          if (!isMatchArchivedError(error)) {
+            console.error(error);
+          }
+        }
+      }
+    } catch (error) {
+      if (isMatchArchivedError(error)) {
+        onToast?.(
+          "This match has been archived. Invites can no longer be updated.",
+          "error",
+        );
+      } else {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to decline invite";
+        onToast?.(message, "error");
+      }
+    } finally {
+      setDecliningInvite(false);
+    }
   };
 
   const handleJoin = async () => {
@@ -1463,10 +1858,26 @@ const MatchDetailsModal = ({
         }
         const canViewProfile =
           typeof onViewPlayerProfile === "function" || Boolean(player.profileUrl);
+        const canRemove =
+          isHost &&
+          !player.placeholder &&
+          !player.isHost &&
+          !isArchived &&
+          !isCancelled;
+        const phoneLink =
+          player.phoneDisplay && player.phoneHref ? (
+            <a
+              href={player.phoneHref}
+              aria-label={`Call ${player.name}`}
+              className="text-xs font-semibold text-emerald-600 transition hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+            >
+              {player.phoneDisplay}
+            </a>
+          ) : null;
         return (
           <div
             key={player.id}
-            className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"
+            className="flex flex-col gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <button
               type="button"
@@ -1481,17 +1892,12 @@ const MatchDetailsModal = ({
                 canViewProfile ? `View ${player.name}'s profile` : undefined
               }
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-sm font-bold text-indigo-700">
-                {player.avatar ? (
-                  <img
-                    src={player.avatar}
-                    alt={player.name}
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                ) : (
-                  buildAvatarLabel(player.name)
-                )}
-              </div>
+              <PlayerAvatar
+                name={player.name}
+                imageUrl={player.avatar}
+                fallback={getAvatarInitials(player.name)}
+                variant={player.isHost ? "emerald" : "indigo"}
+              />
               <div className="flex-1">
                 <p className="text-sm font-black text-gray-900">
                   {player.name}
@@ -1508,25 +1914,60 @@ const MatchDetailsModal = ({
                 )}
               </div>
             </button>
-            {isHost &&
-              !player.placeholder &&
-              !player.isHost &&
-              !isArchived &&
-              !isCancelled && (
-                <button
-                  type="button"
-                  onClick={() => handleRemoveParticipant(player.playerId, player.name)}
-                  disabled={removingParticipantId === player.playerId}
-                  className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-400 transition-colors hover:text-red-500 disabled:opacity-60"
-                  aria-label={`Remove ${player.name}`}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+            {(phoneLink || canRemove) && (
+              <div className="flex items-center gap-2 sm:ml-4">
+                {phoneLink}
+                {canRemove && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveParticipant(player.playerId, player.name)}
+                    disabled={removingParticipantId === player.playerId}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-400 transition-colors hover:text-red-500 disabled:opacity-60"
+                    aria-label={`Remove ${player.name}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
     </div>
+  );
+
+  const renderPendingInvites = () => (
+    <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+      <div className="flex items-center gap-2">
+        <Mail className="h-4 w-4 text-blue-600" />
+        <p className="text-sm font-black text-blue-900">
+          Waiting on responses ({pendingInvitesList.length})
+        </p>
+      </div>
+      <div className="space-y-2">
+        {pendingInvitesList.map((invite) => (
+          <div
+            key={invite.key}
+            className="flex items-center gap-3 rounded-xl border border-blue-100 bg-white px-3 py-2"
+          >
+            <PlayerAvatar
+              name={invite.name}
+              imageUrl={invite.avatar}
+              fallback={getAvatarInitials(invite.name)}
+              variant="indigo"
+            />
+            <div>
+              <p className="text-sm font-black text-gray-900">{invite.name}</p>
+              {invite.phone && (
+                <p className="text-xs font-semibold text-gray-500">
+                  Cell {invite.phone}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 
   const headerChips = (
@@ -1729,19 +2170,13 @@ const MatchDetailsModal = ({
       <div className="flex flex-col">
         <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
           <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
-                {hostAvatar ? (
-                  <img
-                    src={hostAvatar}
-                    alt={hostName}
-                    className="h-12 w-12 rounded-full object-cover"
-                  />
-                ) : (
-                  buildAvatarLabel(hostName)
-                )}
-              </div>
-            </div>
+            <PlayerAvatar
+              name={hostName}
+              imageUrl={hostAvatar}
+              fallback={getAvatarInitials(hostName)}
+              size="lg"
+              variant="emerald"
+            />
             <div>
               <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
                 Match Details
@@ -1812,6 +2247,10 @@ const MatchDetailsModal = ({
             </div>
             {renderPlayers()}
           </section>
+
+          {isHost && matchPrivacy === "private" && pendingInvitesList.length > 0 && (
+            renderPendingInvites()
+          )}
 
           {!isArchived && !isCancelled && (
             isOpenMatch ? (
@@ -1977,14 +2416,16 @@ const MatchDetailsModal = ({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={handleJoin}
-                disabled={joining || !!disabledReason || status !== "details"}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {joining ? "Joining match..." : "Join this match"}
-              </button>
+              {isOpenMatch && (
+                <button
+                  type="button"
+                  onClick={handleJoin}
+                  disabled={joining || !!disabledReason || status !== "details"}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-sm font-black text-white shadow-lg transition-all hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {joining ? "Joining match..." : "Join this match"}
+                </button>
+              )}
               {status === "details" && disabledReason && (
                 <p className="mt-2 text-center text-xs font-semibold text-gray-500">{disabledReason}</p>
               )}
@@ -1992,6 +2433,16 @@ const MatchDetailsModal = ({
                 <p className="mt-2 text-center text-xs font-semibold text-gray-500">
                   {remainingSpots} spot{remainingSpots === 1 ? "" : "s"} remaining
                 </p>
+              )}
+              {canDeclineInvite && (
+                <button
+                  type="button"
+                  onClick={handleDeclineInvite}
+                  disabled={decliningInvite}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-6 py-3 text-sm font-black text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {decliningInvite ? "Declining invite..." : "Decline invite"}
+                </button>
               )}
             </>
           )}
@@ -2004,15 +2455,13 @@ const MatchDetailsModal = ({
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
         <div className="flex items-center gap-3">
-          <div className="relative h-12 w-12">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-200 text-lg font-black text-emerald-700">
-              {hostAvatar ? (
-                <img src={hostAvatar} alt={hostName} className="h-12 w-12 rounded-full object-cover" />
-              ) : (
-                buildAvatarLabel(hostName)
-              )}
-            </div>
-          </div>
+          <PlayerAvatar
+            name={hostName}
+            imageUrl={hostAvatar}
+            fallback={getAvatarInitials(hostName)}
+            size="lg"
+            variant="emerald"
+          />
           <div>
             <h2 id="match-details-heading" className="text-xl font-black text-gray-900">
               Match Details
@@ -2194,7 +2643,7 @@ const MatchDetailsModal = ({
 
       <section className="rounded-2xl border border-gray-100 bg-white p-4">
         <p className="text-sm font-black text-gray-900">Add to calendar</p>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-sm font-semibold">
+        <div className="mt-3 grid grid-cols-1 gap-3 text-sm font-semibold sm:grid-cols-2">
           <button
             type="button"
             onClick={() => handleCalendarAction("google")}
@@ -2248,7 +2697,7 @@ const MatchDetailsModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6 sm:py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 sm:items-center sm:py-10"
       role="dialog"
       aria-modal="true"
       aria-labelledby="match-details-heading"
@@ -2258,7 +2707,7 @@ const MatchDetailsModal = ({
         }
       }}
     >
-      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl max-h-[calc(100vh-3rem)]">
         <button
           type="button"
           onClick={onClose}
@@ -2267,7 +2716,7 @@ const MatchDetailsModal = ({
         >
           <X className="h-5 w-5" />
         </button>
-        <div className="max-h-[80vh] overflow-y-auto px-5 pb-6 pt-10 sm:px-8">
+        <div className="flex-1 overflow-y-auto px-5 pb-6 pt-10 sm:px-8">
           {status === "success" ? renderSuccessView() : renderDefaultView()}
         </div>
       </div>

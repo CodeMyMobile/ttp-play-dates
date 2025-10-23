@@ -1,3 +1,5 @@
+import { getPhoneDigits } from "../services/phone";
+
 const PARTICIPANT_IDENTITY_KEYS = [
   "match_participant_id",
   "matchParticipantId",
@@ -32,6 +34,78 @@ const INVITE_IDENTITY_KEYS = [
 ];
 
 const DEFAULT_IDENTITY_KEYS = PARTICIPANT_IDENTITY_KEYS;
+
+const PHONE_KEYS = [
+  "phone",
+  "phone_number",
+  "phoneNumber",
+  "contact_phone",
+  "contactPhone",
+  "mobile",
+  "mobile_phone",
+  "mobilePhone",
+  "cell",
+  "cell_phone",
+  "cellPhone",
+  "primary_phone",
+  "primaryPhone",
+];
+
+const toNonEmptyPhoneString = (value) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    return getPhoneDigits(trimmed) ? trimmed : "";
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "";
+    const str = value.toString();
+    return getPhoneDigits(str) ? str : "";
+  }
+  if (typeof value === "bigint") {
+    const str = value.toString();
+    return getPhoneDigits(str) ? str : "";
+  }
+  if (typeof value === "object" && typeof value.toString === "function") {
+    const str = value.toString();
+    if (typeof str === "string") {
+      const trimmed = str.trim();
+      if (!trimmed) return "";
+      return getPhoneDigits(trimmed) ? trimmed : "";
+    }
+  }
+  return "";
+};
+
+export const getParticipantPhone = (participant) => {
+  if (!participant || typeof participant !== "object") {
+    return "";
+  }
+
+  const sources = [
+    participant,
+    participant.profile,
+    participant.player,
+    participant.contact,
+    participant.invitee,
+    participant.user,
+  ].filter((source) => source && typeof source === "object");
+
+  for (const source of sources) {
+    for (const key of PHONE_KEYS) {
+      const value = source[key];
+      const phone = toNonEmptyPhoneString(value);
+      if (phone) {
+        return phone;
+      }
+    }
+  }
+
+  return "";
+};
 
 const getValueByKeyPath = (item, key) => {
   if (!item || typeof item !== "object") return undefined;
@@ -236,6 +310,8 @@ const isInactiveStatus = (value) => {
     "rejected",
     "withdrawn",
     "expired",
+    "pending",
+    "invited",
   ].includes(normalized);
 };
 

@@ -22,12 +22,16 @@ import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import {
+  uniqueAcceptedInvitees,
+  uniqueActiveParticipants,
   uniqueInvitees,
   uniqueMatchOccupants,
   uniqueParticipants,
 } from "./utils/participants";
 import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
+import PlayerAvatar from "./components/PlayerAvatar.jsx";
+import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -706,17 +710,47 @@ export default function InvitationPage() {
     }
     setAuthSubmitting(true);
     try {
-      const data = await signup({
+      const fallbackDetails = {
+        email: trimmedEmail,
+        name: trimmedName,
+        phone: trimmedPhone,
+      };
+
+      const hasSessionToken = (payload) => {
+        if (!payload) return false;
+        const tokenCandidates = [
+          payload.access_token,
+          payload.token,
+          payload.accessToken,
+        ];
+        return tokenCandidates.some(
+          (candidate) => typeof candidate === "string" && candidate.trim(),
+        );
+      };
+
+      let authPayload = await signup({
         email: trimmedEmail,
         password: signUpPassword,
         name: trimmedName,
         phone: trimmedPhone,
       });
-      const destination = await completeJoin(data, {
-        email: trimmedEmail,
-        name: trimmedName,
-        phone: trimmedPhone,
-      });
+
+      if (!hasSessionToken(authPayload)) {
+        try {
+          const fallbackLogin = await login(trimmedEmail, signUpPassword);
+          authPayload = { ...authPayload, ...fallbackLogin };
+        } catch (fallbackError) {
+          console.error("Automatic login after signup failed", fallbackError);
+        }
+      }
+
+      if (!hasSessionToken(authPayload)) {
+        throw new Error(
+          "We created your account but couldn't start your session automatically. Please sign in with your new credentials to join this match.",
+        );
+      }
+
+      const destination = await completeJoin(authPayload, fallbackDetails);
       await handleJoinSuccess(destination);
     } catch (err) {
       if (isMatchArchivedError(err)) {
@@ -771,7 +805,9 @@ export default function InvitationPage() {
         return;
       }
       const claimMessage = mapClaimError(err);
-      if (err?.status === 404 || err?.message === "not_found") {
+      if (claimMessage) {
+        setError(claimMessage);
+      } else if (err?.status === 404 || err?.message === "not_found") {
         setPreview(null);
         setLoadError({
           emoji: "🔍",
@@ -779,8 +815,6 @@ export default function InvitationPage() {
           message:
             "This invite is no longer available. Ask the host to send a new link.",
         });
-      } else if (claimMessage) {
-        setError(claimMessage);
       } else {
         setError("We couldn't complete your signup. Try again later.");
       }
@@ -889,7 +923,8 @@ export default function InvitationPage() {
 
   const inviterName = (preview?.inviter?.full_name || "").trim();
   const inviterFirstName = inviterName.split(" ").filter(Boolean)[0] || "";
-  const inviterInitials = getInitials(inviterName || "Matchplay");
+  const inviterInitials = getAvatarInitials(inviterName || "Matchplay");
+  const inviterAvatarUrl = getAvatarUrlFromPlayer(preview?.inviter);
 
   const maskedIdentifier = preview?.maskedIdentifier;
   const isInviteeClaim = inviteeRequiresAccountClaim;
@@ -1273,12 +1308,12 @@ export default function InvitationPage() {
     </div>
   );
 
-  const avatarPalette = [
-    "bg-emerald-500",
-    "bg-sky-500",
-    "bg-indigo-500",
-    "bg-purple-500",
-    "bg-amber-500",
+  const avatarVariants = [
+    "emerald",
+    "indigo",
+    "sky",
+    "violet",
+    "amber",
   ];
   return (
     <InvitationLayout>
@@ -1307,9 +1342,14 @@ export default function InvitationPage() {
               </div>
             </div>
             <div className="mt-6 flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-2xl font-black text-amber-500 shadow-lg shadow-amber-200/70">
-                {inviterInitials}
-              </div>
+              <PlayerAvatar
+                name={inviterName || "Matchplay"}
+                imageUrl={inviterAvatarUrl}
+                fallback={inviterInitials}
+                size="xl"
+                variant="amber"
+                className="shadow-lg shadow-amber-200/70"
+              />
               <div className="space-y-1">
                 <p className="text-2xl font-bold">
                   {inviterFirstName
@@ -1389,9 +1429,10 @@ export default function InvitationPage() {
                   <ul className="mt-4 grid gap-2 sm:grid-cols-2">
                     {avatarPlayers.map((player, index) => {
                       const name = participantDisplayName(player) || "Player";
-                      const initials = getInitials(name) || "P";
-                      const color =
-                        avatarPalette[index % avatarPalette.length];
+                      const initials = getAvatarInitials(name);
+                      const avatarUrl = getAvatarUrlFromPlayer(player);
+                      const variant =
+                        avatarVariants[index % avatarVariants.length];
                       const key =
                         player?.player_id ||
                         player?.id ||
@@ -1417,11 +1458,12 @@ export default function InvitationPage() {
                           title={name}
                           className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-sm"
                         >
-                          <div
-                            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow ${color}`}
-                          >
-                            {initials}
-                          </div>
+                          <PlayerAvatar
+                            name={name}
+                            imageUrl={avatarUrl}
+                            fallback={initials}
+                            variant={variant}
+                          />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-slate-900">
                               {name}
@@ -1677,8 +1719,24 @@ function mapAcceptError(error) {
 
 function mapClaimError(error) {
   if (!error) return null;
+  const normalizedCode = (error.data?.error || error.message || "")
+    .toString()
+    .toLowerCase();
+  const normalizedMessage = (error.data?.message || "")
+    .toString()
+    .toLowerCase();
+
   if (error.status === 409 || error.message === "email_in_use") {
     return "That email is already in use. Try a different email or sign in instead.";
+  }
+  if (
+    error.status === 404 &&
+    (normalizedCode.includes("user") ||
+      normalizedCode.includes("account") ||
+      normalizedMessage.includes("user") ||
+      normalizedMessage.includes("account"))
+  ) {
+    return "We couldn't find an account with that email. Sign up to join this match.";
   }
   if (error.status === 404 || error.message === "not_found") {
     return null;
@@ -1733,18 +1791,6 @@ function formatSkillRange(min, max) {
   return "";
 }
 
-function getInitials(name) {
-  const clean = (name || "").trim();
-  if (!clean) return "";
-  return clean
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
 function asNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
@@ -1781,7 +1827,24 @@ function getActiveParticipants(match, preview) {
     return [];
   }
 
-  return uniqueMatchOccupants(participantSource, inviteeSource);
+  if (!isOpenMatchInvite(match, preview)) {
+    return filterDisplayableParticipants(
+      uniqueMatchOccupants(participantSource, inviteeSource),
+    );
+  }
+
+  const filteredParticipants = uniqueParticipants(participantSource).filter(
+    (participant) => !participantLooksPendingForOpenMatch(participant, match),
+  );
+  const acceptedInvitees = uniqueAcceptedInvitees(inviteeSource);
+
+  if (!filteredParticipants.length && !acceptedInvitees.length) {
+    return [];
+  }
+
+  return filterDisplayableParticipants(
+    uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
+  );
 }
 
 function getRosterParticipants(match, preview) {
@@ -1791,16 +1854,16 @@ function getRosterParticipants(match, preview) {
   const previewParticipants = Array.isArray(preview?.participants)
     ? preview.participants
     : [];
-  const participantSource = uniqueParticipants([
-    ...matchParticipants,
-    ...previewParticipants,
-  ]);
+  const participantSource = uniqueMatchOccupants(
+    [...matchParticipants, ...previewParticipants],
+    [],
+  );
 
   const matchInvitees = Array.isArray(match?.invitees) ? match.invitees : [];
   const previewInvitees = Array.isArray(preview?.invitees)
     ? preview.invitees
     : [];
-  const inviteeSource = uniqueInvitees([
+  const inviteeSource = uniqueAcceptedInvitees([
     ...matchInvitees,
     ...previewInvitees,
   ]);
@@ -1809,18 +1872,353 @@ function getRosterParticipants(match, preview) {
     return [];
   }
 
-  if (!inviteeSource.length) {
-    return participantSource;
+  if (!isOpenMatchInvite(match, preview)) {
+    if (!inviteeSource.length) {
+      return filterDisplayableParticipants(participantSource);
+    }
+
+    if (!participantSource.length) {
+      return filterDisplayableParticipants(inviteeSource);
+    }
+
+    return filterDisplayableParticipants(
+      uniqueMatchOccupants(participantSource, inviteeSource),
+    );
   }
 
-  if (!participantSource.length) {
-    return inviteeSource;
-  }
-
-  return uniqueParticipants([
-    ...participantSource,
-    ...inviteeSource,
+  const filteredParticipants = participantSource.filter(
+    (participant) => !participantLooksPendingForOpenMatch(participant, match),
+  );
+  const acceptedInvitees = uniqueAcceptedInvitees([
+    ...matchInvitees,
+    ...previewInvitees,
   ]);
+
+  if (!filteredParticipants.length && !acceptedInvitees.length) {
+    return [];
+  }
+
+  if (!acceptedInvitees.length) {
+    return filterDisplayableParticipants(filteredParticipants);
+  }
+
+  if (!filteredParticipants.length) {
+    return filterDisplayableParticipants(acceptedInvitees);
+  }
+
+  return filterDisplayableParticipants(
+    uniqueMatchOccupants(filteredParticipants, acceptedInvitees),
+  );
+}
+
+const OPEN_MATCH_PENDING_STATUS_VALUES = new Set([
+  "pending",
+  "invited",
+  "invite_pending",
+  "invitation_pending",
+  "awaiting",
+  "awaiting_response",
+  "awaiting-response",
+  "awaiting rsvp",
+  "awaiting_rsvp",
+  "waiting",
+  "waitlisted",
+  "wait_list",
+  "wait-list",
+  "wait list",
+  "standby",
+  "hold",
+  "holding",
+  "tentative",
+  "unconfirmed",
+  "requested",
+  "request_pending",
+  "requesting",
+]);
+
+const OPEN_MATCH_JOINED_STATUS_VALUES = new Set([
+  "confirmed",
+  "accepted",
+  "joined",
+  "committed",
+  "on_roster",
+  "on-roster",
+  "on roster",
+  "hosting",
+  "host",
+  "active",
+  "playing",
+  "attending",
+  "registered",
+  "participant",
+  "organizer",
+  "organiser",
+  "owner",
+  "creator",
+]);
+
+const OPEN_MATCH_JOIN_INDICATOR_KEYS = [
+  "joined_at",
+  "joinedAt",
+  "joined_on",
+  "joinedOn",
+  "joined",
+  "is_joined",
+  "isJoined",
+  "has_joined",
+  "hasJoined",
+  "accepted",
+  "is_accepted",
+  "isAccepted",
+  "accepted_at",
+  "acceptedAt",
+  "confirmed",
+  "is_confirmed",
+  "isConfirmed",
+  "confirmed_at",
+  "confirmedAt",
+  "rsvp_status",
+  "rsvpStatus",
+  "rsvp_at",
+  "rsvpAt",
+  "checked_in",
+  "checkedIn",
+  "checked_in_at",
+  "checkedInAt",
+];
+
+function isOpenMatchInvite(match, preview) {
+  const resolvedType = resolveMatchType(match, preview);
+  if (resolvedType) {
+    if (
+      resolvedType === "open" ||
+      resolvedType === "available" ||
+      resolvedType === "public" ||
+      resolvedType === "anyone"
+    ) {
+      return true;
+    }
+    if (
+      resolvedType === "private" ||
+      resolvedType === "closed" ||
+      resolvedType === "invite_only" ||
+      resolvedType === "invite-only" ||
+      resolvedType === "locked"
+    ) {
+      return false;
+    }
+  }
+
+  const booleanCandidates = [
+    match?.is_open,
+    match?.isOpen,
+    preview?.match?.is_open,
+    preview?.match?.isOpen,
+    preview?.is_open,
+    preview?.isOpen,
+  ];
+
+  if (booleanCandidates.some((value) => value === true)) {
+    return true;
+  }
+
+  if (booleanCandidates.some((value) => value === false)) {
+    return false;
+  }
+
+  return false;
+}
+
+function resolveMatchType(match, preview) {
+  const candidates = [
+    match?.match_type,
+    match?.matchType,
+    match?.type,
+    match?.privacy,
+    match?.match_privacy,
+    match?.matchPrivacy,
+    preview?.match?.match_type,
+    preview?.match?.matchType,
+    preview?.match?.type,
+    preview?.match?.privacy,
+    preview?.match?.match_privacy,
+    preview?.match?.matchPrivacy,
+    preview?.match_type,
+    preview?.matchType,
+    preview?.type,
+    preview?.privacy,
+    preview?.match_privacy,
+    preview?.matchPrivacy,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function participantLooksPendingForOpenMatch(participant, match) {
+  if (!participant || typeof participant !== "object") {
+    return false;
+  }
+
+  if (participant.is_host === true || participant.hosting === true) {
+    return false;
+  }
+
+  const statusCandidates = [
+    participant.status,
+    participant.participant_status,
+    participant.participantStatus,
+    participant.status_reason,
+    participant.statusReason,
+    participant.role,
+    participant.invite_status,
+    participant.inviteStatus,
+    participant.rsvp_status,
+    participant.rsvpStatus,
+  ];
+
+  let hasJoinedSignal = false;
+
+  for (const candidate of statusCandidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim().toLowerCase();
+    if (!normalized) continue;
+    if (OPEN_MATCH_PENDING_STATUS_VALUES.has(normalized)) {
+      return true;
+    }
+    if (OPEN_MATCH_JOINED_STATUS_VALUES.has(normalized)) {
+      hasJoinedSignal = true;
+    }
+  }
+
+  const pendingFlags = [
+    participant.pending,
+    participant.is_pending,
+    participant.isPending,
+    participant.awaiting_response,
+    participant.awaitingResponse,
+    participant.awaiting_rsvp,
+    participant.awaitingRsvp,
+    participant.waitlisted,
+    participant.is_waitlisted,
+    participant.isWaitlisted,
+    participant.wait_listed,
+    participant.waitListed,
+  ];
+
+  if (pendingFlags.some((value) => value === true)) {
+    return true;
+  }
+
+  if (hasJoinedSignal) {
+    return false;
+  }
+
+  for (const key of OPEN_MATCH_JOIN_INDICATOR_KEYS) {
+    if (hasTruthyValue(participant[key])) {
+      return false;
+    }
+  }
+
+  const matchHostId =
+    match?.host_id ??
+    match?.hostId ??
+    match?.host?.id ??
+    match?.host?.player_id ??
+    match?.host?.playerId ??
+    null;
+
+  if (matchHostId) {
+    const participantIds = [
+      participant.player_id,
+      participant.playerId,
+      participant.match_participant_id,
+      participant.matchParticipantId,
+      participant.participant_id,
+      participant.participantId,
+      participant.id,
+      participant.profile?.id,
+      participant.profile?.player_id,
+      participant.profile?.playerId,
+    ];
+
+    if (participantIds.some((value) => valuesMatchIgnoreCase(value, matchHostId))) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function hasTruthyValue(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return false;
+    }
+    const normalized = trimmed.toLowerCase();
+    if (normalized === "false" || normalized === "no" || normalized === "0") {
+      return false;
+    }
+    if (OPEN_MATCH_PENDING_STATUS_VALUES.has(normalized)) {
+      return false;
+    }
+    return true;
+  }
+  if (value instanceof Date) {
+    return !Number.isNaN(value.getTime());
+  }
+  return true;
+}
+
+function valuesMatchIgnoreCase(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) {
+    return false;
+  }
+
+  const normalize = (value) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+      return trimmed.toLowerCase();
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? String(value) : null;
+    }
+    if (typeof value === "bigint") {
+      return value.toString().toLowerCase();
+    }
+    return value;
+  };
+
+  const left = normalize(a);
+  const right = normalize(b);
+
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return false;
+  }
+
+  if (typeof left === "string" && typeof right === "string") {
+    return left === right;
+  }
+
+  return left === right;
 }
 
 function participantDisplayName(participant) {
@@ -1836,13 +2234,36 @@ function participantDisplayName(participant) {
 
   const candidates = [
     participant.profile?.full_name,
+    participant.profile?.fullName,
     participant.full_name,
+    participant.fullName,
     joinNames(participant.profile?.first_name, participant.profile?.last_name),
     joinNames(participant.first_name, participant.last_name),
     participant.name,
     participant.profile?.name,
+    participant.profile?.display_name,
+    participant.profile?.displayName,
+    participant.player?.profile?.full_name,
+    participant.player?.profile?.fullName,
+    participant.player?.full_name,
+    participant.player?.fullName,
+    joinNames(
+      participant.player?.profile?.first_name,
+      participant.player?.profile?.last_name,
+    ),
+    joinNames(participant.player?.first_name, participant.player?.last_name),
+    participant.player?.name,
+    participant.player?.profile?.name,
+    participant.player?.profile?.display_name,
+    participant.player?.profile?.displayName,
     participant.invitee?.full_name,
+    participant.invitee?.fullName,
     participant.invitee?.name,
+    participant.invitee?.profile?.full_name,
+    participant.invitee?.profile?.fullName,
+    participant.invitee?.profile?.name,
+    participant.invitee?.profile?.display_name,
+    participant.invitee?.profile?.displayName,
     participant.invitee_full_name,
     participant.invitee_name,
     participant.inviteeFullName,
@@ -1868,5 +2289,70 @@ function participantDisplayName(participant) {
   }
 
   return "Player";
+}
+
+function filterDisplayableParticipants(list) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list.filter(shouldDisplayParticipant);
+}
+
+function shouldDisplayParticipant(participant) {
+  if (!participant || typeof participant !== "object") {
+    return false;
+  }
+
+  const name = participantDisplayName(participant);
+  if (name && name !== "Player") {
+    return true;
+  }
+
+  return participantHasIdentifier(participant);
+}
+
+function participantHasIdentifier(participant) {
+  const identifiers = [
+    participant.match_participant_id,
+    participant.matchParticipantId,
+    participant.participant_id,
+    participant.participantId,
+    participant.player_id,
+    participant.playerId,
+    participant.invitee_id,
+    participant.inviteeId,
+    participant.id,
+    participant.profile?.id,
+    participant.profile?.player_id,
+    participant.profile?.playerId,
+    participant.invitee?.id,
+    participant.invitee?.player_id,
+    participant.invitee?.playerId,
+  ];
+
+  return identifiers.some((value) => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+
+    if (typeof value === "bigint") {
+      return true;
+    }
+
+    if (value instanceof Date) {
+      return !Number.isNaN(value.getTime());
+    }
+
+    return true;
+  });
 }
 
