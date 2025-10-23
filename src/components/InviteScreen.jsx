@@ -191,7 +191,7 @@ const InviteScreen = ({
       }
 
       const desired = Math.max(outstandingShortfall + 2, 4);
-      const perPage = Math.max(desired * 2, 12);
+      const pageSize = Math.max(desired * 2, 12);
       const searchTerms = buildSmartSearchTerms();
       const blockedIds = new Set(
         existingPlayerIds instanceof Set
@@ -219,52 +219,123 @@ const InviteScreen = ({
         }
       }
 
+      if (!aliveCheck()) return;
+
       setSmartRecommendationsLoading(true);
       setSmartRecommendationsError("");
 
       const collected = [];
-      const seen = new Set();
+      const seen = new Set(blockedIds);
       let lastError = null;
 
-      for (const term of searchTerms) {
-        if (!aliveCheck()) return;
-        try {
-          const data = await searchPlayers({
-            search: term,
-            page: 1,
-            perPage,
-          });
-          const players = Array.isArray(data?.players) ? data.players : [];
-          players.forEach((player) => {
-            const pid = Number(player.user_id ?? player.id);
-            if (!Number.isFinite(pid) || pid <= 0) return;
-            if (blockedIds.has(pid) || seen.has(pid)) return;
-            seen.add(pid);
-            collected.push({ ...player, user_id: pid });
-          });
-          if (collected.length >= desired) break;
-        } catch (error) {
-          console.error("Failed to load smart invite recommendations", error);
-          lastError = error;
+      const tryAddPlayer = (player) => {
+        const pid = Number(player?.user_id ?? player?.id);
+        if (!Number.isFinite(pid) || pid <= 0) return;
+        if (blockedIds.has(pid) || seen.has(pid)) return;
+        seen.add(pid);
+        collected.push({ ...player, user_id: pid });
+      };
+
+      const fetchTerm = async (term) => {
+        let pageNumber = 1;
+        let hasMore = true;
+        while (hasMore && collected.length < desired) {
+          if (!aliveCheck()) {
+            return;
+          }
+          try {
+            const data = await searchPlayers({
+              search: term,
+              page: pageNumber,
+              perPage: pageSize,
+            });
+            const players = Array.isArray(data?.players) ? data.players : [];
+            players.forEach(tryAddPlayer);
+            const pagination = data?.pagination;
+            if (pagination) {
+              const total = Number(pagination.total);
+              const per = Number(
+                pagination.perPage ?? pagination.per_page ?? pageSize,
+              );
+              const totalPages =
+                Number.isFinite(total) && Number.isFinite(per) && per > 0
+                  ? Math.max(Math.ceil(total / per), 1)
+                  : null;
+              hasMore =
+                totalPages !== null
+                  ? pageNumber < totalPages
+                  : players.length === pageSize;
+            } else {
+              hasMore = players.length === pageSize;
+            }
+            pageNumber += 1;
+          } catch (error) {
+            console.error(
+              "Failed to load smart invite recommendations",
+              error,
+            );
+            lastError = error;
+            hasMore = false;
+          }
         }
-      }
+      };
 
-      if (!aliveCheck()) return;
+      try {
+        for (const term of searchTerms) {
+          if (!aliveCheck()) {
+            return;
+          }
+          await fetchTerm(term);
+          if (collected.length >= desired) break;
+        }
 
-      if (collected.length === 0) {
+        if (aliveCheck() && collected.length < desired) {
+          try {
+            const data = await listMatches("my", { perPage: 25 });
+            const matches = Array.isArray(data?.matches) ? data.matches : [];
+            const fallbackPlayers = buildRecentPartnerSuggestions({
+              matches,
+              currentUser,
+              memberIdentities,
+            });
+            fallbackPlayers.forEach(tryAddPlayer);
+          } catch (error) {
+            console.error(
+              "Failed to load fallback smart invite recommendations",
+              error,
+            );
+            if (!lastError) {
+              lastError = error;
+            }
+          }
+        }
+
+        if (!aliveCheck()) {
+          return;
+        }
+
+        if (collected.length === 0) {
+          setSmartRecommendations([]);
+          setSmartRecommendationsError(
+            lastError
+              ? "We couldn't load recommendations right now. Try refreshing."
+              : "No ready substitutes found yet. Try searching manually or refreshing soon.",
+          );
+        } else {
+          setSmartRecommendations(collected.slice(0, desired));
+          setSmartRecommendationsError("");
+        }
+      } catch (error) {
+        console.error("Failed to load smart invite recommendations", error);
+        if (!aliveCheck()) return;
         setSmartRecommendations([]);
         setSmartRecommendationsError(
-          lastError
-            ? "We couldn't load recommendations right now. Try refreshing."
-            : "No ready substitutes found yet. Try searching manually or refreshing soon.",
+          "We couldn't load recommendations right now. Try refreshing.",
         );
-      } else {
-        setSmartRecommendations(collected.slice(0, desired));
-        setSmartRecommendationsError("");
-      }
-
-      if (aliveCheck()) {
-        setSmartRecommendationsLoading(false);
+      } finally {
+        if (aliveCheck()) {
+          setSmartRecommendationsLoading(false);
+        }
       }
     },
     [
@@ -273,6 +344,7 @@ const InviteScreen = ({
       existingPlayerIds,
       invitees,
       lowOccupancy,
+      memberIdentities,
       outstandingShortfall,
       participants,
     ],
