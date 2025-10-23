@@ -23,6 +23,7 @@ import {
 import Header from "../components/Header.jsx";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "../utils/archive";
 import {
+  getParticipantPhone,
   idsMatch,
   uniqueActiveParticipants,
 } from "../utils/participants";
@@ -45,6 +46,11 @@ import {
 import { combineDateAndTimeToIso } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import { buildMatchUpdatePayload } from "../utils/matchPayload";
+import {
+  formatPhoneDisplay,
+  getPhoneDigits,
+  normalizePhoneValue,
+} from "../services/phone";
 
 const DEFAULT_FORM = {
   date: "",
@@ -685,13 +691,31 @@ export default function MatchPage() {
                   participant.player_id,
                   match.host_id,
                 );
+                const phoneRaw = getParticipantPhone(participant);
+                const phoneDigits = getPhoneDigits(phoneRaw);
+                const phoneDisplay = phoneDigits
+                  ? formatPhoneDisplay(phoneRaw) || phoneDigits
+                  : "";
+                const phoneValue = phoneDigits
+                  ? normalizePhoneValue(phoneRaw) || phoneDigits
+                  : "";
+                const phoneHref = phoneValue ? `tel:${phoneValue}` : "";
                 return (
                   <li
                     key={participant.id || participant.player_id}
                     className="flex items-center justify-between py-3 text-sm text-gray-700"
                   >
-                    <div className="flex flex-col">
+                    <div className="flex flex-col gap-1">
                       <span className="font-semibold text-gray-900">{name}</span>
+                      {phoneDisplay && phoneHref && (
+                        <a
+                          href={phoneHref}
+                          aria-label={`Call ${name}`}
+                          className="text-xs font-medium text-emerald-600 transition hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                        >
+                          {phoneDisplay}
+                        </a>
+                      )}
                       {isHostParticipant && (
                         <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
                           Host
