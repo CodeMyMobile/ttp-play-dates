@@ -35,25 +35,6 @@ const isPlainIdKey = (key) => typeof key === "string" && key === "id";
 
 const participantIdentityPaths = candidateIdKeys.filter((key) => !isPlainIdKey(key));
 
-const looksLikeParticipantRecord = (candidate) => {
-  if (!candidate || typeof candidate !== "object") {
-    return false;
-  }
-  return participantIdentityPaths.some((key) => {
-    const value = readValue(candidate, key);
-    if (value === undefined || value === null) {
-      return false;
-    }
-    if (typeof value === "string") {
-      return value.trim().length > 0;
-    }
-    if (typeof value === "number") {
-      return Number.isFinite(value);
-    }
-    return true;
-  });
-};
-
 const parseNumericId = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") {
@@ -70,6 +51,10 @@ const parseNumericId = (value) => {
 };
 
 const extractParticipantId = (participant) => {
+  if (!participant || typeof participant !== "object") {
+    return null;
+  }
+
   for (const key of candidateIdKeys) {
     const candidate = readValue(participant, key);
     const parsed = parseNumericId(candidate);
@@ -77,7 +62,185 @@ const extractParticipantId = (participant) => {
       return parsed;
     }
   }
+
   return null;
+};
+
+const participantContextKeys = [
+  "participant_status",
+  "participantStatus",
+  "status",
+  "status_reason",
+  "statusReason",
+  "role",
+  "is_active",
+  "active",
+  "joined_at",
+  "joinedAt",
+  "checked_in_at",
+  "checkedInAt",
+  "invited_at",
+  "invitedAt",
+  "left_at",
+  "leftAt",
+  "removed_at",
+  "removedAt",
+  "cancelled_at",
+  "cancelledAt",
+  "canceled_at",
+  "canceledAt",
+  "declined_at",
+  "declinedAt",
+  "withdrawn_at",
+  "withdrawnAt",
+  "profile",
+  "player",
+  "invitee",
+  "user",
+  "member",
+  "team",
+  "identity",
+  "identity_id",
+  "identityId",
+  "identity_ids",
+  "identityIds",
+  "full_name",
+  "fullName",
+  "display_name",
+  "displayName",
+];
+
+const plainIdSupplementalKeys = [
+  "participant_status",
+  "participantStatus",
+  "status_reason",
+  "statusReason",
+  "role",
+  "profile",
+  "player",
+  "invitee",
+  "user",
+  "member",
+  "team",
+  "identity",
+  "identity_id",
+  "identityId",
+  "identity_ids",
+  "identityIds",
+  "full_name",
+  "fullName",
+  "display_name",
+  "displayName",
+  "joined_at",
+  "joinedAt",
+  "checked_in_at",
+  "checkedInAt",
+  "invited_at",
+  "invitedAt",
+  "left_at",
+  "leftAt",
+  "removed_at",
+  "removedAt",
+  "cancelled_at",
+  "cancelledAt",
+  "canceled_at",
+  "canceledAt",
+  "declined_at",
+  "declinedAt",
+  "withdrawn_at",
+  "withdrawnAt",
+];
+
+const participantStatusValues = new Set([
+  "accepted",
+  "accept",
+  "active",
+  "attend",
+  "attending",
+  "checked-in",
+  "checked_in",
+  "checkedin",
+  "confirm",
+  "confirmed",
+  "confirmed_player",
+  "confirmed_substitute",
+  "joining",
+  "joined",
+  "participant",
+  "participating",
+  "pending",
+  "playing",
+  "registered",
+  "reserve",
+  "standby",
+  "sub",
+  "substitute",
+  "waitlist",
+  "waitlisted",
+  "alternate",
+  "alternate_player",
+  "available",
+  "invited",
+]);
+
+const looksLikeParticipantRecord = (candidate) => {
+  if (!candidate || typeof candidate !== "object" || candidate instanceof Date) {
+    return false;
+  }
+
+  const participantId = extractParticipantId(candidate);
+  if (participantId === null) {
+    return false;
+  }
+
+  const hasParticipantSpecificIdentity = participantIdentityPaths.some((key) => {
+    const value = readValue(candidate, key);
+    if (value === undefined || value === null) {
+      return false;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    return true;
+  });
+
+  const hasPlainId = Object.prototype.hasOwnProperty.call(candidate, "id");
+
+  if (!hasParticipantSpecificIdentity && !hasPlainId) {
+    return false;
+  }
+
+  const hasContext = participantContextKeys.some((key) =>
+    Object.prototype.hasOwnProperty.call(candidate, key),
+  );
+
+  if (!hasContext) {
+    return false;
+  }
+
+  if (hasPlainId && !hasParticipantSpecificIdentity) {
+    const hasSupplemental = plainIdSupplementalKeys.some((key) =>
+      Object.prototype.hasOwnProperty.call(candidate, key),
+    );
+
+    let hasParticipantStatus = false;
+    if (!hasSupplemental && Object.prototype.hasOwnProperty.call(candidate, "status")) {
+      const statusValue = candidate.status;
+      if (statusValue !== undefined && statusValue !== null) {
+        const normalized = statusValue.toString().trim().toLowerCase();
+        hasParticipantStatus = participantStatusValues.has(normalized);
+      }
+    }
+
+    if (!hasSupplemental && !hasParticipantStatus) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 const participantCollectionPaths = [
@@ -89,48 +252,27 @@ const participantCollectionPaths = [
   ["match", "match_participants"],
 ];
 
-const nestedParticipantKeys = [
-  "data",
-  "items",
-  "results",
-  "list",
-  "values",
-  "records",
-  "rows",
-  "edges",
-  "nodes",
-];
-
 const collectParticipantsFromSource = (source, participants, visited) => {
   if (source === null || source === undefined) {
     return;
   }
 
-  const isObjectLike = typeof source === "object";
-  if (isObjectLike) {
-    if (visited.has(source)) {
-      return;
-    }
-    visited.add(source);
+  if (typeof source !== "object" || source instanceof Date) {
+    return;
   }
+
+  if (visited.has(source)) {
+    return;
+  }
+  visited.add(source);
 
   if (Array.isArray(source)) {
     source.forEach((item) => {
-      if (!item) return;
-      if (
-        typeof item === "object" &&
-        item !== null &&
-        Object.prototype.hasOwnProperty.call(item, "node")
-      ) {
-        collectParticipantsFromSource(item.node, participants, visited);
+      if (item === undefined || item === null) {
         return;
       }
       collectParticipantsFromSource(item, participants, visited);
     });
-    return;
-  }
-
-  if (!isObjectLike) {
     return;
   }
 
@@ -139,10 +281,14 @@ const collectParticipantsFromSource = (source, participants, visited) => {
     return;
   }
 
-  nestedParticipantKeys.forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      collectParticipantsFromSource(source[key], participants, visited);
+  Object.values(source).forEach((value) => {
+    if (value === undefined || value === null) {
+      return;
     }
+    if (typeof value !== "object") {
+      return;
+    }
+    collectParticipantsFromSource(value, participants, visited);
   });
 };
 
