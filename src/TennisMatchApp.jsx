@@ -15,6 +15,7 @@ import {
 } from "./services/matches";
 import ProfileManager from "./components/ProfileManager";
 import InvitesList from "./components/InvitesList";
+import HostMatchAlerts from "./components/HostMatchAlerts";
 import {
   getInviteByToken,
   listInvites,
@@ -102,6 +103,269 @@ const matchFormatOptions = [
   "Round Robin",
   "Other",
 ];
+
+const HOST_ALERT_THRESHOLD_HOURS = 48;
+const HOST_ALERT_MAX_RECOMMENDATIONS = 5;
+
+const PLAYER_IDENTITY_KEYS_FOR_ALERTS = [
+  "player_id",
+  "playerId",
+  "user_id",
+  "userId",
+  "invitee_id",
+  "inviteeId",
+  "participant_id",
+  "participantId",
+  "match_participant_id",
+  "matchParticipantId",
+  "id",
+  "profile.id",
+  "profile.player_id",
+  "profile.playerId",
+  "player.id",
+  "player.player_id",
+  "player.playerId",
+];
+
+const PLAYER_EMAIL_KEYS_FOR_ALERTS = [
+  "email",
+  "profile.email",
+  "player.email",
+  "invitee_email",
+  "inviteeEmail",
+  "contact_email",
+  "contactEmail",
+];
+
+const PLAYER_PHONE_KEYS_FOR_ALERTS = [
+  "phone",
+  "profile.phone",
+  "player.phone",
+  "invitee_phone",
+  "inviteePhone",
+  "contact_phone",
+  "contactPhone",
+];
+
+const PLAYER_NAME_KEYS_FOR_ALERTS = [
+  "profile.full_name",
+  "profile.fullName",
+  "profile.name",
+  "player.full_name",
+  "player.fullName",
+  "player.name",
+  "full_name",
+  "fullName",
+  "name",
+  "invitee_name",
+  "inviteeName",
+];
+
+const HOST_STATUS_VALUES = new Set(["hosting", "host"]);
+
+const getNestedValue = (subject, path) => {
+  if (!subject || typeof subject !== "object") return undefined;
+  if (typeof path !== "string" || path.length === 0) return undefined;
+  if (!path.includes(".")) {
+    return subject[path];
+  }
+  return path.split(".").reduce((acc, segment) => {
+    if (acc === null || acc === undefined) return undefined;
+    return acc[segment];
+  }, subject);
+};
+
+const normalizeIdentityCandidate = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) return numeric;
+    return trimmed.toLowerCase();
+  }
+  if (typeof value === "bigint") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    return value.toString();
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  return null;
+};
+
+const extractEmailFromEntity = (entity) => {
+  for (const key of PLAYER_EMAIL_KEYS_FOR_ALERTS) {
+    const value = getNestedValue(entity, key);
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes("@")) continue;
+    return trimmed;
+  }
+  return "";
+};
+
+const extractPhoneDetailsFromEntity = (entity) => {
+  for (const key of PLAYER_PHONE_KEYS_FOR_ALERTS) {
+    const value = getNestedValue(entity, key);
+    if (value === undefined || value === null) continue;
+    const normalized = normalizePhoneValue(value);
+    const digits = getPhoneDigits(value);
+    if (normalized || digits) {
+      return {
+        normalized: normalized || "",
+        digits: digits || "",
+      };
+    }
+  }
+  return { normalized: "", digits: "" };
+};
+
+const extractPlayerIdFromEntity = (entity) => {
+  for (const key of PLAYER_IDENTITY_KEYS_FOR_ALERTS) {
+    const value = getNestedValue(entity, key);
+    const normalized = normalizeIdentityCandidate(value);
+    if (normalized === null) continue;
+    return normalized;
+  }
+  return null;
+};
+
+const buildPlayerKeyFromEntity = (entity) => {
+  for (const key of PLAYER_IDENTITY_KEYS_FOR_ALERTS) {
+    const value = getNestedValue(entity, key);
+    const normalized = normalizeIdentityCandidate(value);
+    if (normalized === null || normalized === "") continue;
+    if (typeof normalized === "number") {
+      return `id:${normalized}`;
+    }
+    if (typeof normalized === "string") {
+      return `id:${normalized}`;
+    }
+  }
+  const email = extractEmailFromEntity(entity);
+  if (email) {
+    return `email:${email}`;
+  }
+  const phoneDetails = extractPhoneDetailsFromEntity(entity);
+  if (phoneDetails.digits) {
+    return `phone:${phoneDetails.digits}`;
+  }
+  return null;
+};
+
+const extractNameFromEntity = (entity, fallbackId = null) => {
+  for (const key of PLAYER_NAME_KEYS_FOR_ALERTS) {
+    const value = getNestedValue(entity, key);
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  if (typeof fallbackId === "number" && Number.isFinite(fallbackId)) {
+    return `Player ${fallbackId}`;
+  }
+  if (typeof fallbackId === "string" && fallbackId.trim()) {
+    return fallbackId.trim();
+  }
+  return "";
+};
+
+const isHostingEntity = (entity) => {
+  if (!entity || typeof entity !== "object") return false;
+  if (entity.is_host === true || entity.isHost === true) return true;
+  const statusCandidates = [
+    entity.status,
+    entity.participant_status,
+    entity.participantStatus,
+    entity.role,
+    entity.match_role,
+    entity.matchRole,
+  ];
+  return statusCandidates.some((value) => {
+    if (!value) return false;
+    const normalized = value.toString().trim().toLowerCase();
+    return HOST_STATUS_VALUES.has(normalized);
+  });
+};
+
+const upsertPlayerSummary = (
+  summaries,
+  entity,
+  { weight = 1, timestamp = 0 } = {},
+) => {
+  if (!entity || typeof entity !== "object") return;
+  if (!(summaries instanceof Map)) return;
+  if (isHostingEntity(entity)) return;
+
+  const key = buildPlayerKeyFromEntity(entity);
+  if (!key) return;
+
+  const playerId = extractPlayerIdFromEntity(entity);
+  const email = extractEmailFromEntity(entity);
+  const phoneDetails = extractPhoneDetailsFromEntity(entity);
+  const name = extractNameFromEntity(entity, playerId);
+  const normalizedTimestamp = Number.isFinite(timestamp) ? timestamp : 0;
+  const phoneDisplay = phoneDetails.normalized
+    ? formatPhoneDisplay(phoneDetails.normalized)
+    : phoneDetails.digits
+    ? formatPhoneDisplay(phoneDetails.digits)
+    : "";
+
+  const fallbackName =
+    name ||
+    email ||
+    phoneDisplay ||
+    (typeof playerId === "number" && Number.isFinite(playerId)
+      ? `Player ${playerId}`
+      : "Player");
+
+  if (summaries.has(key)) {
+    const existing = summaries.get(key);
+    summaries.set(key, {
+      ...existing,
+      matchCount: existing.matchCount + weight,
+      lastSeen: Math.max(existing.lastSeen || 0, normalizedTimestamp),
+      name: existing.name || fallbackName,
+      email: existing.email || email || "",
+      phone: existing.phone || phoneDetails.normalized || "",
+      phoneDisplay: existing.phoneDisplay || phoneDisplay || "",
+    });
+    return;
+  }
+
+  summaries.set(key, {
+    key,
+    playerId: playerId ?? null,
+    name: fallbackName,
+    email: email || "",
+    phone: phoneDetails.normalized || "",
+    phoneDisplay,
+    matchCount: weight,
+    lastSeen: normalizedTimestamp,
+  });
+};
+
+const getOpenSpotsForMatch = (match) => {
+  if (!match || typeof match !== "object") return null;
+  const explicitValue = match.spotsAvailable;
+  if (explicitValue !== null && explicitValue !== undefined) {
+    const numeric = Number(explicitValue);
+    if (Number.isFinite(numeric) && numeric >= 0) {
+      return numeric;
+    }
+  }
+  const limit = Number(match.playerLimit);
+  const occupied = Number(match.occupied);
+  if (Number.isFinite(limit) && Number.isFinite(occupied)) {
+    return Math.max(limit - occupied, 0);
+  }
+  return null;
+};
 
 const getInitialPath = () => {
   if (typeof window === "undefined") return "/";
@@ -1639,7 +1903,10 @@ const TennisMatchApp = () => {
   }, [location.pathname, navigate]);
 
   const openInviteScreen = useCallback(
-    async (matchId, { skipNavigation = false, onClose } = {}) => {
+    async (
+      matchId,
+      { skipNavigation = false, onClose, preselectPlayers = [] } = {},
+    ) => {
       const numericMatchId = Number(matchId);
       if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) {
         displayToast("Match not found", "error");
@@ -1683,6 +1950,10 @@ const TennisMatchApp = () => {
           .filter((id) => Number.isFinite(id) && id > 0);
 
         const initial = new Map();
+        const initialManualContacts = new Map();
+        const pendingPreselects = Array.isArray(preselectPlayers)
+          ? preselectPlayers
+          : [];
         const hostParticipant = validParticipants.find(
           (p) => p.status === "hosting",
         );
@@ -1735,8 +2006,72 @@ const TennisMatchApp = () => {
           });
         });
 
+        pendingPreselects.forEach((player) => {
+          if (!player) return;
+          const candidateId = Number(
+            player.playerId ??
+              player.id ??
+              player.user_id ??
+              player.userId ??
+              player.player_id,
+          );
+
+          const nameCandidate =
+            player.name ||
+            player.full_name ||
+            player.fullName ||
+            player.displayName ||
+            (Number.isFinite(candidateId) && candidateId > 0
+              ? `Player ${candidateId}`
+              : "");
+
+          if (Number.isFinite(candidateId) && candidateId > 0) {
+            if (initial.has(candidateId)) return;
+            initial.set(candidateId, {
+              user_id: candidateId,
+              full_name: nameCandidate || `Player ${candidateId}`,
+              email:
+                player.email ||
+                player.contactEmail ||
+                player.profileEmail ||
+                "",
+              hosting: false,
+            });
+            return;
+          }
+
+          const phoneCandidates = [
+            player.phone,
+            player.contactPhone,
+            player.phoneNumber,
+            player.phone_digits,
+            player.phoneDigits,
+            player.phone_display,
+            player.phoneDisplay,
+          ];
+          let normalizedPhone = "";
+          for (const candidate of phoneCandidates) {
+            normalizedPhone = normalizePhoneValue(candidate);
+            if (normalizedPhone) break;
+          }
+          if (!normalizedPhone) return;
+          if (initialManualContacts.has(normalizedPhone)) return;
+
+          const contactName =
+            nameCandidate ||
+            player.phoneDisplay ||
+            player.phone_display ||
+            formatPhoneDisplay(normalizedPhone);
+
+          initialManualContacts.set(normalizedPhone, {
+            key: normalizedPhone,
+            phone: normalizedPhone,
+            name: contactName,
+          });
+        });
+
         setSelectedPlayers(initial);
-        setManualContacts(new Map());
+        setManualContacts(initialManualContacts);
         setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
         lastInviteLoadRef.current = numericMatchId;
         setMatchData((prev) => {
@@ -1764,18 +2099,18 @@ const TennisMatchApp = () => {
             format: match.match_format || prev.format || "",
             playerCount,
             occupied,
-          dateTime: match.start_date_time || prev.dateTime,
-          location: match.location_text || prev.location,
-          latitude: match.latitude ?? prev.latitude,
-          longitude: match.longitude ?? prev.longitude,
-          mapUrl: buildMapsUrl(
-            match.latitude,
-            match.longitude,
-            match.location_text,
-          ),
-          notes: match.notes || "",
-          hostId: computedHostId ?? prev.hostId,
-          hostName: computedHostName || prev.hostName || "",
+            dateTime: match.start_date_time || prev.dateTime,
+            location: match.location_text || prev.location,
+            latitude: match.latitude ?? prev.latitude,
+            longitude: match.longitude ?? prev.longitude,
+            mapUrl: buildMapsUrl(
+              match.latitude,
+              match.longitude,
+              match.location_text,
+            ),
+            notes: match.notes || "",
+            hostId: computedHostId ?? prev.hostId,
+            hostName: computedHostName || prev.hostName || "",
           };
         });
         setInviteMatchId((prev) =>
@@ -2055,6 +2390,96 @@ const TennisMatchApp = () => {
       return distanceA - distanceB;
     });
   }, [distanceFilter, hasLocationFilter, matchesWithDistance]);
+
+  const hostMatchAlerts = useMemo(() => {
+    if (!Array.isArray(matches) || matches.length === 0) return [];
+
+    const now = Date.now();
+    const thresholdMs = HOST_ALERT_THRESHOLD_HOURS * 60 * 60 * 1000;
+    const playerSummaries = new Map();
+
+    matches
+      .filter((match) => match && (match.type === "hosted" || match.type === "joined"))
+      .forEach((match) => {
+        const startDate = new Date(match.dateTime);
+        const matchTimestamp = startDate.getTime();
+        const participants = uniqueActiveParticipants(match.participants);
+        const invitees = uniqueInvitees(match.invitees);
+
+        participants.forEach((participant) =>
+          upsertPlayerSummary(playerSummaries, participant, {
+            weight: 2,
+            timestamp: Number.isFinite(matchTimestamp) ? matchTimestamp : 0,
+          }),
+        );
+
+        invitees.forEach((invite) =>
+          upsertPlayerSummary(playerSummaries, invite, {
+            weight: 1,
+            timestamp: Number.isFinite(matchTimestamp) ? matchTimestamp : 0,
+          }),
+        );
+      });
+
+    return matches
+      .filter((match) => match?.type === "hosted")
+      .map((match) => {
+        const status = typeof match.status === "string" ? match.status.toLowerCase() : "";
+        if (status === "archived" || status === "draft") return null;
+        if (status === "cancelled" || status === "canceled") return null;
+
+        const startDate = new Date(match.dateTime);
+        const startTimestamp = startDate.getTime();
+        if (!Number.isFinite(startTimestamp)) return null;
+
+        const timeUntil = startTimestamp - now;
+        if (timeUntil < 0 || timeUntil > thresholdMs) return null;
+
+        const openSpots = getOpenSpotsForMatch(match);
+        if (!Number.isFinite(openSpots) || openSpots <= 0) return null;
+
+        const reservedKeys = new Set();
+        uniqueActiveParticipants(match.participants).forEach((participant) => {
+          const key = buildPlayerKeyFromEntity(participant);
+          if (key) reservedKeys.add(key);
+        });
+        uniqueInvitees(match.invitees).forEach((invite) => {
+          const key = buildPlayerKeyFromEntity(invite);
+          if (key) reservedKeys.add(key);
+        });
+
+        const recommendations = Array.from(playerSummaries.values())
+          .filter((candidate) => !reservedKeys.has(candidate.key))
+          .sort((a, b) => {
+            if (b.matchCount !== a.matchCount) {
+              return b.matchCount - a.matchCount;
+            }
+            return (b.lastSeen || 0) - (a.lastSeen || 0);
+          })
+          .slice(0, HOST_ALERT_MAX_RECOMMENDATIONS);
+
+        return {
+          matchId: match.id,
+          dateTime: match.dateTime,
+          location: match.location,
+          format: match.format,
+          skillLevel: match.skillLevel,
+          openSpots,
+          playerLimit: (() => {
+            const numeric = Number(match.playerLimit);
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
+          occupied: (() => {
+            const numeric = Number(match.occupied);
+            return Number.isFinite(numeric) ? numeric : null;
+          })(),
+          timeUntilMs: timeUntil,
+          recommendations,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.timeUntilMs - b.timeUntilMs);
+  }, [matches]);
 
   const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
   const activeLocationLabel = hasLocationFilter
@@ -2376,9 +2801,16 @@ const TennisMatchApp = () => {
                 You're all caught up on invites. 🎉
               </div>
             )}
+            {hostMatchAlerts.length > 0 && (
+              <HostMatchAlerts
+                alerts={hostMatchAlerts}
+                onInvite={openInviteScreen}
+                formatDateTime={formatDateTime}
+              />
+            )}
           </div>
 
-      {/* Filter Tabs */}
+        {/* Filter Tabs */}
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
@@ -5935,6 +6367,8 @@ const TennisMatchApp = () => {
               setMatchData={setMatchData}
               selectedPlayers={selectedPlayers}
               setSelectedPlayers={setSelectedPlayers}
+              manualContacts={manualContacts}
+              setManualContacts={setManualContacts}
               existingPlayerIds={existingPlayerIds}
               setExistingPlayerIds={setExistingPlayerIds}
               onToast={displayToast}
