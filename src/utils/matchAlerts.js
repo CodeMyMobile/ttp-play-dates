@@ -8,25 +8,42 @@ const DEFAULT_LOOKAHEAD_HOURS = 24 * 7; // one week lookahead by default
 const URGENT_THRESHOLD_HOURS = 12;
 const WARNING_THRESHOLD_HOURS = 24;
 const DRAFT_STATUS = "draft";
-const FINALIZED_STATUS_KEYWORDS = [
+const INACTIVE_STATUS_TOKENS = new Set([
   "archive",
+  "archived",
   "cancel",
+  "canceled",
+  "cancelled",
   "complete",
+  "completed",
   "finish",
+  "finished",
   "final",
+  "finalized",
+  "finalised",
   "closed",
   "past",
   "expired",
-];
+]);
+
+const getStatusTokens = (status) => {
+  if (!status) return [];
+  return status
+    .toString()
+    .trim()
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+};
 
 const isInactiveMatchStatus = (status) => {
-  if (!status) return false;
-  const normalized = status.toString().trim().toLowerCase();
-  if (!normalized) return false;
-  if (normalized === DRAFT_STATUS) return true;
-  return FINALIZED_STATUS_KEYWORDS.some((keyword) =>
-    normalized.includes(keyword),
-  );
+  const tokens = getStatusTokens(status);
+  if (tokens.length === 0) return false;
+  if (tokens.includes(DRAFT_STATUS)) {
+    return true;
+  }
+  return tokens.some((token) => INACTIVE_STATUS_TOKENS.has(token));
 };
 
 const toDate = (value) => {
@@ -61,9 +78,7 @@ export const evaluateLowOccupancyAlert = ({
   now = new Date(),
   lookaheadHours = DEFAULT_LOOKAHEAD_HOURS,
 } = {}) => {
-  const normalizedStatus =
-    typeof status === "string" ? status.trim().toLowerCase() : "";
-  if (isInactiveMatchStatus(normalizedStatus)) {
+  if (isInactiveMatchStatus(status)) {
     return null;
   }
 
