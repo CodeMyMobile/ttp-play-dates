@@ -31,6 +31,29 @@ const readValue = (subject, key) => {
   return subject[key];
 };
 
+const isPlainIdKey = (key) => typeof key === "string" && key === "id";
+
+const participantIdentityPaths = candidateIdKeys.filter((key) => !isPlainIdKey(key));
+
+const looksLikeParticipantRecord = (candidate) => {
+  if (!candidate || typeof candidate !== "object") {
+    return false;
+  }
+  return participantIdentityPaths.some((key) => {
+    const value = readValue(candidate, key);
+    if (value === undefined || value === null) {
+      return false;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    return true;
+  });
+};
+
 const parseNumericId = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") {
@@ -55,6 +78,90 @@ const extractParticipantId = (participant) => {
     }
   }
   return null;
+};
+
+const participantCollectionPaths = [
+  ["participants"],
+  ["match", "participants"],
+  ["matchParticipants"],
+  ["match", "matchParticipants"],
+  ["match_participants"],
+  ["match", "match_participants"],
+];
+
+const nestedParticipantKeys = [
+  "data",
+  "items",
+  "results",
+  "list",
+  "values",
+  "records",
+  "rows",
+  "edges",
+  "nodes",
+];
+
+const collectParticipantsFromSource = (source, participants, visited) => {
+  if (source === null || source === undefined) {
+    return;
+  }
+
+  const isObjectLike = typeof source === "object";
+  if (isObjectLike) {
+    if (visited.has(source)) {
+      return;
+    }
+    visited.add(source);
+  }
+
+  if (Array.isArray(source)) {
+    source.forEach((item) => {
+      if (!item) return;
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        Object.prototype.hasOwnProperty.call(item, "node")
+      ) {
+        collectParticipantsFromSource(item.node, participants, visited);
+        return;
+      }
+      collectParticipantsFromSource(item, participants, visited);
+    });
+    return;
+  }
+
+  if (!isObjectLike) {
+    return;
+  }
+
+  if (looksLikeParticipantRecord(source)) {
+    participants.push(source);
+    return;
+  }
+
+  nestedParticipantKeys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      collectParticipantsFromSource(source[key], participants, visited);
+    }
+  });
+};
+
+const collectMatchParticipants = (match) => {
+  if (!match || typeof match !== "object") {
+    return [];
+  }
+
+  const participants = [];
+  const visited = new Set();
+
+  participantCollectionPaths.forEach((path) => {
+    const value = readValue(match, path);
+    if (value !== undefined && value !== null) {
+      collectParticipantsFromSource(value, participants, visited);
+    }
+  });
+
+  return participants;
 };
 
 const buildParticipantName = (participant, fallbackId) => {
@@ -141,7 +248,9 @@ export const buildRecentPartnerSuggestions = ({
 
   matches.forEach((match) => {
     const { timestamp, iso } = extractMatchMoment(match);
-    const participants = uniqueActiveParticipants(match?.participants);
+    const participants = uniqueActiveParticipants(
+      collectMatchParticipants(match),
+    );
     participants.forEach((participant) => {
       if (
         memberMatchesParticipant(
