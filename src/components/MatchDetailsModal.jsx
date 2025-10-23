@@ -34,6 +34,7 @@ import { rejectInvite } from "../services/invites";
 import { isMatchArchivedError } from "../utils/archive";
 import {
   countUniqueMatchOccupants,
+  getParticipantPhone,
   idsMatch,
   pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
@@ -65,7 +66,11 @@ import {
   getAvatarInitials,
   getProfileImageFromSource,
 } from "../utils/avatar";
-import { formatPhoneDisplay, getPhoneDigits } from "../services/phone";
+import {
+  formatPhoneDisplay,
+  getPhoneDigits,
+  normalizePhoneValue,
+} from "../services/phone";
 
 const safeDate = (value) => {
   if (!value) return null;
@@ -1464,6 +1469,15 @@ const MatchDetailsModal = ({
       const id = getParticipantIdentity(participant, `participant-${index}`);
       const avatar = getParticipantProfileImage(participant);
       const profileUrl = getParticipantProfileUrl(participant, playerId);
+      const phoneRaw = getParticipantPhone(participant);
+      const phoneDigits = getPhoneDigits(phoneRaw);
+      const phoneDisplay = phoneDigits
+        ? formatPhoneDisplay(phoneRaw) || phoneDigits
+        : "";
+      const phoneValue = phoneDigits
+        ? normalizePhoneValue(phoneRaw) || phoneDigits
+        : "";
+      const phoneHref = phoneValue ? `tel:${phoneValue}` : "";
       return {
         id,
         playerId,
@@ -1487,6 +1501,8 @@ const MatchDetailsModal = ({
           participant.rating ||
           null,
         profileUrl,
+        phoneDisplay,
+        phoneHref,
         participant,
       };
     });
@@ -1842,10 +1858,26 @@ const MatchDetailsModal = ({
         }
         const canViewProfile =
           typeof onViewPlayerProfile === "function" || Boolean(player.profileUrl);
+        const canRemove =
+          isHost &&
+          !player.placeholder &&
+          !player.isHost &&
+          !isArchived &&
+          !isCancelled;
+        const phoneLink =
+          player.phoneDisplay && player.phoneHref ? (
+            <a
+              href={player.phoneHref}
+              aria-label={`Call ${player.name}`}
+              className="text-xs font-semibold text-emerald-600 transition hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+            >
+              {player.phoneDisplay}
+            </a>
+          ) : null;
         return (
           <div
             key={player.id}
-            className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"
+            className="flex flex-col gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <button
               type="button"
@@ -1882,21 +1914,22 @@ const MatchDetailsModal = ({
                 )}
               </div>
             </button>
-            {isHost &&
-              !player.placeholder &&
-              !player.isHost &&
-              !isArchived &&
-              !isCancelled && (
-                <button
-                  type="button"
-                  onClick={() => handleRemoveParticipant(player.playerId, player.name)}
-                  disabled={removingParticipantId === player.playerId}
-                  className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-400 transition-colors hover:text-red-500 disabled:opacity-60"
-                  aria-label={`Remove ${player.name}`}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+            {(phoneLink || canRemove) && (
+              <div className="flex items-center gap-2 sm:ml-4">
+                {phoneLink}
+                {canRemove && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveParticipant(player.playerId, player.name)}
+                    disabled={removingParticipantId === player.playerId}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-400 transition-colors hover:text-red-500 disabled:opacity-60"
+                    aria-label={`Remove ${player.name}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
