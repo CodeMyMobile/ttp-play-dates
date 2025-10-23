@@ -26,10 +26,7 @@ import {
   memberMatchesAnyId,
   memberMatchesParticipant,
 } from "../utils/memberIdentity";
-import {
-  formatPhoneDisplay,
-  normalizePhoneValue,
-} from "../services/phone";
+import { formatPhoneDisplay, normalizePhoneValue } from "../services/phone";
 
 const InviteScreen = ({
   matchId,
@@ -552,12 +549,12 @@ const InviteScreen = ({
           {pagination && (
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-                >
-                  Previous
-                </button>
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              >
+                Previous
+              </button>
                 <span className="text-sm font-semibold text-gray-600">
                   Page {pagination.page} of {Math.ceil(pagination.total / pagination.perPage)}
                 </span>
@@ -736,7 +733,7 @@ const InviteScreen = ({
                       (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id)
                     );
                   const phoneNumbers = Array.from(
-                    manualContactSelections.values(),
+                    manualContactSelections.values()
                   ).map((contact) =>
                     contact.name
                       ? { phone: contact.phone, fullName: contact.name }

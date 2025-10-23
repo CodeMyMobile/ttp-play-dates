@@ -2084,18 +2084,18 @@ const TennisMatchApp = () => {
             format: match.match_format || prev.format || "",
             playerCount,
             occupied,
-          dateTime: match.start_date_time || prev.dateTime,
-          location: match.location_text || prev.location,
-          latitude: match.latitude ?? prev.latitude,
-          longitude: match.longitude ?? prev.longitude,
-          mapUrl: buildMapsUrl(
-            match.latitude,
-            match.longitude,
-            match.location_text,
-          ),
-          notes: match.notes || "",
-          hostId: computedHostId ?? prev.hostId,
-          hostName: computedHostName || prev.hostName || "",
+            dateTime: match.start_date_time || prev.dateTime,
+            location: match.location_text || prev.location,
+            latitude: match.latitude ?? prev.latitude,
+            longitude: match.longitude ?? prev.longitude,
+            mapUrl: buildMapsUrl(
+              match.latitude,
+              match.longitude,
+              match.location_text,
+            ),
+            notes: match.notes || "",
+            hostId: computedHostId ?? prev.hostId,
+            hostName: computedHostName || prev.hostName || "",
           };
         });
         setInviteMatchId((prev) =>
@@ -2351,27 +2351,6 @@ const TennisMatchApp = () => {
     });
   }, [distanceFilter, hasLocationFilter, matchesWithDistance]);
 
-  const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
-  const activeLocationLabel = hasLocationFilter
-    ? locationFilter?.label || "Saved location"
-    : "";
-
-  const getMatchCount = useCallback(
-    (filterId) => {
-      if (!matchCounts) return 0;
-      if (filterId === "archived") {
-        return (
-          matchCounts.archived ??
-          matchCounts.archieve ??
-          matchCounts.archive ??
-          0
-        );
-      }
-      return matchCounts[filterId] ?? 0;
-    },
-    [matchCounts],
-  );
-
   const hostMatchAlerts = useMemo(() => {
     if (!Array.isArray(matches) || matches.length === 0) return [];
 
@@ -2380,9 +2359,7 @@ const TennisMatchApp = () => {
     const playerSummaries = new Map();
 
     matches
-      .filter((match) =>
-        match && (match.type === "hosted" || match.type === "joined"),
-      )
+      .filter((match) => match && (match.type === "hosted" || match.type === "joined"))
       .forEach((match) => {
         const startDate = new Date(match.dateTime);
         const matchTimestamp = startDate.getTime();
@@ -2407,9 +2384,7 @@ const TennisMatchApp = () => {
     return matches
       .filter((match) => match?.type === "hosted")
       .map((match) => {
-        const status = typeof match.status === "string"
-          ? match.status.toLowerCase()
-          : "";
+        const status = typeof match.status === "string" ? match.status.toLowerCase() : "";
         if (status === "archived" || status === "draft") return null;
         if (status === "cancelled" || status === "canceled") return null;
 
@@ -2465,6 +2440,27 @@ const TennisMatchApp = () => {
       .filter(Boolean)
       .sort((a, b) => a.timeUntilMs - b.timeUntilMs);
   }, [matches]);
+
+  const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
+  const activeLocationLabel = hasLocationFilter
+    ? locationFilter?.label || "Saved location"
+    : "";
+
+  const getMatchCount = useCallback(
+    (filterId) => {
+      if (!matchCounts) return 0;
+      if (filterId === "archived") {
+        return (
+          matchCounts.archived ??
+          matchCounts.archieve ??
+          matchCounts.archive ??
+          0
+        );
+      }
+      return matchCounts[filterId] ?? 0;
+    },
+    [matchCounts],
+  );
 
   const BrowseScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
@@ -2770,7 +2766,7 @@ const TennisMatchApp = () => {
             )}
           </div>
 
-      {/* Filter Tabs */}
+        {/* Filter Tabs */}
       <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
