@@ -91,6 +91,7 @@ import {
 import { getMatchPrivacy } from "./utils/matchPrivacy";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 import { buildRecentPartnerSuggestions } from "./utils/inviteSuggestions";
+import { evaluateLowOccupancyAlert } from "./utils/matchAlerts";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -634,6 +635,8 @@ const TennisMatchApp = () => {
     notes: "",
     hostId: null,
     hostName: "",
+    status: "upcoming",
+    lowOccupancy: null,
   });
 
   const [matches, setMatches] = useState([]);
@@ -1467,6 +1470,26 @@ const TennisMatchApp = () => {
           return null;
         }
 
+        const playerLimitValue = (() => {
+          if (Number.isFinite(limitFromCapacity) && limitFromCapacity > 0) {
+            return limitFromCapacity;
+          }
+          const raw = m.player_limit;
+          const numeric =
+            typeof raw === "string" ? Number.parseInt(raw, 10) : raw;
+          return Number.isFinite(numeric) ? numeric : null;
+        })();
+
+        const lowOccupancyAlert = isHost
+          ? evaluateLowOccupancyAlert({
+              status: m.status || "upcoming",
+              startDateTime: m.start_date_time,
+              playerLimit: playerLimitValue,
+              activeParticipants,
+              dedupedInvitees: invitees,
+            })
+          : null;
+
         return {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
@@ -1503,15 +1526,7 @@ const TennisMatchApp = () => {
           notes: m.notes,
           invitees: m.invitees || [],
           participants: m.participants || [],
-          playerLimit: (() => {
-            if (Number.isFinite(limitFromCapacity) && limitFromCapacity > 0) {
-              return limitFromCapacity;
-            }
-            const raw = m.player_limit;
-            const numeric =
-              typeof raw === "string" ? Number.parseInt(raw, 10) : raw;
-            return Number.isFinite(numeric) ? numeric : null;
-          })(),
+          playerLimit: playerLimitValue,
           occupied,
           spotsAvailable: (() => {
             if (Number.isFinite(openFromCapacity)) {
@@ -1528,6 +1543,7 @@ const TennisMatchApp = () => {
           })(),
           capacity: capacityInfo,
           isInvited,
+          lowOccupancyAlert,
         };
       }).filter(Boolean);
       if (activeFilter === "draft") {
@@ -1675,6 +1691,7 @@ const TennisMatchApp = () => {
           : match.invitees || [];
 
         const validParticipants = uniqueActiveParticipants(participantsSource);
+        const dedupedInvitees = uniqueInvitees(inviteesSource);
         const participantIds = validParticipants
           .map((p) => Number(p.player_id))
           .filter((id) => Number.isFinite(id) && id > 0);
@@ -1753,6 +1770,14 @@ const TennisMatchApp = () => {
             Number.isFinite(limitFromCapacity) && limitFromCapacity > 0
               ? limitFromCapacity
               : fallbackPlayerLimit ?? prev.playerCount;
+          const status = match.status || prev.status || "upcoming";
+          const lowOccupancyData = evaluateLowOccupancyAlert({
+            status,
+            startDateTime: match.start_date_time || prev.dateTime,
+            playerLimit: playerCount,
+            activeParticipants: validParticipants,
+            dedupedInvitees,
+          });
           return {
             ...prev,
             type:
@@ -1764,18 +1789,20 @@ const TennisMatchApp = () => {
             format: match.match_format || prev.format || "",
             playerCount,
             occupied,
-          dateTime: match.start_date_time || prev.dateTime,
-          location: match.location_text || prev.location,
-          latitude: match.latitude ?? prev.latitude,
-          longitude: match.longitude ?? prev.longitude,
-          mapUrl: buildMapsUrl(
-            match.latitude,
-            match.longitude,
-            match.location_text,
-          ),
-          notes: match.notes || "",
-          hostId: computedHostId ?? prev.hostId,
-          hostName: computedHostName || prev.hostName || "",
+            dateTime: match.start_date_time || prev.dateTime,
+            location: match.location_text || prev.location,
+            latitude: match.latitude ?? prev.latitude,
+            longitude: match.longitude ?? prev.longitude,
+            mapUrl: buildMapsUrl(
+              match.latitude,
+              match.longitude,
+              match.location_text,
+            ),
+            notes: match.notes || "",
+            hostId: computedHostId ?? prev.hostId,
+            hostName: computedHostName || prev.hostName || "",
+            status,
+            lowOccupancy: lowOccupancyData,
           };
         });
         setInviteMatchId((prev) =>
@@ -2590,6 +2617,58 @@ const TennisMatchApp = () => {
       ? "Tap for directions"
       : "Location details coming soon";
 
+    const lowOccupancy = match.lowOccupancyAlert;
+    const showLowOccupancy = Boolean(isHosted && lowOccupancy);
+
+    const severityStyles = {
+      urgent: {
+        container: "border-red-200 bg-red-50 text-red-700",
+        badge: "bg-red-500 text-white",
+        button:
+          "bg-red-500 text-white hover:bg-red-600",
+      },
+      warning: {
+        container: "border-amber-200 bg-amber-50 text-amber-700",
+        badge: "bg-amber-500 text-white",
+        button:
+          "bg-amber-500 text-white hover:bg-amber-600",
+      },
+      soon: {
+        container: "border-blue-200 bg-blue-50 text-blue-700",
+        badge: "bg-blue-500 text-white",
+        button:
+          "bg-blue-500 text-white hover:bg-blue-600",
+      },
+    };
+
+    const formatTimeUntil = (hours) => {
+      if (!Number.isFinite(hours) || hours <= 0) {
+        return "less than an hour";
+      }
+      if (hours < 1) {
+        const minutes = Math.max(Math.round(hours * 60), 1);
+        return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+      }
+      if (hours < 24) {
+        const rounded = Math.round(hours);
+        return `${rounded} hour${rounded === 1 ? "" : "s"}`;
+      }
+      const days = Math.round(hours / 24);
+      return `${days} day${days === 1 ? "" : "s"}`;
+    };
+
+    const severityKey = lowOccupancy?.severity ?? "warning";
+    const severityTokens = severityStyles[severityKey] || severityStyles.warning;
+    const severityLabel =
+      severityKey === "urgent"
+        ? "Act now"
+        : severityKey === "warning"
+        ? "Needs attention"
+        : "Monitor";
+    const timeUntilLabel = lowOccupancy
+      ? formatTimeUntil(lowOccupancy.hoursUntil)
+      : "";
+
     return (
       <div
         className={`bg-white rounded-2xl shadow-sm transition-all p-6 border border-gray-100 group ${
@@ -2654,6 +2733,48 @@ const TennisMatchApp = () => {
             </button>
           )}
         </div>
+
+        {showLowOccupancy && (
+          <div
+            className={`mb-4 rounded-xl border px-4 py-3 text-sm font-semibold ${severityTokens.container}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-sm font-black">Low occupancy alert</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${severityTokens.badge}`}
+                >
+                  {severityLabel}
+                </span>
+              </div>
+              <span className="text-xs font-bold">
+                Confirmed {lowOccupancy.participantCount}/{lowOccupancy.playerLimit}
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-semibold">
+              Need {lowOccupancy.openSpots} more player
+              {lowOccupancy.openSpots === 1 ? "" : "s"} before the match starts in {timeUntilLabel}. {" "}
+              {lowOccupancy.inviteCoverage > 0
+                ? `Only ${lowOccupancy.inviteCoverage} invite${
+                    lowOccupancy.inviteCoverage === 1 ? "" : "s"
+                  } currently out.`
+                : "No outstanding invites are out yet."}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => openInviteScreen(match.id)}
+                className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-black transition-all shadow ${severityTokens.button}`}
+              >
+                <Send className="w-3.5 h-3.5" /> Invite substitutes
+              </button>
+              <span className="text-xs font-semibold opacity-80">
+                Short {lowOccupancy.shortfall} invite
+                {lowOccupancy.shortfall === 1 ? "" : "s"} to fill every spot
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 mb-4">
           <div className="flex items-start gap-3">
