@@ -1,4 +1,4 @@
-import { uniqueActiveParticipants } from "./participants";
+import { uniqueParticipants } from "./participants";
 import { memberMatchesParticipant } from "./memberIdentity";
 
 const candidateIdKeys = [
@@ -310,6 +310,134 @@ const collectMatchParticipants = (match) => {
   return participants;
 };
 
+const departureKeys = [
+  "left_at",
+  "leftAt",
+  "removed_at",
+  "removedAt",
+  "cancelled_at",
+  "cancelledAt",
+  "canceled_at",
+  "canceledAt",
+  "declined_at",
+  "declinedAt",
+  "withdrawn_at",
+  "withdrawnAt",
+];
+
+const statusKeys = [
+  "status",
+  "participant_status",
+  "participantStatus",
+  "status_reason",
+  "statusReason",
+  "response",
+  "rsvp_status",
+  "rsvpStatus",
+];
+
+const normalizeStatus = (value) => {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  const normalized = value.toString().trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+};
+
+const inactiveStatusValues = new Set([
+  "left",
+  "removed",
+  "cancelled",
+  "canceled",
+  "declined",
+  "rejected",
+  "withdrawn",
+  "expired",
+  "no show",
+  "did not show",
+  "did not attend",
+  "not attending",
+  "not coming",
+  "no longer attending",
+  "no longer playing",
+  "banned",
+  "blocked",
+  "suspended",
+  "kicked",
+  "booted",
+  "removed by host",
+  "removed by captain",
+  "cancelled by host",
+  "canceled by host",
+  "cancelled by captain",
+  "canceled by captain",
+]);
+
+const inactiveStatusList = Array.from(inactiveStatusValues);
+
+const hasMeaningfulValue = (subject, key) => {
+  if (!subject || typeof subject !== "object") {
+    return false;
+  }
+  if (!Object.prototype.hasOwnProperty.call(subject, key)) {
+    return false;
+  }
+  const value = subject[key];
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (value instanceof Date) {
+    return !Number.isNaN(value.getTime());
+  }
+  return true;
+};
+
+const hasDepartureMetadata = (participant) =>
+  departureKeys.some((key) => hasMeaningfulValue(participant, key));
+
+const hasInactiveStatus = (participant) =>
+  statusKeys.some((key) => {
+    const raw = readValue(participant, key);
+    const normalized = normalizeStatus(raw);
+    if (!normalized) {
+      return false;
+    }
+    if (inactiveStatusValues.has(normalized)) {
+      return true;
+    }
+    return inactiveStatusList.some((inactive) =>
+      normalized.includes(inactive),
+    );
+  });
+
+const isEligibleForSuggestions = (participant) => {
+  if (!participant || typeof participant !== "object") {
+    return false;
+  }
+  if (participant.is_active === false || participant.active === false) {
+    return false;
+  }
+  if (hasDepartureMetadata(participant)) {
+    return false;
+  }
+  if (hasInactiveStatus(participant)) {
+    return false;
+  }
+  return true;
+};
+
 const buildParticipantName = (participant, fallbackId) => {
   if (!participant || typeof participant !== "object") {
     return fallbackId ? `Player ${fallbackId}` : "Unknown player";
@@ -394,9 +522,9 @@ export const buildRecentPartnerSuggestions = ({
 
   matches.forEach((match) => {
     const { timestamp, iso } = extractMatchMoment(match);
-    const participants = uniqueActiveParticipants(
+    const participants = uniqueParticipants(
       collectMatchParticipants(match),
-    );
+    ).filter(isEligibleForSuggestions);
     participants.forEach((participant) => {
       if (
         memberMatchesParticipant(
