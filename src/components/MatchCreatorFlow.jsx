@@ -258,7 +258,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
-  const [recentLocations, setRecentLocations] = useState(loadStoredLocations);
+  const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
 
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),

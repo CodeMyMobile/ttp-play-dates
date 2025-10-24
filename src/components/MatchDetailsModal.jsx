@@ -705,7 +705,7 @@ const MatchDetailsModal = ({
   const [editSaving, setEditSaving] = useState(false);
   const [cancellingMatch, setCancellingMatch] = useState(false);
   const [decliningInvite, setDecliningInvite] = useState(false);
-  const [recentLocations, setRecentLocations] = useState(loadStoredLocations);
+  const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
   const [showSavedLocations, setShowSavedLocations] = useState(false);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
