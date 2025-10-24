@@ -2042,20 +2042,28 @@ const MatchDetailsModal = ({
         );
       })}
       {openSpotCount > 0 && (
-        <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-3">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            <Users className="h-3.5 w-3.5" />
+        <section className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 shadow-inner">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <Users className="h-4 w-4 text-slate-500" />
             <span>
-              {openSpotCount === 1
-                ? "1 open spot"
-                : `${openSpotCount} open spots`}
+              {openSpotCount === 1 ? "1 open spot" : `${openSpotCount} open spots`}
             </span>
           </div>
-          <div className="mt-2 space-y-1">
+          <p className="mt-1 text-xs text-slate-500">
+            {openSpotCount === 1
+              ? "Waiting on one more player to join."
+              : "Waiting on more players to join."}
+          </p>
+          <div
+            className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2"
+            role="list"
+            aria-label="Open spots"
+          >
             {Array.from({ length: openSpotCount }).map((_, index) => (
               <div
                 key={`open-slot-${index}`}
-                className="h-px w-full rounded-full bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300"
+                role="listitem"
+                className="h-1.5 rounded-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200"
               >
                 <span className="sr-only">
                   {`Open spot ${index + 1} of ${openSpotCount}`}
@@ -2063,7 +2071,7 @@ const MatchDetailsModal = ({
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
