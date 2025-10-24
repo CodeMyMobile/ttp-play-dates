@@ -75,6 +75,7 @@ import {
 } from "./utils/archive";
 import {
   countUniqueMatchOccupants,
+  getParticipantPhone,
   idsMatch,
   pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
@@ -83,6 +84,7 @@ import {
 } from "./utils/participants";
 import {
   collectMemberIds,
+  collectMatchHostIds,
   memberIsMatchHost,
   memberMatchesAnyId,
   memberMatchesInvite,
@@ -2765,6 +2767,163 @@ const TennisMatchApp = () => {
       return ids;
     }, [match.invitees, match.participants]);
 
+    const hostIdentityIds = useMemo(() => {
+      if (!isHosted) return [];
+      try {
+        return collectMatchHostIds(match) || [];
+      } catch (error) {
+        console.error("Failed to collect host identity ids", error);
+        return [];
+      }
+    }, [isHosted, match]);
+
+    const participantPhoneRecipients = useMemo(() => {
+      if (!isHosted) return [];
+      const hostIds = Array.isArray(hostIdentityIds) ? hostIdentityIds : [];
+      const recipients = [];
+      const seen = new Set();
+      const participants = uniqueActiveParticipants(match.participants || []);
+
+      const participantIdentityCandidates = (participant) => {
+        if (!participant || typeof participant !== "object") return [];
+        const profile = participant.profile || {};
+        const player = participant.player || {};
+        const user = participant.user || {};
+        const member = participant.member || {};
+        const contact = participant.contact || {};
+        return [
+          participant.match_participant_id,
+          participant.matchParticipantId,
+          participant.participant_id,
+          participant.participantId,
+          participant.player_id,
+          participant.playerId,
+          participant.invitee_id,
+          participant.inviteeId,
+          participant.user_id,
+          participant.userId,
+          participant.member_id,
+          participant.memberId,
+          participant.id,
+          profile.id,
+          profile.user_id,
+          profile.userId,
+          profile.player_id,
+          profile.playerId,
+          profile.member_id,
+          profile.memberId,
+          player.id,
+          player.user_id,
+          player.userId,
+          player.player_id,
+          player.playerId,
+          player.member_id,
+          player.memberId,
+          user.id,
+          user.user_id,
+          user.userId,
+          user.player_id,
+          user.playerId,
+          user.member_id,
+          user.memberId,
+          member.id,
+          member.user_id,
+          member.userId,
+          member.player_id,
+          member.playerId,
+          member.member_id,
+          member.memberId,
+          contact.id,
+          contact.user_id,
+          contact.userId,
+          contact.player_id,
+          contact.playerId,
+          contact.member_id,
+          contact.memberId,
+        ];
+      };
+
+      for (const participant of participants) {
+        if (!participant || typeof participant !== "object") continue;
+        const isHostParticipant = (() => {
+          if (typeof participant.status === "string") {
+            const status = participant.status.trim().toLowerCase();
+            if (status === "hosting" || status === "host") {
+              return true;
+            }
+          }
+          return participantIdentityCandidates(participant).some((candidate) =>
+            hostIds.some((hostId) => idsMatch(candidate, hostId)),
+          );
+        })();
+        if (isHostParticipant) {
+          continue;
+        }
+
+        const phoneRaw = getParticipantPhone(participant);
+        const normalized = normalizePhoneValue(phoneRaw);
+        if (!normalized || seen.has(normalized)) {
+          continue;
+        }
+        seen.add(normalized);
+        recipients.push(normalized);
+      }
+
+      return recipients;
+    }, [hostIdentityIds, isHosted, match.participants]);
+
+    const canMessageGroup = participantPhoneRecipients.length > 0;
+    const messageGroupLabel = participantPhoneRecipients.length === 1 ? "Message player" : "Message group";
+    const messageGroupDescription = canMessageGroup
+      ? participantPhoneRecipients.length === 1
+        ? "Start a text thread with the confirmed player."
+        : `Start a group text with ${participantPhoneRecipients.length} players.`
+      : "Add player phone numbers to enable group texts.";
+
+    const handleMessageGroup = useCallback(
+      (event) => {
+        event?.stopPropagation?.();
+        if (!canMessageGroup) {
+          displayToast(messageGroupDescription, "info");
+          return;
+        }
+        try {
+          const recipients = participantPhoneRecipients;
+          const ua =
+            typeof navigator !== "undefined" && navigator.userAgent
+              ? navigator.userAgent
+              : "";
+          const isAndroid = /Android/i.test(ua);
+          const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
+
+          let url = "sms:";
+          if (recipients.length > 0) {
+            if (isAndroid) {
+              const path = recipients.map((value) => encodeURIComponent(value)).join(";");
+              const addresses = encodeURIComponent(recipients.join(";"));
+              url = `smsto:${path}?addresses=${addresses}`;
+            } else if (isAppleMobile) {
+              const addresses = encodeURIComponent(recipients.join(","));
+              url = `sms:&addresses=${addresses}`;
+            } else {
+              const path = recipients.map((value) => encodeURIComponent(value)).join(",");
+              url = `sms:${path}`;
+            }
+          }
+
+          const toastMessage = isAppleMobile ? "Opening Messages..." : "Opening messages...";
+          displayToast(toastMessage, "info");
+          if (typeof window !== "undefined") {
+            window.location.href = url;
+          }
+        } catch (error) {
+          console.error(error);
+          displayToast("We couldn't open messages", "error");
+        }
+      },
+      [canMessageGroup, displayToast, messageGroupDescription, participantPhoneRecipients],
+    );
+
     const [showRecommendations, setShowRecommendations] = useState(false);
     const [recommendationStatus, setRecommendationStatus] = useState("idle");
     const [recommendationError, setRecommendationError] = useState("");
@@ -3236,6 +3395,25 @@ const TennisMatchApp = () => {
             >
               View & manage
             </button>
+            {isHosted && !isArchived && (
+              <button
+                type="button"
+                onClick={handleMessageGroup}
+                title={messageGroupDescription}
+                className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-colors sm:w-auto ${
+                  canMessageGroup
+                    ? "border-2 border-purple-200 text-purple-700 hover:border-purple-300 hover:bg-purple-50"
+                    : "border-2 border-gray-200 text-gray-400 cursor-not-allowed opacity-60"
+                }`}
+              >
+                <MessageCircle
+                  className={`h-4 w-4 ${
+                    canMessageGroup ? "text-purple-500" : "text-gray-400"
+                  }`}
+                />
+                {messageGroupLabel}
+              </button>
+            )}
             {match.type === "available" && isUpcoming && !isArchived && (
               <button
                 onClick={async () => {
