@@ -1524,7 +1524,7 @@ const MatchDetailsModal = ({
   );
 
   const playersList = useMemo(() => {
-    const list = committedParticipants.map((participant, index) => {
+    return committedParticipants.map((participant, index) => {
       const profile = participant.profile || {};
       const playerId = getParticipantPlayerId(participant);
       const id = getParticipantIdentity(participant, `participant-${index}`);
@@ -1567,14 +1567,13 @@ const MatchDetailsModal = ({
         participant,
       };
     });
+  }, [committedParticipants, match?.host_id]);
 
-    if (remainingSpots && remainingSpots > 0) {
-      for (let i = 0; i < remainingSpots; i += 1) {
-        list.push({ id: `placeholder-${i}`, placeholder: true });
-      }
-    }
-    return list;
-  }, [committedParticipants, match?.host_id, remainingSpots]);
+  const openSpotCount = useMemo(() => {
+    if (typeof remainingSpots !== "number") return 0;
+    if (!Number.isFinite(remainingSpots)) return 0;
+    return Math.max(remainingSpots, 0);
+  }, [remainingSpots]);
 
   const participantPhoneRecipients = useMemo(() => {
     if (!isHost) return [];
@@ -1969,29 +1968,10 @@ const MatchDetailsModal = ({
   const renderPlayers = () => (
     <div className="space-y-3">
       {playersList.map((player) => {
-        if (player.placeholder) {
-          return (
-            <div
-              key={player.id}
-              className="flex items-center gap-3 rounded-2xl border border-dashed border-gray-200 px-4 py-3 text-sm font-semibold text-gray-400"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-gray-300">
-                <Users className="h-4 w-4" />
-              </div>
-              <div>
-                <p>Waiting for player...</p>
-              </div>
-            </div>
-          );
-        }
         const canViewProfile =
           typeof onViewPlayerProfile === "function" || Boolean(player.profileUrl);
         const canRemove =
-          isHost &&
-          !player.placeholder &&
-          !player.isHost &&
-          !isArchived &&
-          !isCancelled;
+          isHost && !player.isHost && !isArchived && !isCancelled;
         const phoneLink =
           player.phoneDisplay && player.phoneHref ? (
             <a
@@ -2061,6 +2041,38 @@ const MatchDetailsModal = ({
           </div>
         );
       })}
+      {openSpotCount > 0 && (
+        <section className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 shadow-inner">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <Users className="h-4 w-4 text-slate-500" />
+            <span>
+              {openSpotCount === 1 ? "1 open spot" : `${openSpotCount} open spots`}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            {openSpotCount === 1
+              ? "Waiting on one more player to join."
+              : "Waiting on more players to join."}
+          </p>
+          <div
+            className="mt-3 grid grid-cols-1 gap-1 sm:grid-cols-2"
+            role="list"
+            aria-label="Open spots"
+          >
+            {Array.from({ length: openSpotCount }).map((_, index) => (
+              <div
+                key={`open-slot-${index}`}
+                role="listitem"
+                className="h-1.5 rounded-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200"
+              >
+                <span className="sr-only">
+                  {`Open spot ${index + 1} of ${openSpotCount}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 
