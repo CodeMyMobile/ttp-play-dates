@@ -1493,27 +1493,6 @@ const MatchDetailsModal = ({
     window.location.href = url;
   };
 
-  const handleMessageParticipants = useCallback(() => {
-    if (!canMessageParticipants) return;
-    try {
-      const recipientPath = participantPhoneRecipients
-        .map((value) => encodeURIComponent(value))
-        .join(",");
-      const params = new URLSearchParams();
-      if (participantPhoneRecipients.length > 0) {
-        params.set("addresses", participantPhoneRecipients.join(";"));
-      }
-      const base = recipientPath ? `sms:${recipientPath}` : "sms:";
-      const query = params.toString();
-      const url = query ? `${base}?${query}` : base;
-      onToast?.("Opening messages...");
-      window.location.href = url;
-    } catch (error) {
-      console.error(error);
-      onToast?.("We couldn't open messages", "error");
-    }
-  }, [canMessageParticipants, onToast, participantPhoneRecipients]);
-
   const handleRefreshShareLink = () => {
     if (shareLoading || !isOpenMatch || !match?.id) return;
     requestShareLink({ silent: false });
@@ -1622,6 +1601,27 @@ const MatchDetailsModal = ({
       ? "Start a group text with the confirmed player."
       : "Start a group text with your confirmed players."
     : "Add player phone numbers to enable group texts.";
+
+  const handleMessageParticipants = useCallback(() => {
+    if (!canMessageParticipants) return;
+    try {
+      const recipientPath = participantPhoneRecipients
+        .map((value) => encodeURIComponent(value))
+        .join(",");
+      const params = new URLSearchParams();
+      if (participantPhoneRecipients.length > 0) {
+        params.set("addresses", participantPhoneRecipients.join(";"));
+      }
+      const base = recipientPath ? `sms:${recipientPath}` : "sms:";
+      const query = params.toString();
+      const url = query ? `${base}?${query}` : base;
+      onToast?.("Opening messages...");
+      window.location.href = url;
+    } catch (error) {
+      console.error(error);
+      onToast?.("We couldn't open messages", "error");
+    }
+  }, [canMessageParticipants, onToast, participantPhoneRecipients]);
 
   const pendingInvitesList = useMemo(() => {
     if (pendingInvitees.length === 0) return [];
