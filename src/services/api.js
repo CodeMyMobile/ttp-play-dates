@@ -67,7 +67,7 @@ export const unwrap = (p) =>
       // ignore non-JSON responses
     }
     if (!r.ok) {
-      const msg = data?.error || r.statusText || "API_ERROR";
+      const msg = data?.message || data?.error || r.statusText || "API_ERROR";
       const error = new Error(msg);
       error.status = r.status;
       error.data = data;

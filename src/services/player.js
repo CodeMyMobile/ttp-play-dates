@@ -1,6 +1,29 @@
 import api, { unwrap } from "./api";
 import { normalizeAuthToken } from "./authToken";
 
+export const normalizeRatingForApi = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return undefined;
+  }
+
+  const rounded = Math.round(numeric * 10) / 10;
+  return Number(rounded.toFixed(1));
+};
+
 export const updatePlayerPersonalDetails = async ({
   player = null,
   id = null,
@@ -23,11 +46,14 @@ export const updatePlayerPersonalDetails = async ({
     throw new Error("Missing player id");
   }
 
+  const normalizedUstaRating = normalizeRatingForApi(usta_rating);
+  const normalizedUtaRating = normalizeRatingForApi(uta_rating);
+
   const params = Object.entries({
     id,
     date_of_birth,
-    usta_rating,
-    uta_rating,
+    usta_rating: normalizedUstaRating,
+    uta_rating: normalizedUtaRating,
     full_name: fullName,
     phone: mobile,
     about_me,
