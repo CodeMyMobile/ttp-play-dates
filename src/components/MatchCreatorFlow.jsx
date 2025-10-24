@@ -253,6 +253,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
+  const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
 
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),
@@ -275,6 +276,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setContactName("");
     setContactPhone("");
     setContactError("");
+    setIsFormatManuallySelected(false);
   }, []);
 
   const invitedPlayers = useMemo(
@@ -639,6 +641,22 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   };
 
   useEffect(() => {
+    if (isFormatManuallySelected) return;
+
+    setMatchData((prev) => {
+      if (prev.totalPlayers === 2 && prev.format !== "Singles") {
+        return { ...prev, format: "Singles" };
+      }
+
+      if (prev.totalPlayers > 2 && prev.format === "Singles") {
+        return { ...prev, format: "Doubles" };
+      }
+
+      return prev;
+    });
+  }, [isFormatManuallySelected, matchData.totalPlayers, setMatchData]);
+
+  useEffect(() => {
     if (!searchQuery) {
       setSearchResults([]);
       setSearchError("");
@@ -966,7 +984,10 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 <Trophy size={20} className="text-gray-500" />
                 <select
                   value={matchData.format}
-                  onChange={(e) => setMatchData((prev) => ({ ...prev, format: e.target.value }))}
+                  onChange={(e) => {
+                    setIsFormatManuallySelected(true);
+                    setMatchData((prev) => ({ ...prev, format: e.target.value }));
+                  }}
                   className="flex-1 bg-transparent text-lg font-medium text-gray-900 focus:outline-none"
                 >
                   {matchFormatOptions.map((option) => (
