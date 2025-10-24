@@ -15,6 +15,16 @@ const candidateIdKeys = [
   ["profile", "player_id"],
   ["profile", "playerId"],
   ["profile", "id"],
+  ["player", "id"],
+  ["player", "player_id"],
+  ["player", "playerId"],
+  ["player", "user_id"],
+  ["player", "userId"],
+  ["user", "id"],
+  ["user", "user_id"],
+  ["user", "userId"],
+  ["user", "player_id"],
+  ["user", "playerId"],
 ];
 
 const readValue = (subject, key) => {
@@ -128,41 +138,13 @@ const extractMatchMoment = (match) => {
   return { timestamp: null, iso: null };
 };
 
-const collectNumericUserIds = (currentUser, memberIdentities) => {
-  const ids = new Set();
-  const add = (value) => {
-    const parsed = parseNumericId(value);
-    if (parsed !== null) {
-      ids.add(parsed);
-    }
-  };
-
-  if (currentUser && typeof currentUser === "object") {
-    add(currentUser.id);
-    add(currentUser.user_id);
-    add(currentUser.userId);
-    add(currentUser.player_id);
-    add(currentUser.playerId);
-    const profile = currentUser.profile || {};
-    add(profile.id);
-    add(profile.user_id);
-    add(profile.userId);
-    add(profile.player_id);
-    add(profile.playerId);
+const toArrayOrNull = (value) => {
+  if (!value) return null;
+  if (Array.isArray(value)) return value;
+  if (typeof value[Symbol.iterator] === "function") {
+    return Array.from(value);
   }
-
-  if (Array.isArray(memberIdentities)) {
-    memberIdentities.forEach(add);
-  } else if (
-    memberIdentities &&
-    typeof memberIdentities[Symbol.iterator] === "function"
-  ) {
-    for (const value of memberIdentities) {
-      add(value);
-    }
-  }
-
-  return ids;
+  return null;
 };
 
 export const buildRecentPartnerSuggestions = ({
@@ -174,11 +156,11 @@ export const buildRecentPartnerSuggestions = ({
     return [];
   }
 
-  const currentUserIds = collectNumericUserIds(currentUser, memberIdentities);
-  if (currentUserIds.size === 0) {
+  if (!currentUser && !memberIdentities) {
     return [];
   }
 
+  const precomputedMemberIds = toArrayOrNull(memberIdentities);
   const suggestionMap = new Map();
 
   matches.forEach((match) => {
@@ -186,18 +168,23 @@ export const buildRecentPartnerSuggestions = ({
     const participants = uniqueActiveParticipants(match?.participants);
     if (participants.length === 0) return;
 
-    const userIsInMatch = participants.some((participant) => {
-      const participantId = extractParticipantId(participant);
-      if (!participantId) return false;
-      return currentUserIds.has(participantId);
-    });
+    const userIsInMatch =
+      !!currentUser &&
+      participants.some((participant) =>
+        memberMatchesParticipant(currentUser, participant, precomputedMemberIds),
+      );
 
     if (!userIsInMatch) return;
 
     participants.forEach((participant) => {
       const participantId = extractParticipantId(participant);
       if (!participantId) return;
-      if (currentUserIds.has(participantId)) return;
+      if (
+        currentUser &&
+        memberMatchesParticipant(currentUser, participant, precomputedMemberIds)
+      ) {
+        return;
+      }
 
       const name = buildParticipantName(participant, participantId);
       const existing = suggestionMap.get(participantId);
