@@ -45,7 +45,13 @@ import {
 } from "../utils/matchOptions";
 import { combineDateAndTimeToIso } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
-import { buildMatchUpdatePayload } from "../utils/matchPayload";
+import {
+  buildMatchUpdatePayload,
+  getMatchPlayerLimit,
+  parsePlayerLimit,
+  PLAYER_LIMIT_MIN,
+  PLAYER_LIMIT_MAX,
+} from "../utils/matchPayload";
 import {
   formatPhoneDisplay,
   getPhoneDigits,
@@ -61,6 +67,7 @@ const DEFAULT_FORM = {
   matchFormat: "",
   level: "",
   notes: "",
+  playerLimit: "",
 };
 
 const parseCoordinate = (value) => {
@@ -102,6 +109,7 @@ const buildInitialForm = (match) => {
   const longitude =
     parseCoordinate(match.longitude) ?? parseCoordinate(match.lng);
   const privateMatch = isPrivateMatch(match);
+  const playerLimit = getMatchPlayerLimit(match);
   return {
     date: toDateInput(match.start_date_time),
     time: toTimeInput(match.start_date_time),
@@ -113,6 +121,7 @@ const buildInitialForm = (match) => {
       ? ""
       : match.skill_level || match.skill_level_min || "",
     notes: match.notes || "",
+    playerLimit: playerLimit ? String(playerLimit) : "",
   };
 };
 
@@ -329,6 +338,11 @@ export default function MatchPage() {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handlePlayerLimitChange = useCallback((value) => {
+    const sanitized = typeof value === "string" ? value.replace(/[^0-9]/g, "") : "";
+    setFormState((prev) => ({ ...prev, playerLimit: sanitized }));
+  }, []);
+
   const handleCancel = () => {
     setFormState(originalForm);
     setIsEditing(false);
@@ -374,6 +388,39 @@ export default function MatchPage() {
     const latitude = parseCoordinate(formState.latitude);
     const longitude = parseCoordinate(formState.longitude);
 
+    const previousPlayerLimitValue = parsePlayerLimit(originalForm.playerLimit);
+    let playerLimitValue;
+    if (isOpenMatch) {
+      const parsedLimit = parsePlayerLimit(formState.playerLimit);
+      if (parsedLimit === null) {
+        setFormError(
+          `Set a player limit between ${PLAYER_LIMIT_MIN} and ${PLAYER_LIMIT_MAX} players.`,
+        );
+        return;
+      }
+      if (
+        parsedLimit < PLAYER_LIMIT_MIN ||
+        parsedLimit > PLAYER_LIMIT_MAX
+      ) {
+        setFormError(
+          `Player limit must be between ${PLAYER_LIMIT_MIN} and ${PLAYER_LIMIT_MAX} players.`,
+        );
+        return;
+      }
+      const capacityConfirmed = Number(match?.capacity?.confirmed);
+      const confirmedPlayers =
+        Number.isFinite(capacityConfirmed) && capacityConfirmed >= 0
+          ? capacityConfirmed
+          : participants.length;
+      if (parsedLimit < confirmedPlayers) {
+        setFormError(
+          `Player limit can't be less than the ${confirmedPlayers} players already confirmed.`,
+        );
+        return;
+      }
+      playerLimitValue = parsedLimit;
+    }
+
     const payload = buildMatchUpdatePayload({
       startDateTime: isoDate,
       locationText: trimmedLocation,
@@ -387,6 +434,8 @@ export default function MatchPage() {
       longitude,
       previousLatitude: originalForm.latitude,
       previousLongitude: originalForm.longitude,
+      playerLimit: isOpenMatch ? playerLimitValue : undefined,
+      previousPlayerLimit: isOpenMatch ? previousPlayerLimitValue : undefined,
     });
 
     try {
@@ -604,6 +653,29 @@ export default function MatchPage() {
                       </option>
                     ))}
                   </select>
+                </Field>
+              )}
+              {isOpenMatch && (
+                <Field label="Player limit" required>
+                  <div className="flex flex-col gap-1">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={PLAYER_LIMIT_MIN}
+                      max={PLAYER_LIMIT_MAX}
+                      step={1}
+                      value={formState.playerLimit}
+                      onChange={(event) =>
+                        handlePlayerLimitChange(event.target.value)
+                      }
+                      placeholder={`${PLAYER_LIMIT_MIN}-${PLAYER_LIMIT_MAX}`}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                      required
+                    />
+                    <p className="text-[11px] font-medium text-gray-400">
+                      Total players including you. Between {PLAYER_LIMIT_MIN} and {PLAYER_LIMIT_MAX}.
+                    </p>
+                  </div>
                 </Field>
               )}
               {isOpenMatch && (
