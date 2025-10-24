@@ -1605,17 +1605,31 @@ const MatchDetailsModal = ({
   const handleMessageParticipants = useCallback(() => {
     if (!canMessageParticipants) return;
     try {
-      const recipientPath = participantPhoneRecipients
+      const recipients = participantPhoneRecipients;
+      const ua =
+        typeof navigator !== "undefined" && navigator.userAgent
+          ? navigator.userAgent
+          : "";
+      const isAndroid = /Android/i.test(ua);
+      const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
+      const scheme = isAndroid ? "smsto:" : "sms:";
+      const pathSeparator = isAndroid ? ";" : ",";
+      const querySeparator = isAndroid ? ";" : ",";
+      const recipientPath = recipients
         .map((value) => encodeURIComponent(value))
-        .join(",");
-      const params = new URLSearchParams();
-      if (participantPhoneRecipients.length > 0) {
-        params.set("addresses", participantPhoneRecipients.join(";"));
+        .join(pathSeparator);
+      const base = recipientPath ? `${scheme}${recipientPath}` : scheme;
+      const params = [];
+      if (recipients.length > 0) {
+        params.push(
+          `addresses=${encodeURIComponent(recipients.join(querySeparator))}`,
+        );
       }
-      const base = recipientPath ? `sms:${recipientPath}` : "sms:";
-      const query = params.toString();
-      const url = query ? `${base}?${query}` : base;
-      onToast?.("Opening messages...");
+      const url = params.length > 0 ? `${base}?${params.join("&")}` : base;
+      const toastMessage = isAppleMobile
+        ? "Opening Messages..."
+        : "Opening messages...";
+      onToast?.(toastMessage);
       window.location.href = url;
     } catch (error) {
       console.error(error);
