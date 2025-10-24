@@ -3620,10 +3620,42 @@ const TennisMatchApp = () => {
                         fetchMatches();
                         return;
                       }
-                      displayToast(
-                        err.response?.data?.message || "Failed to join match",
-                        "error",
-                      );
+
+                      const errorCodeRaw =
+                        err?.response?.data?.error ||
+                        err?.data?.error ||
+                        err?.message ||
+                        "";
+                      const errorCode = errorCodeRaw.toString().trim().toLowerCase();
+                      const responseMessage = err?.response?.data?.message || "";
+                      const normalizedMessage = responseMessage
+                        .toString()
+                        .trim()
+                        .toLowerCase();
+
+                      if (
+                        errorCode === "match_full" ||
+                        errorCode === "full" ||
+                        normalizedMessage.includes("full")
+                      ) {
+                        displayToast(
+                          "This match is already full. We'll let you know if a spot opens up.",
+                          "error",
+                        );
+                      } else if (
+                        errorCode === "already_joined" ||
+                        normalizedMessage.includes("already joined")
+                      ) {
+                        displayToast(
+                          "You're already on the roster for this match.",
+                          "info",
+                        );
+                      } else {
+                        displayToast(
+                          responseMessage || err?.message || "Failed to join match",
+                          "error",
+                        );
+                      }
                     }
                   }
                 }}
