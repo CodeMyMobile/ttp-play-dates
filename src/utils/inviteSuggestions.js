@@ -1,5 +1,4 @@
 import { uniqueActiveParticipants } from "./participants";
-import { memberMatchesParticipant } from "./memberIdentity";
 
 const candidateIdKeys = [
   "player_id",
