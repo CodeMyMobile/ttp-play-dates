@@ -272,6 +272,19 @@ const ProfileManager = ({ isOpen, onClose }) => {
                       }))
                     }
                   />
+                  <p className="text-xs font-semibold text-gray-500">
+                    Not sure of your rating? Most new adult players start around 2.5. You can also
+                    review the{' '}
+                    <a
+                      href="https://www.usta.com/en/home/improve/tips-and-instruction/ntrp/general-guidelines.html"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-600 hover:text-emerald-700"
+                    >
+                      USTA NTRP guidelines
+                    </a>{' '}
+                    for a quick skill-level overview.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
