@@ -15,10 +15,18 @@ const AppHeader = ({
   setShowPreview,
 }) => {
   const avatarName = currentUser?.name || "You";
-  const currentUserAvatarUrl = useMemo(
-    () => getAvatarUrlFromPlayer(currentUser),
-    [currentUser],
-  );
+  const currentUserAvatarUrl = useMemo(() => {
+    if (!currentUser) return "";
+    const directUrl = getAvatarUrlFromPlayer(currentUser);
+    if (directUrl) {
+      return directUrl;
+    }
+    const storedUrl =
+      typeof currentUser.avatarUrl === "string"
+        ? currentUser.avatarUrl.trim()
+        : "";
+    return storedUrl;
+  }, [currentUser]);
 
   return (
     <div className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/95">

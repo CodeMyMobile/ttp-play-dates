@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, UserRound } from "lucide-react";
+import { X, Loader2, UserRound, Info } from "lucide-react";
 import { getPersonalDetails } from "../services/auth";
 import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
 import ProfilePhotoUploader from "./ProfilePhotoUploader";
@@ -16,13 +16,14 @@ const emptyDetails = {
   about_me: "",
 };
 
-const ProfileManager = ({ isOpen, onClose }) => {
+const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
   const [details, setDetails] = useState(emptyDetails);
   const [phoneInput, setPhoneInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState("");
+  const [showRatingGuide, setShowRatingGuide] = useState(false);
   const accessToken = localStorage.getItem("authToken");
 
   useEffect(() => {
@@ -33,6 +34,7 @@ const ProfileManager = ({ isOpen, onClose }) => {
       setPhoneInput("");
       setError("");
       setImagePreview("");
+      setShowRatingGuide(false);
     }
   }, [isOpen]);
 
@@ -63,6 +65,9 @@ const ProfileManager = ({ isOpen, onClose }) => {
       setDetails(normalizedDetails);
       setPhoneInput(formatPhoneDisplay(data?.phone) || "");
       setImagePreview(normalizedDetails.profile_picture || "");
+      if (onProfileUpdate) {
+        onProfileUpdate({ ...data });
+      }
     } catch (err) {
       console.error(err);
       setError("Failed to load profile details. Please try again.");
@@ -115,6 +120,9 @@ const ProfileManager = ({ isOpen, onClose }) => {
         mobile: sanitizedPhone ? sanitizedPhone : null,
         about_me: aboutMe || null,
       });
+      if (onProfileUpdate) {
+        onProfileUpdate({ ...details });
+      }
       onClose();
     } catch (err) {
       console.error(err);
@@ -253,10 +261,22 @@ const ProfileManager = ({ isOpen, onClose }) => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
                     USTA Rating
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowRatingGuide((prev) => !prev)}
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
+                    aria-expanded={showRatingGuide}
+                    aria-controls="usta-rating-guide"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                    Rating Guide
+                  </button>
+                </div>
                   <input
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors font-semibold text-gray-800"
                     type="number"
@@ -272,6 +292,66 @@ const ProfileManager = ({ isOpen, onClose }) => {
                       }))
                     }
                   />
+                  <p className="text-xs font-semibold text-gray-500">
+                    Not sure of your rating? Most new adult players start around 2.5. Open the
+                    Rating Guide for a quick breakdown of each level.
+                  </p>
+                  {showRatingGuide && (
+                    <div
+                      id="usta-rating-guide"
+                      className="mt-3 space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-900 shadow-inner"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="flex items-center gap-2 text-sm font-black">
+                          <span className="text-lg" aria-hidden="true">
+                            🎾
+                          </span>
+                          NTRP Ratings Explained
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowRatingGuide(false)}
+                          className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700 transition-colors hover:bg-emerald-200"
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <p className="text-xs font-semibold">
+                        The NTRP (National Tennis Rating Program) helps players find opponents of similar
+                        ability. Ratings range from 1.0 (beginner) to 7.0 (tour-level):
+                      </p>
+                      <ul className="space-y-1.5 text-xs font-semibold">
+                        <li>
+                          <span className="font-bold">1.0–2.5:</span> Just starting out — learning basic
+                          strokes and how to keep the ball in play.
+                        </li>
+                        <li>
+                          <span className="font-bold">3.0:</span> Can rally consistently, but struggles with
+                          depth and control in matches.
+                        </li>
+                        <li>
+                          <span className="font-bold">3.5:</span> Reliable strokes with moderate pace; starting
+                          to use strategy and placement.
+                        </li>
+                        <li>
+                          <span className="font-bold">4.0:</span> Strong consistency, control, and basic
+                          tactics; can handle pace and spin.
+                        </li>
+                        <li>
+                          <span className="font-bold">4.5:</span> Aggressive play with variety, dependable under
+                          pressure, good net skills.
+                        </li>
+                        <li>
+                          <span className="font-bold">5.0+:</span> Advanced or former college/tournament player;
+                          can control all aspects of the game.
+                        </li>
+                      </ul>
+                      <p className="text-xs font-bold">
+                        👉 Use this as a guide to match up with players around your level for more fun and
+                        competitive tennis!
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
