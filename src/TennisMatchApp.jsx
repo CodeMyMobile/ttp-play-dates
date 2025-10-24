@@ -21,7 +21,7 @@ import {
   acceptInvite,
   rejectInvite,
 } from "./services/invites";
-import { login, signup, forgotPassword } from "./services/auth";
+import { login, signup, forgotPassword, getPersonalDetails } from "./services/auth";
 import { updatePlayerPersonalDetails } from "./services/player";
 import {
   Calendar,
@@ -702,6 +702,103 @@ const TennisMatchApp = () => {
   const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
+  const hydratedProfileIdsRef = useRef(new Set());
+
+  const mergeProfileDetails = useCallback(
+    (profileDetails, { persist = true } = {}) => {
+      if (!profileDetails || typeof profileDetails !== "object") return;
+
+      const pickFirstValue = (...candidates) => {
+        for (const candidate of candidates) {
+          if (candidate === undefined || candidate === null) continue;
+          if (typeof candidate === "string") {
+            const trimmed = candidate.trim();
+            if (trimmed) return trimmed;
+            continue;
+          }
+          if (typeof candidate === "number") {
+            if (!Number.isNaN(candidate)) {
+              return String(candidate);
+            }
+          }
+        }
+        return "";
+      };
+
+      setCurrentUser((prev) => {
+        if (!prev || typeof prev !== "object") return prev;
+
+        const mergedProfile = {
+          ...(prev.profile && typeof prev.profile === "object" ? prev.profile : {}),
+          ...profileDetails,
+        };
+
+        const derivedName = pickFirstValue(
+          profileDetails.full_name,
+          profileDetails.fullName,
+          profileDetails.name,
+        );
+
+        const derivedSkill = pickFirstValue(
+          profileDetails.usta_rating,
+          profileDetails.ustaRating,
+          profileDetails.skill_level,
+          profileDetails.skillLevel,
+        );
+
+        const derivedAvatarUrl = getAvatarUrlFromPlayer({
+          profile: profileDetails,
+          player: profileDetails,
+          user: profileDetails,
+        });
+
+        const nextUser = {
+          ...prev,
+          profile: mergedProfile,
+        };
+
+        if (derivedName) {
+          nextUser.name = derivedName;
+        }
+
+        if (derivedSkill) {
+          nextUser.skillLevel = derivedSkill;
+        }
+
+        if (derivedAvatarUrl) {
+          nextUser.avatarUrl = derivedAvatarUrl;
+        }
+
+        const profilePicture = pickFirstValue(
+          profileDetails.profile_picture,
+          profileDetails.profilePicture,
+          profileDetails.profile_picture_url,
+          profileDetails.profilePictureUrl,
+          profileDetails.photo_url,
+          profileDetails.photoUrl,
+          profileDetails.image_url,
+          profileDetails.imageUrl,
+          profileDetails.avatar_url,
+          profileDetails.avatarUrl,
+        );
+
+        if (profilePicture) {
+          nextUser.profile_picture = profilePicture;
+        }
+
+        if (persist) {
+          try {
+            localStorage.setItem("user", JSON.stringify(nextUser));
+          } catch (storageError) {
+            console.warn("Unable to persist player profile", storageError);
+          }
+        }
+
+        return nextUser;
+      });
+    },
+    [setCurrentUser],
+  );
 
   useEffect(() => {
     setMatchPage(1);
@@ -754,6 +851,33 @@ const TennisMatchApp = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId) return;
+    if (hydratedProfileIdsRef.current.has(userId)) return;
+
+    let isActive = true;
+
+    const hydrateProfile = async () => {
+      try {
+        const profileDetails = await getPersonalDetails();
+        if (!isActive) return;
+        hydratedProfileIdsRef.current.add(userId);
+        if (profileDetails && typeof profileDetails === "object") {
+          mergeProfileDetails(profileDetails);
+        }
+      } catch (error) {
+        console.error("Failed to refresh player profile", error);
+      }
+    };
+
+    hydrateProfile();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id, mergeProfileDetails]);
 
   const displayToast = useCallback((message, type = "success") => {
     setShowToast({ message, type });
@@ -2070,6 +2194,7 @@ const TennisMatchApp = () => {
   const handleLogout = () => {
     localStorage.removeItem("authToken");
     localStorage.removeItem("refreshToken");
+    hydratedProfileIdsRef.current.clear();
     setCurrentUser(null);
     displayToast("Logged out", "success");
   };
@@ -6654,6 +6779,7 @@ const TennisMatchApp = () => {
       <ProfileManager
         isOpen={showProfileManager}
         onClose={() => setShowProfileManager(false)}
+        onProfileUpdate={mergeProfileDetails}
       />
     </div>
   );

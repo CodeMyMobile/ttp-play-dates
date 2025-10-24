@@ -17,14 +17,15 @@ const AppHeader = ({
   const avatarName = currentUser?.name || "You";
   const currentUserAvatarUrl = useMemo(() => {
     if (!currentUser) return "";
+    const directUrl = getAvatarUrlFromPlayer(currentUser);
+    if (directUrl) {
+      return directUrl;
+    }
     const storedUrl =
       typeof currentUser.avatarUrl === "string"
         ? currentUser.avatarUrl.trim()
         : "";
-    if (storedUrl) {
-      return storedUrl;
-    }
-    return getAvatarUrlFromPlayer(currentUser);
+    return storedUrl;
   }, [currentUser]);
 
   return (
