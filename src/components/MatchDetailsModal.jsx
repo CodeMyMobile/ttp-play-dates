@@ -1576,6 +1576,73 @@ const MatchDetailsModal = ({
     return list;
   }, [committedParticipants, match?.host_id, remainingSpots]);
 
+  const participantPhoneRecipients = useMemo(() => {
+    if (!isHost) return [];
+    const seen = new Set();
+    return committedParticipants.reduce((numbers, participant) => {
+      if (!participant) return numbers;
+      if (match?.host_id && participantMatchesMember(participant, match.host_id)) {
+        return numbers;
+      }
+      const phoneRaw = getParticipantPhone(participant);
+      const normalized = normalizePhoneValue(phoneRaw);
+      if (!normalized || seen.has(normalized)) {
+        return numbers;
+      }
+      seen.add(normalized);
+      numbers.push(normalized);
+      return numbers;
+    }, []);
+  }, [committedParticipants, isHost, match?.host_id]);
+
+  const canMessageParticipants = participantPhoneRecipients.length > 0;
+  const messageParticipantsDescription = canMessageParticipants
+    ? participantPhoneRecipients.length === 1
+      ? "Start a group text with the confirmed player."
+      : "Start a group text with your confirmed players."
+    : "Add player phone numbers to enable group texts.";
+
+  const handleMessageParticipants = useCallback(() => {
+    if (!canMessageParticipants) return;
+    try {
+      const recipients = participantPhoneRecipients;
+      const ua =
+        typeof navigator !== "undefined" && navigator.userAgent
+          ? navigator.userAgent
+          : "";
+      const isAndroid = /Android/i.test(ua);
+      const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
+
+      let url = "sms:";
+      if (recipients.length > 0) {
+        if (isAndroid) {
+          const path = recipients
+            .map((value) => encodeURIComponent(value))
+            .join(";");
+          const addresses = encodeURIComponent(recipients.join(";"));
+          url = `smsto:${path}?addresses=${addresses}`;
+        } else if (isAppleMobile) {
+          const addresses = encodeURIComponent(recipients.join(","));
+          url = `sms:&addresses=${addresses}`;
+        } else {
+          const path = recipients
+            .map((value) => encodeURIComponent(value))
+            .join(",");
+          url = `sms:${path}`;
+        }
+      }
+
+      const toastMessage = isAppleMobile
+        ? "Opening Messages..."
+        : "Opening messages...";
+      onToast?.(toastMessage);
+      window.location.href = url;
+    } catch (error) {
+      console.error(error);
+      onToast?.("We couldn't open messages", "error");
+    }
+  }, [canMessageParticipants, onToast, participantPhoneRecipients]);
+
   const pendingInvitesList = useMemo(() => {
     if (pendingInvitees.length === 0) return [];
     const seen = new Set();
@@ -2329,6 +2396,29 @@ const MatchDetailsModal = ({
               </p>
             </div>
             {renderPlayers()}
+            {isHost && (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-emerald-900">
+                      Message participants
+                    </p>
+                    <p className="text-xs font-semibold text-emerald-700">
+                      {messageParticipantsDescription}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleMessageParticipants}
+                    disabled={!canMessageParticipants}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Message group
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
 
           {isHost && matchPrivacy === "private" && pendingInvitesList.length > 0 && (
