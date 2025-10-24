@@ -21,13 +21,7 @@ export const normalizeRatingForApi = (value) => {
   }
 
   const rounded = Math.round(numeric * 10) / 10;
-  const hadDecimal = trimmed.includes(".");
-
-  if (Number.isInteger(rounded)) {
-    return hadDecimal ? rounded.toFixed(1) : String(Math.trunc(rounded));
-  }
-
-  return rounded.toFixed(1);
+  return Number(rounded.toFixed(1));
 };
 
 export const updatePlayerPersonalDetails = async ({
