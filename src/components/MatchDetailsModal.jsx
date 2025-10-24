@@ -80,6 +80,7 @@ import {
 import {
   loadRecentLocations as loadStoredLocations,
   recordRecentLocation as persistRecentLocation,
+  RECENT_LOCATIONS_EVENT,
 } from "../utils/recentLocations";
 
 const safeDate = (value) => {
@@ -720,12 +721,30 @@ const MatchDetailsModal = ({
   );
 
   useEffect(() => {
-    if (isEditing) {
+    const syncRecentLocations = () => {
       setRecentLocations(loadStoredLocations());
-    } else {
+    };
+
+    syncRecentLocations();
+
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    window.addEventListener("storage", syncRecentLocations);
+    window.addEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+
+    return () => {
+      window.removeEventListener("storage", syncRecentLocations);
+      window.removeEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+    };
+  }, [loadStoredLocations]);
+
+  useEffect(() => {
+    if (!isEditing) {
       setShowSavedLocations(false);
     }
-  }, [isEditing, loadStoredLocations]);
+  }, [isEditing]);
 
   const match = matchData?.match || null;
   const viewerInvite = matchData?.viewerInvite || null;

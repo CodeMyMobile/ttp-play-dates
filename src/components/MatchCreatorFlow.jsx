@@ -43,6 +43,7 @@ import { getAvatarInitials, getAvatarUrlFromPlayer } from "../utils/avatar";
 import {
   loadRecentLocations as loadStoredLocations,
   recordRecentLocation as persistRecentLocation,
+  RECENT_LOCATIONS_EVENT,
 } from "../utils/recentLocations";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
@@ -259,6 +260,26 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactError, setContactError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
   const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
+
+  useEffect(() => {
+    const syncRecentLocations = () => {
+      setRecentLocations(loadStoredLocations());
+    };
+
+    syncRecentLocations();
+
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    window.addEventListener("storage", syncRecentLocations);
+    window.addEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+
+    return () => {
+      window.removeEventListener("storage", syncRecentLocations);
+      window.removeEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+    };
+  }, [loadStoredLocations]);
 
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),

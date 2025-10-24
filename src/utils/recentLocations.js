@@ -1,5 +1,17 @@
 const RECENT_LOCATIONS_STORAGE_KEY = "matchCreator.recentLocations";
 export const RECENT_LOCATIONS_LIMIT = 5;
+export const RECENT_LOCATIONS_EVENT = "recentLocationsUpdated";
+
+const broadcastRecentLocations = (entries) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent(RECENT_LOCATIONS_EVENT, { detail: entries }),
+    );
+  } catch (error) {
+    console.warn("Failed to broadcast recent locations", error);
+  }
+};
 
 const normalizeStoredLocationEntry = (entry) => {
   if (!entry) return null;
@@ -31,6 +43,7 @@ const persistRecentLocations = (entries) => {
   } catch (error) {
     console.warn("Failed to save recent location", error);
   }
+  broadcastRecentLocations(entries);
 };
 
 export const loadRecentLocations = () => {
