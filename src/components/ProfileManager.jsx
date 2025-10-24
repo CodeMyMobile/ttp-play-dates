@@ -3,7 +3,10 @@ import { X, Loader2, UserRound, Info } from "lucide-react";
 import { getPersonalDetails } from "../services/auth";
 import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
 import ProfilePhotoUploader from "./ProfilePhotoUploader";
-import { updatePlayerPersonalDetails } from "../services/player";
+import {
+  updatePlayerPersonalDetails,
+  normalizeRatingForApi,
+} from "../services/player";
 
 const emptyDetails = {
   id: null,
@@ -100,28 +103,58 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
       return;
     }
     try {
-      const parseRating = (value) => {
-        if (value === "" || value === null || value === undefined) {
-          return undefined;
+      const hasValue = (value) => {
+        if (value === null || value === undefined) {
+          return false;
         }
-        const numeric = Number(value);
-        return Number.isFinite(numeric) ? numeric : undefined;
+        return String(value).trim() !== "";
       };
+
+      const normalizedUstaRating = normalizeRatingForApi(details.usta_rating);
+      const normalizedUtaRating = normalizeRatingForApi(details.uta_rating);
+
+      if (hasValue(details.usta_rating) && normalizedUstaRating === undefined) {
+        setSaving(false);
+        setError("Please enter a valid USTA rating (try numbers like 3.5).");
+        return;
+      }
+
+      if (hasValue(details.uta_rating) && normalizedUtaRating === undefined) {
+        setSaving(false);
+        setError("Please enter a valid UTA rating (try numbers like 7.0).");
+        return;
+      }
 
       const sanitizedPhone = String(details.phone || "").replace(/\D/g, "");
       const aboutMe = details.about_me?.trim();
-      await updatePlayerPersonalDetails({
+      const payload = {
         player: accessToken,
         id: details.id,
         date_of_birth: details.date_of_birth || null,
-        usta_rating: parseRating(details.usta_rating),
-        uta_rating: parseRating(details.uta_rating),
         fullName: details.full_name?.trim() || null,
         mobile: sanitizedPhone ? sanitizedPhone : null,
         about_me: aboutMe || null,
-      });
+      };
+
+      if (normalizedUstaRating !== undefined) {
+        payload.usta_rating = normalizedUstaRating;
+      }
+
+      if (normalizedUtaRating !== undefined) {
+        payload.uta_rating = normalizedUtaRating;
+      }
+
+      await updatePlayerPersonalDetails(payload);
       if (onProfileUpdate) {
-        onProfileUpdate({ ...details });
+        onProfileUpdate({
+          ...details,
+          ...(normalizedUstaRating !== undefined
+            ? { usta_rating: normalizedUstaRating }
+            : {}),
+          ...(normalizedUtaRating !== undefined
+            ? { uta_rating: normalizedUtaRating }
+            : {}),
+        });
       }
       onClose();
     } catch (err) {
