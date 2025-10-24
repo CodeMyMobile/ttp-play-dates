@@ -77,6 +77,10 @@ import {
   getPhoneDigits,
   normalizePhoneValue,
 } from "../services/phone";
+import {
+  loadRecentLocations as loadStoredLocations,
+  recordRecentLocation as persistRecentLocation,
+} from "../utils/recentLocations";
 
 const safeDate = (value) => {
   if (!value) return null;
@@ -701,6 +705,8 @@ const MatchDetailsModal = ({
   const [editSaving, setEditSaving] = useState(false);
   const [cancellingMatch, setCancellingMatch] = useState(false);
   const [decliningInvite, setDecliningInvite] = useState(false);
+  const [recentLocations, setRecentLocations] = useState(loadStoredLocations);
+  const [showSavedLocations, setShowSavedLocations] = useState(false);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
@@ -712,6 +718,14 @@ const MatchDetailsModal = ({
     },
     [],
   );
+
+  useEffect(() => {
+    if (isEditing) {
+      setRecentLocations(loadStoredLocations());
+    } else {
+      setShowSavedLocations(false);
+    }
+  }, [isEditing, loadStoredLocations]);
 
   const match = matchData?.match || null;
   const viewerInvite = matchData?.viewerInvite || null;
@@ -1231,6 +1245,22 @@ const MatchDetailsModal = ({
     });
   }, []);
 
+  const handleApplySavedLocation = useCallback(
+    (entry) => {
+      if (!entry?.label) return;
+      setEditForm((prev) => ({
+        ...prev,
+        location: entry.label,
+        latitude:
+          typeof entry.latitude === "number" ? entry.latitude : prev.latitude,
+        longitude:
+          typeof entry.longitude === "number" ? entry.longitude : prev.longitude,
+      }));
+      setShowSavedLocations(false);
+    },
+    [setEditForm, setShowSavedLocations],
+  );
+
   const handleStartEdit = () => {
     if (!isHost || isArchived || isCancelled) return;
     setEditError("");
@@ -1380,6 +1410,12 @@ const MatchDetailsModal = ({
       setEditSaving(true);
       await updateMatch(match.id, payload);
       onToast?.("Match updated");
+      const updatedRecent = persistRecentLocation(
+        trimmedLocation,
+        latitude,
+        longitude,
+      );
+      setRecentLocations(updatedRecent);
       setIsEditing(false);
       await onMatchRefresh?.();
       if (onReloadMatch && onUpdateMatch) {
@@ -2193,7 +2229,21 @@ const MatchDetailsModal = ({
               </label>
             </div>
             <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Location
+              <div className="flex items-center justify-between gap-2">
+                <span>Location</span>
+                {recentLocations.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowSavedLocations((prev) => !prev)
+                    }
+                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50 hover:text-emerald-800"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    Saved
+                  </button>
+                )}
+              </div>
               <div className="rounded-xl">
                 {googleApiKey ? (
                   <Autocomplete
@@ -2219,6 +2269,31 @@ const MatchDetailsModal = ({
                   />
                 )}
               </div>
+              {showSavedLocations && recentLocations.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {recentLocations.map((location) => {
+                    const isActive =
+                      editForm.location?.trim().toLowerCase() ===
+                      location.label.toLowerCase();
+                    return (
+                      <button
+                        key={location.label}
+                        type="button"
+                        onClick={() => handleApplySavedLocation(location)}
+                        className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-xs font-semibold transition ${
+                          isActive
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700"
+                        }`}
+                        title={`Use ${location.label}`}
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        {location.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </label>
             <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
               Match format

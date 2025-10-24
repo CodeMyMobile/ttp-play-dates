@@ -40,6 +40,10 @@ import {
 } from "../utils/matchOptions";
 import { combineDateAndTimeToIso } from "../utils/datetime";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "../utils/avatar";
+import {
+  loadRecentLocations as loadStoredLocations,
+  recordRecentLocation as persistRecentLocation,
+} from "../utils/recentLocations";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -50,53 +54,6 @@ const formatLocalDate = (date) =>
   `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
 const formatLocalTime = (date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-
-const RECENT_LOCATIONS_STORAGE_KEY = "matchCreator.recentLocations";
-const RECENT_LOCATIONS_LIMIT = 5;
-
-const normalizeStoredLocationEntry = (entry) => {
-  if (!entry) return null;
-  if (typeof entry === "string") {
-    const label = entry.trim();
-    return label ? { label, latitude: null, longitude: null } : null;
-  }
-  if (typeof entry === "object") {
-    const label = typeof entry.label === "string" ? entry.label.trim() : "";
-    if (!label) return null;
-    const latitude = typeof entry.latitude === "number" ? entry.latitude : null;
-    const longitude = typeof entry.longitude === "number" ? entry.longitude : null;
-    return { label, latitude, longitude };
-  }
-  return null;
-};
-
-const loadRecentLocations = () => {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(RECENT_LOCATIONS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    const seen = new Set();
-    const normalized = [];
-
-    for (const entry of parsed) {
-      const normalizedEntry = normalizeStoredLocationEntry(entry);
-      if (!normalizedEntry) continue;
-      const key = normalizedEntry.label.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      normalized.push(normalizedEntry);
-      if (normalized.length >= RECENT_LOCATIONS_LIMIT) break;
-    }
-
-    return normalized;
-  } catch (error) {
-    console.warn("Failed to load recent locations", error);
-    return [];
-  }
-};
 
 const defaultDateInfo = () => {
   const base = new Date();
@@ -301,7 +258,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
-  const [recentLocations, setRecentLocations] = useState(loadRecentLocations);
+  const [recentLocations, setRecentLocations] = useState(loadStoredLocations);
 
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),
@@ -389,34 +346,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     [setMatchData],
   );
 
-  const recordRecentLocation = useCallback((locationLabel, latitude, longitude) => {
-    const label = typeof locationLabel === "string" ? locationLabel.trim() : "";
-    if (!label) return;
-
-    const entry = {
-      label,
-      latitude: typeof latitude === "number" ? latitude : null,
-      longitude: typeof longitude === "number" ? longitude : null,
-    };
-
-    setRecentLocations((prev) => {
-      const deduped = prev.filter(
-        (item) => item.label.toLowerCase() !== entry.label.toLowerCase(),
-      );
-      const next = [entry, ...deduped].slice(0, RECENT_LOCATIONS_LIMIT);
-      try {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(
-            RECENT_LOCATIONS_STORAGE_KEY,
-            JSON.stringify(next),
-          );
-        }
-      } catch (error) {
-        console.warn("Failed to save recent location", error);
-      }
-      return next;
-    });
-  }, []);
+  const recordRecentLocation = useCallback(
+    (locationLabel, latitude, longitude) => {
+      const next = persistRecentLocation(locationLabel, latitude, longitude);
+      setRecentLocations(next);
+    },
+    [persistRecentLocation, setRecentLocations],
+  );
 
   const handleUseRecentLocation = useCallback((entry) => {
     if (!entry?.label) return;
