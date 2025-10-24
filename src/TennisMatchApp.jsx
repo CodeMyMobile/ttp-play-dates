@@ -93,6 +93,11 @@ import {
 import { getMatchPrivacy } from "./utils/matchPrivacy";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 import { buildRecentPartnerSuggestions } from "./utils/inviteSuggestions";
+import {
+  loadRecentLocations as loadStoredLocations,
+  recordRecentLocation as persistRecentLocation,
+  RECENT_LOCATIONS_EVENT,
+} from "./utils/recentLocations";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
@@ -3902,6 +3907,52 @@ const TennisMatchApp = () => {
   };
 
   const CreateMatchScreen = () => {
+    const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
+
+    useEffect(() => {
+      const syncRecentLocations = () => {
+        setRecentLocations(loadStoredLocations());
+      };
+
+      syncRecentLocations();
+
+      if (typeof window === "undefined") {
+        return undefined;
+      }
+
+      window.addEventListener("storage", syncRecentLocations);
+      window.addEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+
+      return () => {
+        window.removeEventListener("storage", syncRecentLocations);
+        window.removeEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+      };
+    }, [loadStoredLocations, setRecentLocations]);
+
+    const recordRecentLocation = useCallback(
+      (locationLabel, latitude, longitude) => {
+        const updated = persistRecentLocation(locationLabel, latitude, longitude);
+        setRecentLocations(updated);
+      },
+      [persistRecentLocation, setRecentLocations],
+    );
+
+    const handleUseRecentLocation = useCallback(
+      (entry) => {
+        if (!entry?.label) return;
+        const latitude = typeof entry.latitude === "number" ? entry.latitude : null;
+        const longitude = typeof entry.longitude === "number" ? entry.longitude : null;
+        setMatchData((prev) => ({
+          ...prev,
+          location: entry.label,
+          latitude,
+          longitude,
+          mapUrl: buildMapsUrl(latitude, longitude, entry.label),
+        }));
+      },
+      [setMatchData, buildMapsUrl],
+    );
+
     const ProgressBar = () => (
       <div className="flex justify-between items-center mb-10 relative">
         <div className="absolute top-4 left-0 right-0 h-1 bg-gray-200 rounded-full" />
@@ -4000,6 +4051,9 @@ const TennisMatchApp = () => {
       try {
         const payload = buildMatchPayload("upcoming");
         await createMatchWithCompatibility(payload);
+        if (matchData.location) {
+          recordRecentLocation(matchData.location, matchData.latitude, matchData.longitude);
+        }
         displayToast("Match published successfully! 🎾");
         goToBrowse();
         setCreateStep(1);
@@ -4136,6 +4190,13 @@ const TennisMatchApp = () => {
                         if (newId) {
                           targetMatchId = newId;
                           setInviteMatchId(newId);
+                          if (matchData.location) {
+                            recordRecentLocation(
+                              matchData.location,
+                              matchData.latitude,
+                              matchData.longitude,
+                            );
+                          }
                           fetchMatches();
                         }
                       } catch (err) {
@@ -4247,6 +4308,35 @@ const TennisMatchApp = () => {
                 <label className="block text-sm font-black text-gray-700 mb-3 uppercase tracking-wider">
                   Location
                 </label>
+                {recentLocations.length > 0 && (
+                  <div className="mb-3">
+                    <span className="block text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
+                      Recent Locations
+                    </span>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {recentLocations.map((location) => {
+                        const isActive =
+                          matchData.location?.trim().toLowerCase() ===
+                          location.label.toLowerCase();
+                        return (
+                          <button
+                            key={location.label}
+                            type="button"
+                            onClick={() => handleUseRecentLocation(location)}
+                            className={`px-3 py-2 rounded-lg text-sm font-semibold border transition-colors whitespace-nowrap flex items-center gap-2 ${
+                              isActive
+                                ? "bg-green-500 text-white border-green-500"
+                                : "bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200"
+                            }`}
+                          >
+                            <MapPin className="w-4 h-4" />
+                            {location.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="relative">
                   <MapPin className="absolute left-3 top-4 w-5 h-5 text-gray-400" />
                   <Autocomplete
@@ -6494,6 +6584,13 @@ const TennisMatchApp = () => {
           longitude: matchToEdit.longitude,
           notes: matchToEdit.notes,
         });
+        if (matchToEdit.location) {
+          persistRecentLocation(
+            matchToEdit.location,
+            matchToEdit.latitude,
+            matchToEdit.longitude,
+          );
+        }
         displayToast("Match updated successfully!");
         setShowEditModal(false);
         setEditMatch(null);
