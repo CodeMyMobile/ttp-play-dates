@@ -56,7 +56,13 @@ import {
   ensureOptionPresent,
   isValidOptionValue,
 } from "../utils/matchOptions";
-import { buildMatchUpdatePayload } from "../utils/matchPayload";
+import {
+  buildMatchUpdatePayload,
+  getMatchPlayerLimit,
+  parsePlayerLimit,
+  PLAYER_LIMIT_MIN,
+  PLAYER_LIMIT_MAX,
+} from "../utils/matchPayload";
 import {
   getMatchPrivacy,
   isPrivateMatch as isMatchPrivate,
@@ -333,6 +339,7 @@ const DEFAULT_EDIT_FORM = {
   matchFormat: "",
   level: "",
   notes: "",
+  playerLimit: "",
 };
 
 const parseCoordinate = (value) => {
@@ -650,6 +657,7 @@ const buildInitialEditForm = (match) => {
     match.skill_level_min ||
     match.skillLevelMin ||
     "";
+  const playerLimit = getMatchPlayerLimit(match);
   return {
     date: toDateInput(match.start_date_time || match.startDateTime),
     time: toTimeInput(match.start_date_time || match.startDateTime),
@@ -659,6 +667,7 @@ const buildInitialEditForm = (match) => {
     matchFormat: match.match_format || match.format || "",
     level: privateMatch ? "" : openLevel,
     notes: match.notes || "",
+    playerLimit: playerLimit ? String(playerLimit) : "",
   };
 };
 
@@ -859,15 +868,10 @@ const MatchDetailsModal = ({
     return match.capacity;
   }, [match?.capacity]);
 
-  const numericPlayerLimit = useMemo(() => {
-    const candidate =
-      match?.player_limit ??
-      match?.playerLimit ??
-      match?.player_count ??
-      match?.match_player_limit;
-    const numeric = Number(candidate);
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-  }, [match]);
+  const numericPlayerLimit = useMemo(
+    () => getMatchPlayerLimit(match),
+    [match],
+  );
 
   const fallbackCommitted = countUniqueMatchOccupants(participants, invitees);
 
@@ -1193,6 +1197,11 @@ const MatchDetailsModal = ({
     setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleEditPlayerLimitChange = useCallback((value) => {
+    const sanitized = typeof value === "string" ? value.replace(/[^0-9]/g, "") : "";
+    setEditForm((prev) => ({ ...prev, playerLimit: sanitized }));
+  }, []);
+
   const handleEditLocationChange = useCallback((value) => {
     setEditForm((prev) => ({
       ...prev,
@@ -1317,6 +1326,38 @@ const MatchDetailsModal = ({
     const longitude = parseCoordinate(editForm.longitude);
 
     const skillLevel = isOpenMatch ? level : "";
+    const previousPlayerLimitValue = parsePlayerLimit(
+      originalEditForm.playerLimit,
+    );
+    let playerLimitValue;
+    if (isOpenMatch) {
+      const parsedLimit = parsePlayerLimit(editForm.playerLimit);
+      if (parsedLimit === null) {
+        setEditError(
+          `Set a player limit between ${PLAYER_LIMIT_MIN} and ${PLAYER_LIMIT_MAX} players.`,
+        );
+        return;
+      }
+      if (
+        parsedLimit < PLAYER_LIMIT_MIN ||
+        parsedLimit > PLAYER_LIMIT_MAX
+      ) {
+        setEditError(
+          `Player limit must be between ${PLAYER_LIMIT_MIN} and ${PLAYER_LIMIT_MAX} players.`,
+        );
+        return;
+      }
+      if (
+        Number.isFinite(committedCount) &&
+        parsedLimit < Number(committedCount)
+      ) {
+        setEditError(
+          `Player limit can't be less than the ${committedCount} players already confirmed.`,
+        );
+        return;
+      }
+      playerLimitValue = parsedLimit;
+    }
 
     const payload = buildMatchUpdatePayload({
       startDateTime: isoDate,
@@ -1331,6 +1372,8 @@ const MatchDetailsModal = ({
       longitude,
       previousLatitude: originalEditForm.latitude,
       previousLongitude: originalEditForm.longitude,
+      playerLimit: isOpenMatch ? playerLimitValue : undefined,
+      previousPlayerLimit: isOpenMatch ? previousPlayerLimitValue : undefined,
     });
 
     try {
@@ -1368,6 +1411,24 @@ const MatchDetailsModal = ({
             nextMatch.skill_level_min = skillLevel || null;
             nextMatch.skillLevel = skillLevel || null;
             nextMatch.notes = notes || null;
+            if (playerLimitValue !== undefined) {
+              const limitValue = playerLimitValue ?? null;
+              nextMatch.player_limit = limitValue;
+              nextMatch.playerLimit = limitValue;
+              nextMatch.player_count = limitValue;
+              nextMatch.match_player_limit = limitValue;
+              if (
+                nextMatch.capacity &&
+                typeof nextMatch.capacity === "object"
+              ) {
+                nextMatch.capacity = {
+                  ...nextMatch.capacity,
+                  limit: limitValue,
+                  max: limitValue,
+                  capacity: limitValue,
+                };
+              }
+            }
           }
           return { ...prev, match: nextMatch };
         });
@@ -2110,6 +2171,28 @@ const MatchDetailsModal = ({
                     </option>
                   ))}
                 </select>
+              </label>
+            )}
+            {isOpenMatch && (
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Player limit
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={PLAYER_LIMIT_MIN}
+                  max={PLAYER_LIMIT_MAX}
+                  step={1}
+                  value={editForm.playerLimit}
+                  onChange={(event) =>
+                    handleEditPlayerLimitChange(event.target.value)
+                  }
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  placeholder={`${PLAYER_LIMIT_MIN}-${PLAYER_LIMIT_MAX}`}
+                  required
+                />
+                <span className="text-[11px] font-medium text-gray-400">
+                  Total players including you. Between {PLAYER_LIMIT_MIN} and {PLAYER_LIMIT_MAX}.
+                </span>
               </label>
             )}
             {isOpenMatch && (
