@@ -1612,20 +1612,26 @@ const MatchDetailsModal = ({
           : "";
       const isAndroid = /Android/i.test(ua);
       const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
-      const scheme = isAndroid ? "smsto:" : "sms:";
-      const pathSeparator = isAndroid ? ";" : ",";
-      const querySeparator = isAndroid ? ";" : ",";
-      const recipientPath = recipients
-        .map((value) => encodeURIComponent(value))
-        .join(pathSeparator);
-      const base = recipientPath ? `${scheme}${recipientPath}` : scheme;
-      const params = [];
+
+      let url = "sms:";
       if (recipients.length > 0) {
-        params.push(
-          `addresses=${encodeURIComponent(recipients.join(querySeparator))}`,
-        );
+        if (isAndroid) {
+          const path = recipients
+            .map((value) => encodeURIComponent(value))
+            .join(";");
+          const addresses = encodeURIComponent(recipients.join(";"));
+          url = `smsto:${path}?addresses=${addresses}`;
+        } else if (isAppleMobile) {
+          const addresses = encodeURIComponent(recipients.join(","));
+          url = `sms:&addresses=${addresses}`;
+        } else {
+          const path = recipients
+            .map((value) => encodeURIComponent(value))
+            .join(",");
+          url = `sms:${path}`;
+        }
       }
-      const url = params.length > 0 ? `${base}?${params.join("&")}` : base;
+
       const toastMessage = isAppleMobile
         ? "Opening Messages..."
         : "Opening messages...";
