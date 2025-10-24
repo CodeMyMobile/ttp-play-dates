@@ -51,6 +51,53 @@ const formatLocalDate = (date) =>
 
 const formatLocalTime = (date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 
+const RECENT_LOCATIONS_STORAGE_KEY = "matchCreator.recentLocations";
+const RECENT_LOCATIONS_LIMIT = 5;
+
+const normalizeStoredLocationEntry = (entry) => {
+  if (!entry) return null;
+  if (typeof entry === "string") {
+    const label = entry.trim();
+    return label ? { label, latitude: null, longitude: null } : null;
+  }
+  if (typeof entry === "object") {
+    const label = typeof entry.label === "string" ? entry.label.trim() : "";
+    if (!label) return null;
+    const latitude = typeof entry.latitude === "number" ? entry.latitude : null;
+    const longitude = typeof entry.longitude === "number" ? entry.longitude : null;
+    return { label, latitude, longitude };
+  }
+  return null;
+};
+
+const loadRecentLocations = () => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_LOCATIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const seen = new Set();
+    const normalized = [];
+
+    for (const entry of parsed) {
+      const normalizedEntry = normalizeStoredLocationEntry(entry);
+      if (!normalizedEntry) continue;
+      const key = normalizedEntry.label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(normalizedEntry);
+      if (normalized.length >= RECENT_LOCATIONS_LIMIT) break;
+    }
+
+    return normalized;
+  } catch (error) {
+    console.warn("Failed to load recent locations", error);
+    return [];
+  }
+};
+
 const defaultDateInfo = () => {
   const base = new Date();
   base.setDate(base.getDate() + 1);
@@ -254,6 +301,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
+  const [recentLocations, setRecentLocations] = useState(loadRecentLocations);
 
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),
@@ -340,6 +388,45 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     },
     [setMatchData],
   );
+
+  const recordRecentLocation = useCallback((locationLabel, latitude, longitude) => {
+    const label = typeof locationLabel === "string" ? locationLabel.trim() : "";
+    if (!label) return;
+
+    const entry = {
+      label,
+      latitude: typeof latitude === "number" ? latitude : null,
+      longitude: typeof longitude === "number" ? longitude : null,
+    };
+
+    setRecentLocations((prev) => {
+      const deduped = prev.filter(
+        (item) => item.label.toLowerCase() !== entry.label.toLowerCase(),
+      );
+      const next = [entry, ...deduped].slice(0, RECENT_LOCATIONS_LIMIT);
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(
+            RECENT_LOCATIONS_STORAGE_KEY,
+            JSON.stringify(next),
+          );
+        }
+      } catch (error) {
+        console.warn("Failed to save recent location", error);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleUseRecentLocation = useCallback((entry) => {
+    if (!entry?.label) return;
+    setMatchData((prev) => ({
+      ...prev,
+      location: entry.label,
+      latitude: typeof entry.latitude === "number" ? entry.latitude : null,
+      longitude: typeof entry.longitude === "number" ? entry.longitude : null,
+    }));
+  }, []);
 
   const handleAddPlayer = (player) => {
     const normalized = normalizePlayer(player);
@@ -446,6 +533,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     try {
       if (createdMatchId && isEditingExisting) {
         await updateMatch(createdMatchId, payload);
+        recordRecentLocation(matchData.location, matchData.latitude, matchData.longitude);
         let link = shareLink;
         if (!link) {
           try {
@@ -508,6 +596,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
       setShareLink(link);
       setCreatedMatchId(matchId);
+      recordRecentLocation(matchData.location, matchData.latitude, matchData.longitude);
       setCurrentStep(4);
       onMatchCreated?.(matchId);
       const successMessage = inviteMessage
@@ -838,6 +927,36 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-4">
               Location
             </h3>
+            {recentLocations.length > 0 && (
+              <div className="mb-4">
+                <label className="block text-xs font-medium text-gray-500 mb-2">
+                  RECENT LOCATIONS
+                </label>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  {recentLocations.map((location) => {
+                    const isActive =
+                      matchData.location?.trim().toLowerCase() ===
+                      location.label.toLowerCase();
+                    return (
+                      <button
+                        key={location.label}
+                        type="button"
+                        onClick={() => handleUseRecentLocation(location)}
+                        className={`px-3 py-2 rounded-lg text-sm border transition-colors whitespace-nowrap flex items-center gap-2 ${
+                          isActive
+                            ? "bg-green-500 text-white border-green-500"
+                            : "bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200"
+                        }`}
+                        title={`Use ${location.label}`}
+                      >
+                        <MapPin size={14} />
+                        {location.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="relative">
               <MapPin
                 size={20}
