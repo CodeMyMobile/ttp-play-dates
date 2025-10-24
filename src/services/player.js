@@ -42,9 +42,6 @@ export const updatePlayerPersonalDetails = async ({
   if (!authHeader) {
     throw new Error("Missing player token");
   }
-  if (!id) {
-    throw new Error("Missing player id");
-  }
 
   const normalizedUstaRating = normalizeRatingForApi(usta_rating);
   const normalizedUtaRating = normalizeRatingForApi(uta_rating);
@@ -65,9 +62,11 @@ export const updatePlayerPersonalDetails = async ({
     return acc;
   }, {});
 
+  const method = id ? "PATCH" : "POST";
+
   return unwrap(
-    api(`/player/personal_details/${id}`, {
-      method: "PATCH",
+    api(`/player/personal_details`, {
+      method,
       authToken: authHeader,
       authSchemePreference: "token",
       json: params,
