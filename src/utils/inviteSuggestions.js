@@ -16,6 +16,16 @@ const candidateIdKeys = [
   ["profile", "player_id"],
   ["profile", "playerId"],
   ["profile", "id"],
+  ["player", "id"],
+  ["player", "player_id"],
+  ["player", "playerId"],
+  ["player", "user_id"],
+  ["player", "userId"],
+  ["user", "id"],
+  ["user", "user_id"],
+  ["user", "userId"],
+  ["user", "player_id"],
+  ["user", "playerId"],
 ];
 
 const readValue = (subject, key) => {
@@ -129,6 +139,15 @@ const extractMatchMoment = (match) => {
   return { timestamp: null, iso: null };
 };
 
+const toArrayOrNull = (value) => {
+  if (!value) return null;
+  if (Array.isArray(value)) return value;
+  if (typeof value[Symbol.iterator] === "function") {
+    return Array.from(value);
+  }
+  return null;
+};
+
 export const buildRecentPartnerSuggestions = ({
   matches = [],
   currentUser,
@@ -137,23 +156,37 @@ export const buildRecentPartnerSuggestions = ({
   if (!Array.isArray(matches) || matches.length === 0) {
     return [];
   }
+
+  if (!currentUser && !memberIdentities) {
+    return [];
+  }
+
+  const precomputedMemberIds = toArrayOrNull(memberIdentities);
   const suggestionMap = new Map();
 
   matches.forEach((match) => {
     const { timestamp, iso } = extractMatchMoment(match);
     const participants = uniqueActiveParticipants(match?.participants);
+    if (participants.length === 0) return;
+
+    const userIsInMatch =
+      !!currentUser &&
+      participants.some((participant) =>
+        memberMatchesParticipant(currentUser, participant, precomputedMemberIds),
+      );
+
+    if (!userIsInMatch) return;
+
     participants.forEach((participant) => {
+      const participantId = extractParticipantId(participant);
+      if (!participantId) return;
       if (
-        memberMatchesParticipant(
-          currentUser,
-          participant,
-          memberIdentities,
-        )
+        currentUser &&
+        memberMatchesParticipant(currentUser, participant, precomputedMemberIds)
       ) {
         return;
       }
-      const participantId = extractParticipantId(participant);
-      if (!participantId) return;
+
       const name = buildParticipantName(participant, participantId);
       const existing = suggestionMap.get(participantId);
       if (
