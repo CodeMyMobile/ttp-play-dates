@@ -1,5 +1,4 @@
 import { uniqueActiveParticipants } from "./participants";
-import { memberMatchesParticipant } from "./memberIdentity";
 
 const candidateIdKeys = [
   "player_id",
@@ -129,6 +128,43 @@ const extractMatchMoment = (match) => {
   return { timestamp: null, iso: null };
 };
 
+const collectNumericUserIds = (currentUser, memberIdentities) => {
+  const ids = new Set();
+  const add = (value) => {
+    const parsed = parseNumericId(value);
+    if (parsed !== null) {
+      ids.add(parsed);
+    }
+  };
+
+  if (currentUser && typeof currentUser === "object") {
+    add(currentUser.id);
+    add(currentUser.user_id);
+    add(currentUser.userId);
+    add(currentUser.player_id);
+    add(currentUser.playerId);
+    const profile = currentUser.profile || {};
+    add(profile.id);
+    add(profile.user_id);
+    add(profile.userId);
+    add(profile.player_id);
+    add(profile.playerId);
+  }
+
+  if (Array.isArray(memberIdentities)) {
+    memberIdentities.forEach(add);
+  } else if (
+    memberIdentities &&
+    typeof memberIdentities[Symbol.iterator] === "function"
+  ) {
+    for (const value of memberIdentities) {
+      add(value);
+    }
+  }
+
+  return ids;
+};
+
 export const buildRecentPartnerSuggestions = ({
   matches = [],
   currentUser,
@@ -137,23 +173,32 @@ export const buildRecentPartnerSuggestions = ({
   if (!Array.isArray(matches) || matches.length === 0) {
     return [];
   }
+
+  const currentUserIds = collectNumericUserIds(currentUser, memberIdentities);
+  if (currentUserIds.size === 0) {
+    return [];
+  }
+
   const suggestionMap = new Map();
 
   matches.forEach((match) => {
     const { timestamp, iso } = extractMatchMoment(match);
     const participants = uniqueActiveParticipants(match?.participants);
+    if (participants.length === 0) return;
+
+    const userIsInMatch = participants.some((participant) => {
+      const participantId = extractParticipantId(participant);
+      if (!participantId) return false;
+      return currentUserIds.has(participantId);
+    });
+
+    if (!userIsInMatch) return;
+
     participants.forEach((participant) => {
-      if (
-        memberMatchesParticipant(
-          currentUser,
-          participant,
-          memberIdentities,
-        )
-      ) {
-        return;
-      }
       const participantId = extractParticipantId(participant);
       if (!participantId) return;
+      if (currentUserIds.has(participantId)) return;
+
       const name = buildParticipantName(participant, participantId);
       const existing = suggestionMap.get(participantId);
       if (
