@@ -2212,6 +2212,45 @@ const TennisMatchApp = () => {
         : locationFilter?.lng,
     );
 
+  const getMatchTimestamp = useCallback((match) => {
+    if (!match?.dateTime) return null;
+    const parsed = new Date(match.dateTime);
+    const ts = parsed.getTime();
+    return Number.isNaN(ts) ? null : ts;
+  }, []);
+
+  const sortMatchesByRecency = useCallback(
+    (list) => {
+      const now = Date.now();
+      return [...list].sort((a, b) => {
+        const aTime = getMatchTimestamp(a);
+        const bTime = getMatchTimestamp(b);
+
+        if (aTime === null && bTime === null) return 0;
+        if (aTime === null) return 1;
+        if (bTime === null) return -1;
+
+        const aIsPast = aTime < now;
+        const bIsPast = bTime < now;
+        if (aIsPast !== bIsPast) {
+          return aIsPast ? 1 : -1;
+        }
+
+        const aDiff = Math.abs(aTime - now);
+        const bDiff = Math.abs(bTime - now);
+        if (aDiff !== bDiff) {
+          return aDiff - bDiff;
+        }
+
+        if (aIsPast) {
+          return bTime - aTime;
+        }
+        return aTime - bTime;
+      });
+    },
+    [getMatchTimestamp],
+  );
+
   const matchesWithDistance = useMemo(() => {
     return matches.map((match) => {
       const hasServerDistance = Number.isFinite(match.distanceMiles);
@@ -2232,26 +2271,20 @@ const TennisMatchApp = () => {
   }, [hasLocationFilter, locationFilter, matches]);
 
   const displayedMatches = useMemo(() => {
-    if (!hasLocationFilter) {
-      return matchesWithDistance;
-    }
+    const baseMatches = hasLocationFilter
+      ? matchesWithDistance.filter((match) => {
+          if (!Number.isFinite(match.distanceMiles)) return false;
+          return match.distanceMiles <= distanceFilter;
+        })
+      : matchesWithDistance;
 
-    const filtered = matchesWithDistance.filter((match) => {
-      if (!Number.isFinite(match.distanceMiles)) return false;
-      return match.distanceMiles <= distanceFilter;
-    });
-
-    return [...filtered].sort((a, b) => {
-      const distanceA = Number.isFinite(a.distanceMiles)
-        ? a.distanceMiles
-        : Number.POSITIVE_INFINITY;
-      const distanceB = Number.isFinite(b.distanceMiles)
-        ? b.distanceMiles
-        : Number.POSITIVE_INFINITY;
-      if (distanceA === distanceB) return 0;
-      return distanceA - distanceB;
-    });
-  }, [distanceFilter, hasLocationFilter, matchesWithDistance]);
+    return sortMatchesByRecency(baseMatches);
+  }, [
+    distanceFilter,
+    hasLocationFilter,
+    matchesWithDistance,
+    sortMatchesByRecency,
+  ]);
 
   const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
   const activeLocationLabel = hasLocationFilter
