@@ -17,6 +17,7 @@ import {
   getInvitePreview,
   claimInvite,
   acceptInvite,
+  rejectInvite,
 } from "./services/invites";
 import { forgotPassword, login, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
@@ -32,6 +33,7 @@ import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
 import PlayerAvatar from "./components/PlayerAvatar.jsx";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
+import { getStoredAuthToken } from "./services/authToken";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -68,9 +70,19 @@ export default function InvitationPage() {
       return null;
     }
   });
+  const [hasStoredSession, setHasStoredSession] = useState(() => {
+    try {
+      return !!getStoredAuthToken();
+    } catch {
+      return false;
+    }
+  });
   const [successModal, setSuccessModal] = useState(null);
   const [toast, setToast] = useState(null);
   const [matchDetails, setMatchDetails] = useState(null);
+  const [joining, setJoining] = useState(false);
+  const [declining, setDeclining] = useState(false);
+  const [declined, setDeclined] = useState(false);
 
   const successDateFormatter = useMemo(
     () =>
@@ -99,6 +111,33 @@ export default function InvitationPage() {
     const timeout = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (!event?.key) return;
+      if (event.key === "authToken") {
+        setHasStoredSession(() => {
+          try {
+            return !!getStoredAuthToken();
+          } catch {
+            return false;
+          }
+        });
+      }
+      if (event.key === "user") {
+        try {
+          setCurrentUser(event.newValue ? JSON.parse(event.newValue) : null);
+        } catch {
+          setCurrentUser(null);
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   const inviteeEmail = preview?.invitee?.email || "";
   const inviteeRequiresAccountClaim = useMemo(() => {
@@ -198,6 +237,10 @@ export default function InvitationPage() {
         const data = await fetchPreview(false);
         if (!alive) return;
         setPreview(data);
+        const normalizedStatus = String(data?.status || "").toLowerCase();
+        setDeclined(
+          normalizedStatus === "declined" || normalizedStatus === "rejected",
+        );
         setPhase("preview");
         const invitee = data?.invitee || null;
         if (invitee) {
@@ -229,6 +272,10 @@ export default function InvitationPage() {
             const archived = await fetchPreview(true);
             if (!alive) return;
             setPreview(archived);
+            const archivedStatus = String(archived?.status || "").toLowerCase();
+            setDeclined(
+              archivedStatus === "declined" || archivedStatus === "rejected",
+            );
             setArchivedNotice(true);
             setPhase("preview");
             const invitee = archived?.invitee || null;
@@ -260,6 +307,7 @@ export default function InvitationPage() {
             });
           } catch {
             setPreview(null);
+            setDeclined(false);
             setLoadError({
               emoji: "🗂️",
               title: "Match archived",
@@ -268,6 +316,7 @@ export default function InvitationPage() {
           }
         } else {
           setPreview(null);
+          setDeclined(false);
           setPhase("preview");
           const isNotFound = err?.status === 404 || err?.message === "not_found";
           setLoadError(
@@ -295,6 +344,26 @@ export default function InvitationPage() {
     };
   }, [token]);
 
+  const clearStoredSession = useCallback(() => {
+    try {
+      localStorage.removeItem("authToken");
+    } catch {
+      // ignore
+    }
+    try {
+      localStorage.removeItem("refreshToken");
+    } catch {
+      // ignore
+    }
+    try {
+      localStorage.removeItem("user");
+    } catch {
+      // ignore
+    }
+    setHasStoredSession(false);
+    setCurrentUser(null);
+  }, [setCurrentUser, setHasStoredSession]);
+
   const persistSession = useCallback((data, fallback = {}) => {
     if (!data) return;
     const {
@@ -314,6 +383,7 @@ export default function InvitationPage() {
       } catch {
         // ignore localStorage write errors
       }
+      setHasStoredSession(true);
     }
     if (refresh_token) {
       try {
@@ -389,8 +459,9 @@ export default function InvitationPage() {
         // ignore localStorage write errors
       }
       setCurrentUser(userRecord);
+      setHasStoredSession((prev) => prev || !!tokenToStore || !!access_token);
     }
-  }, [setCurrentUser]);
+  }, [setCurrentUser, setHasStoredSession]);
 
   const getInviteDestination = useCallback(
     (authData = {}, acceptance = {}) => {
@@ -417,6 +488,11 @@ export default function InvitationPage() {
     },
     [getInviteDestination, persistSession, token],
   );
+
+  const quickAcceptInvite = useCallback(async () => {
+    const acceptance = await acceptInvite(token);
+    return getInviteDestination({}, acceptance);
+  }, [getInviteDestination, token]);
 
   const navigateAfterJoin = useCallback(
     (destination) => {
@@ -626,6 +702,85 @@ export default function InvitationPage() {
     if (!message) return;
     setToast({ message, type });
   }, []);
+
+  const handleJoinClick = useCallback(async () => {
+    if (joining) return;
+    setError("");
+    if (isArchivedMatch) {
+      setError("This match has been archived. Invites are read-only.");
+      return;
+    }
+    if (!hasStoredSession) {
+      setPhase("auth");
+      setAuthMode("signIn");
+      setShowForgotPassword(false);
+      return;
+    }
+    setJoining(true);
+    try {
+      const destination = await quickAcceptInvite();
+      await handleJoinSuccess(destination);
+    } catch (err) {
+      const statusCode = Number(err?.status ?? err?.response?.status);
+      if (statusCode === 401 || statusCode === 403) {
+        clearStoredSession();
+        setPhase("auth");
+        setAuthMode("signIn");
+        setShowForgotPassword(false);
+        setError("Your session expired. Please sign in again to claim your spot.");
+      } else if (isMatchArchivedError(err)) {
+        setArchivedNotice(true);
+        setError("This match has been archived. Invites are read-only.");
+      } else if (isAcceptError(err)) {
+        setError(mapAcceptError(err));
+      } else {
+        setError("We couldn't secure your spot. Try again in a moment.");
+      }
+    } finally {
+      setJoining(false);
+    }
+  }, [
+    joining,
+    isArchivedMatch,
+    hasStoredSession,
+    quickAcceptInvite,
+    handleJoinSuccess,
+    clearStoredSession,
+  ]);
+
+  const handleDeclineClick = useCallback(async () => {
+    if (declining) return;
+    setError("");
+    if (isArchivedMatch) {
+      setError("This match has been archived. Invites are read-only.");
+      return;
+    }
+    setDeclining(true);
+    try {
+      await rejectInvite(token);
+      setPreview((prev) => (prev ? { ...prev, status: "declined" } : prev));
+      setDeclined(true);
+      handleToast(
+        "Invite declined. You won't receive reminders for this match.",
+        "info",
+      );
+    } catch (err) {
+      const statusCode = Number(err?.status ?? err?.response?.status);
+      if (statusCode === 401 || statusCode === 403) {
+        clearStoredSession();
+        setPhase("auth");
+        setAuthMode("signIn");
+        setShowForgotPassword(false);
+        setError("Sign in to decline this invite.");
+      } else {
+        setError(
+          err?.message || "We couldn't decline the invite. Please try again.",
+        );
+      }
+    } finally {
+      setDeclining(false);
+    }
+  }, [clearStoredSession, declining, handleToast, isArchivedMatch, token]);
 
   const handleSignInSubmit = async (event) => {
     event.preventDefault();
@@ -847,6 +1002,16 @@ export default function InvitationPage() {
         />
       </InvitationLayout>
     );
+  if (hasDeclined)
+    return (
+      <InvitationLayout>
+        <StatusCard
+          emoji="👋"
+          title="Invite declined"
+          message="You've declined this match invite. Reach out to the host if you'd like to rejoin."
+        />
+      </InvitationLayout>
+    );
   if (preview.status === "expired")
     return (
       <InvitationLayout>
@@ -929,6 +1094,15 @@ export default function InvitationPage() {
   const maskedIdentifier = preview?.maskedIdentifier;
   const isInviteeClaim = inviteeRequiresAccountClaim;
   const identifierDisplay = maskedIdentifier || phone || email;
+  const normalizedPreviewStatus = String(preview?.status || "").toLowerCase();
+  const previewDeclined =
+    normalizedPreviewStatus === "declined" ||
+    normalizedPreviewStatus === "rejected";
+  const hasDeclined = declined || previewDeclined;
+  const signedInName = (currentUser?.name || "").trim();
+  const joinHelperText = hasStoredSession
+    ? `You're signed in${signedInName ? ` as ${signedInName}` : ""}. We'll confirm your spot right away.`
+    : "You'll be asked to sign in or create a free account to claim your spot.";
 
   const infoItems = [];
   if (startDate) {
@@ -1496,20 +1670,28 @@ export default function InvitationPage() {
               ) : (
                 <>
                   <PrimaryButton
-                  onClick={() => {
-                    setPhase("auth");
-                    setAuthMode("signIn");
-                    setError("");
-                    setShowForgotPassword(false);
-                  }}
-                    disabled={isArchivedMatch}
+                    onClick={handleJoinClick}
+                    disabled={joining || declining || isArchivedMatch}
                   >
-                    Join Match &amp; Play
-                    <ArrowRight className="h-4 w-4" />
+                    {joining ? (
+                      "Securing your spot..."
+                    ) : (
+                      <>
+                        {hasStoredSession
+                          ? "Join Match"
+                          : "Join Match & Play"}
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </PrimaryButton>
-                  <p className="text-xs text-slate-500">
-                    You'll be asked to sign in or create a free account to claim your spot.
-                  </p>
+                  <SecondaryButton
+                    onClick={handleDeclineClick}
+                    disabled={declining || joining || isArchivedMatch}
+                    className="border-transparent bg-white/80 text-slate-600 hover:border-slate-200 hover:bg-white"
+                  >
+                    {declining ? "Declining..." : "Decline invite"}
+                  </SecondaryButton>
+                  <p className="text-xs text-slate-500">{joinHelperText}</p>
                 </>
               )}
             </div>
@@ -1562,6 +1744,25 @@ function PrimaryButton({
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500 px-6 py-3 text-base font-semibold text-white shadow-xl shadow-emerald-500/30 transition-transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-emerald-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({
+  onClick,
+  children,
+  className = "",
+  disabled,
+  type = "button",
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-6 py-3 text-base font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
     >
       {children}
     </button>
