@@ -2658,7 +2658,7 @@ const TennisMatchApp = () => {
       <div className="sticky top-[65px] z-40 bg-white/90 backdrop-blur">
         <div className="max-w-7xl mx-auto px-4">
           <div className="border-b border-gray-100 shadow-sm bg-white">
-            <div className="flex gap-2 py-4 px-2 sm:px-4 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2 py-4 pr-2 sm:pr-4 overflow-x-auto scrollbar-hide">
               {[
                 {
                   id: "my",
