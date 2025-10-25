@@ -2655,102 +2655,104 @@ const TennisMatchApp = () => {
           </div>
 
       {/* Filter Tabs */}
-      <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
+      <div className="sticky top-[65px] z-40 bg-white/90 backdrop-blur">
         <div className="max-w-7xl mx-auto px-4">
-          <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
-            {[
-              {
-                id: "my",
-                label: "My Matches",
-                count: getMatchCount("my"),
-                color: "violet",
-                icon: "⭐",
-              },
-              {
-                id: "open",
-                label: "Open Matches",
-                count: getMatchCount("open"),
-                color: "green",
-                icon: "🔥",
-              },
-              {
-                id: "today",
-                label: "Today",
-                count: getMatchCount("today"),
-                color: "blue",
-                icon: "📅",
-              },
-              {
-                id: "tomorrow",
-                label: "Tomorrow",
-                count: getMatchCount("tomorrow"),
-                color: "amber",
-                icon: "⏰",
-              },
-              {
-                id: "weekend",
-                label: "Weekend",
-                count: getMatchCount("weekend"),
-                color: "purple",
-                icon: "🎉",
-              },
-              {
-                id: "draft",
-                label: "Drafts",
-                count: getMatchCount("draft"),
-                color: "gray",
-                icon: "📝",
-              },
-              {
-                id: "archived",
-                label: "Archived",
-                count: getMatchCount("archived"),
-                color: "slate",
-                icon: "🗂️",
-              },
-            ].map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
-                className={`px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-                  activeFilter === filter.id
-                    ? "text-white shadow-lg scale-105"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-                style={
-                  activeFilter === filter.id
-                  ? {
-                      background:
-                        filter.color === "violet"
-                          ? "linear-gradient(135deg, rgb(139 92 246), rgb(124 58 237))"
-                          : filter.color === "green"
-                          ? "linear-gradient(135deg, rgb(34 197 94), rgb(16 185 129))"
-                          : filter.color === "blue"
-                          ? "linear-gradient(135deg, rgb(59 130 246), rgb(37 99 235))"
-                          : filter.color === "amber"
-                          ? "linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6))"
-                          : filter.color === "slate"
-                          ? "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))"
-                          : "linear-gradient(135deg, rgb(168 85 247), rgb(147 51 234))",
-                    }
-                  : {}
-              }
-              >
-                <span className="text-base">{filter.icon}</span>
-                {filter.label}
-                {filter.count > 0 && (
-                  <span
-                    className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${
-                      activeFilter === filter.id
-                        ? "bg-white/25 text-white"
-                        : "bg-white text-gray-600"
-                    }`}
-                  >
-                    {filter.count}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="border-b border-gray-100 shadow-sm bg-white">
+            <div className="flex gap-2 py-4 px-2 sm:px-4 overflow-x-auto scrollbar-hide">
+              {[
+                {
+                  id: "my",
+                  label: "My Matches",
+                  count: getMatchCount("my"),
+                  color: "violet",
+                  icon: "⭐",
+                },
+                {
+                  id: "open",
+                  label: "Open Matches",
+                  count: getMatchCount("open"),
+                  color: "green",
+                  icon: "🔥",
+                },
+                {
+                  id: "today",
+                  label: "Today",
+                  count: getMatchCount("today"),
+                  color: "blue",
+                  icon: "📅",
+                },
+                {
+                  id: "tomorrow",
+                  label: "Tomorrow",
+                  count: getMatchCount("tomorrow"),
+                  color: "amber",
+                  icon: "⏰",
+                },
+                {
+                  id: "weekend",
+                  label: "Weekend",
+                  count: getMatchCount("weekend"),
+                  color: "purple",
+                  icon: "🎉",
+                },
+                {
+                  id: "draft",
+                  label: "Drafts",
+                  count: getMatchCount("draft"),
+                  color: "gray",
+                  icon: "📝",
+                },
+                {
+                  id: "archived",
+                  label: "Archived",
+                  count: getMatchCount("archived"),
+                  color: "slate",
+                  icon: "🗂️",
+                },
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id)}
+                  className={`px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
+                    activeFilter === filter.id
+                      ? "text-white shadow-lg scale-105"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                  style={
+                    activeFilter === filter.id
+                      ? {
+                          background:
+                            filter.color === "violet"
+                              ? "linear-gradient(135deg, rgb(139 92 246), rgb(124 58 237))"
+                              : filter.color === "green"
+                              ? "linear-gradient(135deg, rgb(34 197 94), rgb(16 185 129))"
+                              : filter.color === "blue"
+                              ? "linear-gradient(135deg, rgb(59 130 246), rgb(37 99 235))"
+                              : filter.color === "amber"
+                              ? "linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6))"
+                              : filter.color === "slate"
+                              ? "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))"
+                              : "linear-gradient(135deg, rgb(168 85 247), rgb(147 51 234))",
+                        }
+                      : {}
+                  }
+                >
+                  <span className="text-base">{filter.icon}</span>
+                  {filter.label}
+                  {filter.count > 0 && (
+                    <span
+                      className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${
+                        activeFilter === filter.id
+                          ? "bg-white/25 text-white"
+                          : "bg-white text-gray-600"
+                      }`}
+                    >
+                      {filter.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
