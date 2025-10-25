@@ -315,10 +315,71 @@ const isInactiveStatus = (value) => {
   ].includes(normalized);
 };
 
+const CONFIRMED_STATUS_TOKENS = new Set(["confirm", "confirmed"]);
+
+const isConfirmedStatus = (value) => {
+  if (!value) return false;
+  const normalized = value.toString().trim().toLowerCase();
+  if (!normalized) return false;
+  if (isInactiveStatus(normalized)) return false;
+  if (normalized.includes("unconfirm")) return false;
+  if (normalized === "confirm" || normalized === "confirmed") {
+    return true;
+  }
+
+  const tokens = normalized.split(/[^a-z0-9]+/i).filter(Boolean);
+  if (tokens.some((token) => CONFIRMED_STATUS_TOKENS.has(token))) {
+    return true;
+  }
+
+  return false;
+};
+
+const hasConfirmedIndicator = (invite) => {
+  if (!invite || typeof invite !== "object") return false;
+
+  const statusCandidates = [
+    invite.status,
+    invite.invite_status,
+    invite.inviteStatus,
+    invite.invitation_status,
+    invite.invitationStatus,
+    invite.state,
+    invite.participant_status,
+    invite.participantStatus,
+    invite.status_reason,
+    invite.statusReason,
+  ];
+
+  if (statusCandidates.some((candidate) => isConfirmedStatus(candidate))) {
+    return true;
+  }
+
+  const confirmedFlags = [
+    invite.confirmed,
+    invite.is_confirmed,
+    invite.isConfirmed,
+    invite.has_confirmed,
+    invite.hasConfirmed,
+  ];
+
+  if (confirmedFlags.some((value) => value === true)) {
+    return true;
+  }
+
+  return hasAnyValue(invite, [
+    "confirmed_at",
+    "confirmedAt",
+    "confirmed_on",
+    "confirmedOn",
+    "rsvp_confirmed_at",
+    "rsvpConfirmedAt",
+  ]);
+};
+
 const isInviteActive = (invite) => {
   if (!invite || typeof invite !== "object") return false;
-  const status = invite.status ? invite.status.toString().trim().toLowerCase() : "";
-  if (status !== "accepted" || isInactiveStatus(status)) {
+  if (!hasConfirmedIndicator(invite)) {
     return false;
   }
 
