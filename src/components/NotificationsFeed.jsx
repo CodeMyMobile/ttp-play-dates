@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCcw,
   Sparkles,
+  Lock,
   UserCheck,
   UserMinus,
   UserPlus,
@@ -15,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { listNotifications } from "../services/notifications";
+import { getStoredAuthToken } from "../services/authToken";
 
 const buildQueryArray = (value) => {
   if (Array.isArray(value)) return value;
@@ -493,14 +495,26 @@ const filterDefinitions = [
   },
 ];
 
-const NotificationsFeed = ({ onSummaryChange, onOpenMatch }) => {
+const NotificationsFeed = ({ currentUser, onSummaryChange, onOpenMatch }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [requiresAuth, setRequiresAuth] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
+    const hasToken = !!getStoredAuthToken();
+    if (!currentUser || !hasToken) {
+      setRequiresAuth(true);
+      setNotifications([]);
+      setError("");
+      onSummaryChange?.({ total: 0, unread: 0, latest: null });
+      setLoading(false);
+      return;
+    }
+
+    setRequiresAuth(false);
     setError("");
     try {
       const data = await listNotifications({ perPage: 50 });
@@ -543,19 +557,26 @@ const NotificationsFeed = ({ onSummaryChange, onOpenMatch }) => {
       };
       onSummaryChange?.(summary);
     } catch (err) {
-      console.error("Failed to load notifications", err);
-      setNotifications([]);
-      setError(
-        err?.response?.data?.message ||
-          err?.data?.message ||
-          err?.message ||
-          "Failed to load updates",
-      );
-      onSummaryChange?.({ total: 0, unread: 0, latest: null });
+      if (err?.status === 401 || err?.response?.status === 401) {
+        setRequiresAuth(true);
+        setNotifications([]);
+        setError("");
+        onSummaryChange?.({ total: 0, unread: 0, latest: null });
+      } else {
+        console.error("Failed to load notifications", err);
+        setNotifications([]);
+        setError(
+          err?.response?.data?.message ||
+            err?.data?.message ||
+            err?.message ||
+            "Failed to load updates",
+        );
+        onSummaryChange?.({ total: 0, unread: 0, latest: null });
+      }
     } finally {
       setLoading(false);
     }
-  }, [onSummaryChange]);
+  }, [currentUser, onSummaryChange]);
 
   useEffect(() => {
     fetchNotifications();
@@ -596,7 +617,7 @@ const NotificationsFeed = ({ onSummaryChange, onOpenMatch }) => {
             type="button"
             onClick={fetchNotifications}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-            disabled={loading}
+            disabled={loading || requiresAuth}
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -625,14 +646,21 @@ const NotificationsFeed = ({ onSummaryChange, onOpenMatch }) => {
         ))}
       </div>
 
-      {error && (
+      {requiresAuth ? (
+        <div className="mb-6 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600 flex items-center gap-2">
+          <Lock className="h-4 w-4" />
+          <span>Sign in to see the latest updates on your matches.</span>
+        </div>
+      ) : (
+        error && (
         <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           <span>{error}</span>
         </div>
+        )
       )}
 
-      {loading && notifications.length === 0 ? (
+      {!requiresAuth && loading && notifications.length === 0 ? (
         <ul className="space-y-4">
           {[...Array(3)].map((_, index) => (
             <li
@@ -648,6 +676,14 @@ const NotificationsFeed = ({ onSummaryChange, onOpenMatch }) => {
             </li>
           ))}
         </ul>
+      ) : requiresAuth ? (
+        <div className="rounded-3xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
+          <Lock className="mx-auto mb-3 h-10 w-10 text-gray-400" />
+          <h2 className="text-lg font-black text-gray-900">Sign in to view updates</h2>
+          <p className="mt-2 text-sm font-semibold text-gray-500">
+            Log in to track match activity, roster changes, and invite responses.
+          </p>
+        </div>
       ) : filteredNotifications.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
           <Sparkles className="mx-auto mb-3 h-10 w-10 text-emerald-400" />

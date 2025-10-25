@@ -14,6 +14,7 @@ import {
   getShareLink,
 } from "./services/matches";
 import { listNotifications } from "./services/notifications";
+import { getStoredAuthToken } from "./services/authToken";
 import ProfileManager from "./components/ProfileManager";
 import NotificationsFeed from "./components/NotificationsFeed";
 import {
@@ -1823,8 +1824,9 @@ const TennisMatchApp = () => {
   );
 
   const fetchNotificationSummary = useCallback(async () => {
-    if (!currentUser) {
-      setNotificationSummary({ total: 0, unread: 0, latest: null });
+    const hasToken = !!getStoredAuthToken();
+    if (!currentUser || !hasToken) {
+      handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
       setLastSeenNotificationAt(null);
       return;
     }
@@ -1856,7 +1858,12 @@ const TennisMatchApp = () => {
         latest: latestRaw,
       });
     } catch (error) {
-      console.error("Failed to load notification summary", error);
+      if (error?.status === 401 || error?.response?.status === 401) {
+        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        setLastSeenNotificationAt(null);
+      } else {
+        console.error("Failed to load notification summary", error);
+      }
     }
   }, [currentUser, handleNotificationsSummaryChange]);
 
@@ -7093,6 +7100,7 @@ const TennisMatchApp = () => {
           )}
           {currentScreen === "invites" && (
             <NotificationsFeed
+              currentUser={currentUser}
               onSummaryChange={handleNotificationsSummaryChange}
               onOpenMatch={handleViewDetails}
             />
