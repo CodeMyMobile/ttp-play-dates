@@ -1,5 +1,5 @@
 // src/InvitationPage.jsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   CalendarDays,
@@ -19,7 +19,7 @@ import {
   acceptInvite,
   rejectInvite,
 } from "./services/invites";
-import { forgotPassword, login, signup } from "./services/auth";
+import { forgotPassword, login, refreshSession, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
 import { ARCHIVE_FILTER_VALUE, isMatchArchivedError } from "./utils/archive";
 import {
@@ -33,7 +33,14 @@ import Header from "./components/Header.jsx";
 import MatchDetailsModal from "./components/MatchDetailsModal.jsx";
 import PlayerAvatar from "./components/PlayerAvatar.jsx";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
-import { getStoredAuthToken } from "./services/authToken";
+import {
+  clearStoredAuthToken,
+  clearStoredRefreshToken,
+  getStoredAuthToken,
+  getStoredRefreshToken,
+  storeAuthToken,
+  storeRefreshToken,
+} from "./services/authToken";
 
 export default function InvitationPage() {
   const { token } = useParams();
@@ -80,6 +87,7 @@ export default function InvitationPage() {
   const [successModal, setSuccessModal] = useState(null);
   const [toast, setToast] = useState(null);
   const [matchDetails, setMatchDetails] = useState(null);
+  const [refreshingSession, setRefreshingSession] = useState(false);
   const [joining, setJoining] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [declined, setDeclined] = useState(false);
@@ -345,16 +353,8 @@ export default function InvitationPage() {
   }, [token]);
 
   const clearStoredSession = useCallback(() => {
-    try {
-      localStorage.removeItem("authToken");
-    } catch {
-      // ignore
-    }
-    try {
-      localStorage.removeItem("refreshToken");
-    } catch {
-      // ignore
-    }
+    clearStoredAuthToken();
+    clearStoredRefreshToken();
     try {
       localStorage.removeItem("user");
     } catch {
@@ -365,7 +365,7 @@ export default function InvitationPage() {
   }, [setCurrentUser, setHasStoredSession]);
 
   const persistSession = useCallback((data, fallback = {}) => {
-    if (!data) return;
+    if (!data) return false;
     const {
       access_token,
       refresh_token,
@@ -377,20 +377,14 @@ export default function InvitationPage() {
     } = data || {};
 
     const tokenToStore = access_token || legacyToken || fallback.accessToken;
+    let storedToken = false;
     if (tokenToStore) {
-      try {
-        localStorage.setItem("authToken", tokenToStore);
-      } catch {
-        // ignore localStorage write errors
-      }
+      storeAuthToken(tokenToStore);
       setHasStoredSession(true);
+      storedToken = true;
     }
     if (refresh_token) {
-      try {
-        localStorage.setItem("refreshToken", refresh_token);
-      } catch {
-        // ignore localStorage write errors
-      }
+      storeRefreshToken(refresh_token, { maxAgeDays: 60 });
     }
 
     let userRecord = null;
@@ -459,9 +453,46 @@ export default function InvitationPage() {
         // ignore localStorage write errors
       }
       setCurrentUser(userRecord);
-      setHasStoredSession((prev) => prev || !!tokenToStore || !!access_token);
+      setHasStoredSession((prev) => prev || storedToken);
     }
+    return storedToken;
   }, [setCurrentUser, setHasStoredSession]);
+
+  const hasAttemptedSessionRecoveryRef = useRef(false);
+
+  const attemptSessionRecovery = useCallback(
+    async ({ silent = false } = {}) => {
+      const refreshToken = getStoredRefreshToken();
+      if (!refreshToken) return false;
+      if (!silent) setRefreshingSession(true);
+      try {
+        const data = await refreshSession(refreshToken);
+        const stored = persistSession(data, currentUser || {});
+        return stored;
+      } catch (error) {
+        const statusCode = Number(error?.status ?? error?.response?.status);
+        if (statusCode === 401 || statusCode === 403) {
+          clearStoredSession();
+        }
+        return false;
+      } finally {
+        if (!silent) setRefreshingSession(false);
+      }
+    },
+    [clearStoredSession, currentUser, persistSession],
+  );
+
+  useEffect(() => {
+    if (hasStoredSession) return;
+    if (hasAttemptedSessionRecoveryRef.current) return;
+    hasAttemptedSessionRecoveryRef.current = true;
+    attemptSessionRecovery({ silent: true }).catch(() => {});
+  }, [attemptSessionRecovery, hasStoredSession]);
+
+  const ensureSession = useCallback(async () => {
+    if (hasStoredSession) return true;
+    return attemptSessionRecovery();
+  }, [attemptSessionRecovery, hasStoredSession]);
 
   const getInviteDestination = useCallback(
     (authData = {}, acceptance = {}) => {
@@ -704,13 +735,14 @@ export default function InvitationPage() {
   }, []);
 
   const handleJoinClick = useCallback(async () => {
-    if (joining) return;
+    if (joining || refreshingSession) return;
     setError("");
     if (isArchivedMatch) {
       setError("This match has been archived. Invites are read-only.");
       return;
     }
-    if (!hasStoredSession) {
+    const sessionReady = await ensureSession();
+    if (!sessionReady) {
       setPhase("auth");
       setAuthMode("signIn");
       setShowForgotPassword(false);
@@ -721,18 +753,34 @@ export default function InvitationPage() {
       const destination = await quickAcceptInvite();
       await handleJoinSuccess(destination);
     } catch (err) {
-      const statusCode = Number(err?.status ?? err?.response?.status);
+      let errorToHandle = err;
+      let statusCode = Number(err?.status ?? err?.response?.status);
+      if (statusCode === 401 || statusCode === 403) {
+        const recovered = await attemptSessionRecovery();
+        if (recovered) {
+          try {
+            const destination = await quickAcceptInvite();
+            await handleJoinSuccess(destination);
+            return;
+          } catch (retryError) {
+            errorToHandle = retryError;
+            statusCode = Number(
+              retryError?.status ?? retryError?.response?.status,
+            );
+          }
+        }
+      }
       if (statusCode === 401 || statusCode === 403) {
         clearStoredSession();
         setPhase("auth");
         setAuthMode("signIn");
         setShowForgotPassword(false);
         setError("Your session expired. Please sign in again to claim your spot.");
-      } else if (isMatchArchivedError(err)) {
+      } else if (isMatchArchivedError(errorToHandle)) {
         setArchivedNotice(true);
         setError("This match has been archived. Invites are read-only.");
-      } else if (isAcceptError(err)) {
-        setError(mapAcceptError(err));
+      } else if (isAcceptError(errorToHandle)) {
+        setError(mapAcceptError(errorToHandle));
       } else {
         setError("We couldn't secure your spot. Try again in a moment.");
       }
@@ -741,11 +789,13 @@ export default function InvitationPage() {
     }
   }, [
     joining,
+    refreshingSession,
     isArchivedMatch,
-    hasStoredSession,
+    ensureSession,
     quickAcceptInvite,
     handleJoinSuccess,
     clearStoredSession,
+    attemptSessionRecovery,
   ]);
 
   const handleDeclineClick = useCallback(async () => {
@@ -1100,7 +1150,9 @@ export default function InvitationPage() {
     normalizedPreviewStatus === "rejected";
   const hasDeclined = declined || previewDeclined;
   const signedInName = (currentUser?.name || "").trim();
-  const joinHelperText = hasStoredSession
+  const joinHelperText = refreshingSession
+    ? "Reconnecting your account… sit tight while we restore your session."
+    : hasStoredSession
     ? `You're signed in${signedInName ? ` as ${signedInName}` : ""}. We'll confirm your spot right away.`
     : "You'll be asked to sign in or create a free account to claim your spot.";
 
@@ -1671,10 +1723,14 @@ export default function InvitationPage() {
                 <>
                   <PrimaryButton
                     onClick={handleJoinClick}
-                    disabled={joining || declining || isArchivedMatch}
+                    disabled={
+                      joining || declining || isArchivedMatch || refreshingSession
+                    }
                   >
                     {joining ? (
                       "Securing your spot..."
+                    ) : refreshingSession ? (
+                      "Reconnecting your session..."
                     ) : (
                       <>
                         {hasStoredSession

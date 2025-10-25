@@ -1,26 +1,37 @@
 import api, { unwrap } from "./api";
 import { getPhoneDigits } from "./phone";
+import {
+  clearStoredAuthToken,
+  clearStoredRefreshToken,
+  getStoredRefreshToken,
+  storeAuthToken,
+  storeRefreshToken,
+} from "./authToken";
 
 const AUTH_BASE =
   import.meta.env.VITE_API_URL ||
   "https://ttp-api.codemymobile.com/api";
+
+const persistTokensFromResponse = (data) => {
+  if (!data || typeof data !== "object") return;
+  const token = data.access_token || data.token;
+  const refreshToken = data.refresh_token;
+  if (token) {
+    storeAuthToken(token);
+  }
+  if (refreshToken) {
+    storeRefreshToken(refreshToken, { maxAgeDays: 60 });
+  }
+};
 
 export const login = async (email, password) => {
   const data = await unwrap(
     api(`/auth/login`, {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    })
+    }),
   );
-  if (data?.access_token) {
-    localStorage.setItem("authToken", data.access_token);
-  }
-  if (data?.token && !data?.access_token) {
-    localStorage.setItem("authToken", data.token);
-  }
-  if (data?.refresh_token) {
-    localStorage.setItem("refreshToken", data.refresh_token);
-  }
+  persistTokensFromResponse(data);
   return data;
 };
 
@@ -39,17 +50,9 @@ export const signup = async ({ email, password, name, phone, user_type = 2 }) =>
     api(`/auth/signup`, {
       method: "POST",
       body: JSON.stringify(payload),
-    })
+    }),
   );
-  if (data?.access_token) {
-    localStorage.setItem("authToken", data.access_token);
-  }
-  if (data?.token && !data?.access_token) {
-    localStorage.setItem("authToken", data.token);
-  }
-  if (data?.refresh_token) {
-    localStorage.setItem("refreshToken", data.refresh_token);
-  }
+  persistTokensFromResponse(data);
   return data;
 };
 
@@ -61,7 +64,45 @@ export const getPersonalDetails = async () =>
   );
 
 export const logout = () => {
-  localStorage.removeItem("authToken");
+  clearStoredAuthToken();
+  clearStoredRefreshToken();
+};
+
+const refreshEndpoints = [
+  "/auth/refresh",
+  "/auth/refresh-token",
+  "/auth/refresh_token",
+];
+
+export const refreshSession = async (providedRefreshToken) => {
+  const refreshToken = (providedRefreshToken || getStoredRefreshToken() || "").trim();
+  if (!refreshToken) {
+    throw new Error("Missing refresh token");
+  }
+
+  let lastError = null;
+
+  for (const endpoint of refreshEndpoints) {
+    try {
+      const data = await unwrap(
+        api(endpoint, {
+          method: "POST",
+          json: { refresh_token: refreshToken },
+        }),
+      );
+      persistTokensFromResponse(data);
+      return data;
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status ?? error?.response?.status);
+      if (status && ![404, 405].includes(status)) {
+        break;
+      }
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw new Error("Unable to refresh session");
 };
 
 export const forgotPassword = async (email) =>
