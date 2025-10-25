@@ -1281,9 +1281,29 @@ const TennisMatchApp = () => {
         setIsDetectingLocation(false);
       },
       (error) => {
-        setGeoError(
-          error?.message || "Unable to retrieve your location. Please search manually.",
-        );
+        const defaultMessage =
+          "We couldn't access your location. Please enable location permissions or search manually.";
+        const messageFromCode = (() => {
+          if (!error || typeof error !== "object") return "";
+          const numericCode = Number.isFinite(error.code)
+            ? error.code
+            : Number.parseInt(error.code, 10);
+          switch (numericCode) {
+            case 1:
+              return "Please enable location permissions for your browser to use this feature.";
+            case 2:
+              return "We couldn't determine your location right now. Please try again or search manually.";
+            case 3:
+              return "Locating timed out. Try again or search for a location manually.";
+            default:
+              return "";
+          }
+        })();
+        const fallbackMessage =
+          typeof error?.message === "string" && error.message.trim()
+            ? error.message.trim()
+            : "";
+        setGeoError(messageFromCode || fallbackMessage || defaultMessage);
         setIsDetectingLocation(false);
       },
       {
