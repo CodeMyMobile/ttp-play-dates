@@ -13,6 +13,7 @@ const AppHeader = ({
   onLogout,
   onOpenSignIn,
   setShowPreview,
+  hasUpdates = false,
 }) => {
   const avatarName = currentUser?.name || "You";
   const currentUserAvatarUrl = useMemo(() => {
@@ -46,11 +47,13 @@ const AppHeader = ({
                 <button
                   onClick={goToInvites}
                   className="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-gray-50"
-                  aria-label="View notifications"
+                  aria-label="View updates"
                 >
                   <Bell className="w-5 h-5 text-gray-600" />
-                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500"></span>
-                  <span className="sr-only">Notifications</span>
+                  {hasUpdates && (
+                    <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500" />
+                  )}
+                  <span className="sr-only">Updates</span>
                 </button>
                 <button
                   onClick={onOpenProfile}
@@ -108,7 +111,7 @@ const AppHeader = ({
               <ChevronLeft className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700 font-bold">Back</span>
             </button>
-            <h1 className="text-xl font-black text-gray-800">Invites</h1>
+            <h1 className="text-xl font-black text-gray-800">Updates</h1>
             {currentUser && (
               <PlayerAvatar
                 name={avatarName}

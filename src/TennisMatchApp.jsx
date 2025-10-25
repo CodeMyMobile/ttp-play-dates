@@ -13,8 +13,9 @@ import {
   getMatch,
   getShareLink,
 } from "./services/matches";
+import { listNotifications } from "./services/notifications";
 import ProfileManager from "./components/ProfileManager";
-import InvitesList from "./components/InvitesList";
+import NotificationsFeed from "./components/NotificationsFeed";
 import {
   getInviteByToken,
   listInvites,
@@ -680,6 +681,12 @@ const TennisMatchApp = () => {
   const [showMatchDetailsModal, setShowMatchDetailsModal] = useState(false);
   const [matchDetailsOrigin, setMatchDetailsOrigin] = useState("browse");
   const [pendingInvites, setPendingInvites] = useState([]);
+  const [notificationSummary, setNotificationSummary] = useState({
+    total: 0,
+    unread: 0,
+    latest: null,
+  });
+  const [lastSeenNotificationAt, setLastSeenNotificationAt] = useState(null);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState("");
   const [locationFilter, setLocationFilter] = useState(() => {
@@ -1782,9 +1789,25 @@ const TennisMatchApp = () => {
     fetchPendingInvites();
   }, [fetchPendingInvites]);
 
+  useEffect(() => {
+    fetchNotificationSummary();
+  }, [fetchNotificationSummary]);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const interval = setInterval(() => {
+      fetchNotificationSummary();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [currentUser, fetchNotificationSummary]);
+
   const refreshMatchesAndInvites = useCallback(async () => {
-    await Promise.all([fetchMatches(), fetchPendingInvites()]);
-  }, [fetchMatches, fetchPendingInvites]);
+    await Promise.all([
+      fetchMatches(),
+      fetchPendingInvites(),
+      fetchNotificationSummary(),
+    ]);
+  }, [fetchMatches, fetchPendingInvites, fetchNotificationSummary]);
 
   const respondToInvite = useCallback(
     async (token, action) => {
@@ -1799,12 +1822,14 @@ const TennisMatchApp = () => {
         }
         fetchPendingInvites();
         fetchMatches();
+        fetchNotificationSummary();
       } catch (err) {
         const errorCode = err?.response?.data?.error || err?.data?.error;
         if (isMatchArchivedError(err) || errorCode === MATCH_ARCHIVED_ERROR) {
           displayToast("This match has been archived. Invites can no longer be updated.", "error");
           fetchPendingInvites();
           fetchMatches();
+          fetchNotificationSummary();
         } else {
           displayToast(
             err?.response?.data?.message || err?.message || "Failed to update invite",
@@ -1816,10 +1841,84 @@ const TennisMatchApp = () => {
     [displayToast, fetchMatches, fetchPendingInvites],
   );
 
-  const handleInviteResponse = useCallback(() => {
-    fetchMatches();
-    fetchPendingInvites();
-  }, [fetchMatches, fetchPendingInvites]);
+  const handleNotificationsSummaryChange = useCallback(
+    (summary = {}) => {
+      const normalizeCount = (value, fallback) => {
+        if (value === undefined || value === null) return fallback;
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+      };
+
+      const normalizeDate = (value) => {
+        if (!value) return null;
+        if (value instanceof Date) {
+          return Number.isNaN(value.getTime()) ? null : value;
+        }
+        if (typeof value === "number") {
+          const date = new Date(value);
+          return Number.isNaN(date.getTime()) ? null : date;
+        }
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          if (!trimmed) return null;
+          const date = new Date(trimmed);
+          return Number.isNaN(date.getTime()) ? null : date;
+        }
+        return null;
+      };
+
+      const latestDate = normalizeDate(summary.latest);
+
+      setNotificationSummary((prev) => ({
+        total: normalizeCount(summary.total, prev.total ?? 0),
+        unread: normalizeCount(summary.unread, prev.unread ?? 0),
+        latest: latestDate || prev.latest || null,
+      }));
+
+      if (currentScreen === "invites" && latestDate) {
+        setLastSeenNotificationAt(latestDate);
+      }
+    },
+    [currentScreen],
+  );
+
+  const fetchNotificationSummary = useCallback(async () => {
+    if (!currentUser) {
+      setNotificationSummary({ total: 0, unread: 0, latest: null });
+      setLastSeenNotificationAt(null);
+      return;
+    }
+    try {
+      const data = await listNotifications({ perPage: 10 });
+      const rawList = (() => {
+        if (Array.isArray(data?.notifications)) return data.notifications;
+        if (Array.isArray(data?.data)) return data.data;
+        if (Array.isArray(data?.items)) return data.items;
+        if (Array.isArray(data)) return data;
+        return [];
+      })();
+      const latestRaw = rawList.length > 0
+        ? rawList[0]?.created_at ??
+          rawList[0]?.createdAt ??
+          rawList[0]?.timestamp ??
+          rawList[0]?.time ??
+          null
+        : null;
+      handleNotificationsSummaryChange({
+        total: data?.total ?? data?.count ?? rawList.length,
+        unread:
+          data?.unread ??
+          data?.unread_count ??
+          data?.meta?.unread ??
+          data?.meta?.unread_count ??
+          data?.summary?.unread ??
+          0,
+        latest: latestRaw,
+      });
+    } catch (error) {
+      console.error("Failed to load notification summary", error);
+    }
+  }, [currentUser, handleNotificationsSummaryChange]);
 
   const goToBrowse = useCallback(
     (options = {}) => {
@@ -1837,6 +1936,26 @@ const TennisMatchApp = () => {
       navigate("/invites");
     }
   }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    if (currentScreen !== "invites") return;
+    if (!notificationSummary.latest) return;
+    setLastSeenNotificationAt((previous) => {
+      if (!previous) return notificationSummary.latest;
+      const previousDate = previous instanceof Date ? previous : new Date(previous);
+      const previousTime = previousDate.getTime();
+      const latestTime = notificationSummary.latest.getTime?.()
+        ? notificationSummary.latest.getTime()
+        : new Date(notificationSummary.latest).getTime();
+      if (!Number.isFinite(previousTime) || !Number.isFinite(latestTime)) {
+        return notificationSummary.latest;
+      }
+      if (latestTime > previousTime) {
+        return notificationSummary.latest;
+      }
+      return previous;
+    });
+  }, [currentScreen, notificationSummary.latest]);
 
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
@@ -6882,6 +7001,33 @@ const TennisMatchApp = () => {
     }
   `;
 
+  const hasNotificationIndicator = useMemo(() => {
+    if (pendingInvites.length > 0) return true;
+    const unreadCount = Number(notificationSummary.unread ?? 0);
+    if (currentScreen !== "invites" && unreadCount > 0) return true;
+    const latestDate = notificationSummary.latest;
+    if (!latestDate) return false;
+    const latestTime = latestDate instanceof Date
+      ? latestDate.getTime()
+      : new Date(latestDate).getTime();
+    if (!Number.isFinite(latestTime)) return false;
+    if (currentScreen === "invites") return false;
+    if (!lastSeenNotificationAt) return true;
+    const seenDate =
+      lastSeenNotificationAt instanceof Date
+        ? lastSeenNotificationAt
+        : new Date(lastSeenNotificationAt);
+    const seenTime = seenDate.getTime();
+    if (!Number.isFinite(seenTime)) return true;
+    return latestTime > seenTime;
+  }, [
+    currentScreen,
+    lastSeenNotificationAt,
+    notificationSummary.latest,
+    notificationSummary.unread,
+    pendingInvites.length,
+  ]);
+
   const shouldShowLanding = !currentUser && currentScreen === "browse";
 
   return (
@@ -6911,6 +7057,7 @@ const TennisMatchApp = () => {
             onLogout={handleLogout}
             onOpenSignIn={() => setShowSignInModal(true)}
             setShowPreview={setShowPreview}
+            hasUpdates={hasNotificationIndicator}
           />
 
           {currentScreen === "browse" && BrowseScreen()}
@@ -6935,7 +7082,10 @@ const TennisMatchApp = () => {
             />
           )}
           {currentScreen === "invites" && (
-            <InvitesList onInviteResponse={handleInviteResponse} />
+            <NotificationsFeed
+              onSummaryChange={handleNotificationsSummaryChange}
+              onOpenMatch={handleViewDetails}
+            />
           )}
         </>
       )}
