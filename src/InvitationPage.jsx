@@ -1102,6 +1102,14 @@ export default function InvitationPage() {
     }
   };
 
+  const normalizedPreviewStatus = preview
+    ? String(preview.status || "").toLowerCase()
+    : "";
+  const previewDeclined =
+    normalizedPreviewStatus === "declined" ||
+    normalizedPreviewStatus === "rejected";
+  const hasDeclined = declined || previewDeclined;
+
   // Render states
   if (loading)
     return (
@@ -1136,7 +1144,7 @@ export default function InvitationPage() {
         />
       </InvitationLayout>
     );
-  if (preview.status === "expired")
+  if (normalizedPreviewStatus === "expired")
     return (
       <InvitationLayout>
         <StatusCard
@@ -1146,7 +1154,7 @@ export default function InvitationPage() {
         />
       </InvitationLayout>
     );
-  if (preview.status === "revoked")
+  if (normalizedPreviewStatus === "revoked")
     return (
       <InvitationLayout>
         <StatusCard
@@ -1156,7 +1164,7 @@ export default function InvitationPage() {
         />
       </InvitationLayout>
     );
-  if (preview.status === "full")
+  if (normalizedPreviewStatus === "full")
     return (
       <InvitationLayout>
         <StatusCard
@@ -1218,11 +1226,6 @@ export default function InvitationPage() {
   const maskedIdentifier = preview?.maskedIdentifier;
   const isInviteeClaim = inviteeRequiresAccountClaim;
   const identifierDisplay = maskedIdentifier || phone || email;
-  const normalizedPreviewStatus = String(preview?.status || "").toLowerCase();
-  const previewDeclined =
-    normalizedPreviewStatus === "declined" ||
-    normalizedPreviewStatus === "rejected";
-  const hasDeclined = declined || previewDeclined;
   const signedInName = (currentUser?.name || "").trim();
   const joinHelperText = refreshingSession
     ? "Reconnecting your account… sit tight while we restore your session."
