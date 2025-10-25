@@ -5,8 +5,11 @@ import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
 import ProfilePhotoUploader from "./ProfilePhotoUploader";
 import {
   updatePlayerPersonalDetails,
+  getPlayerMatchProfile,
+  updatePlayerMatchProfile,
   normalizeRatingForApi,
   normalizeRatingFromApi,
+  getMatchProfileId,
 } from "../services/player";
 
 const USTA_RATING_OPTIONS = [
@@ -28,6 +31,7 @@ const USTA_RATING_OPTIONS = [
 
 const emptyDetails = {
   id: null,
+  match_profile_id: null,
   full_name: "",
   phone: "",
   profile_picture: "",
@@ -64,16 +68,50 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
       if (showLoader) {
         setLoading(true);
       }
-      const data = await getPersonalDetails();
+      const [personalResult, matchProfileResult] = await Promise.allSettled([
+        getPersonalDetails(),
+        getPlayerMatchProfile({ player: accessToken }),
+      ]);
+
+      if (personalResult.status !== "fulfilled") {
+        throw personalResult.reason;
+      }
+
+      const data = personalResult.value || {};
+      if (matchProfileResult.status === "rejected") {
+        const reason = matchProfileResult.reason;
+        const status = Number(reason?.status ?? reason?.response?.status);
+        if (!status || status >= 400) {
+          if (status !== 404) {
+            console.warn("Failed to load match profile", reason);
+          }
+        }
+      }
+      const matchProfile =
+        matchProfileResult.status === "fulfilled" ? matchProfileResult.value : null;
+      const matchProfileId = getMatchProfileId(matchProfile);
+      const hasNtrpRating =
+        matchProfile && Object.prototype.hasOwnProperty.call(matchProfile, "ntrp_rating");
+      const hasUstaRating =
+        matchProfile && Object.prototype.hasOwnProperty.call(matchProfile, "usta_rating");
+      const matchProfileRating = hasNtrpRating
+        ? matchProfile.ntrp_rating
+        : hasUstaRating
+        ? matchProfile.usta_rating
+        : undefined;
+
       const normalizedDetails = {
         id: data?.id ?? null,
+        match_profile_id: matchProfileId,
         full_name: data?.full_name || "",
         phone: data?.phone ? String(data.phone).replace(/\D/g, "") : "",
         profile_picture: data?.profile_picture || "",
         date_of_birth: data?.date_of_birth
           ? data.date_of_birth.split("T")[0]
           : "",
-        usta_rating: normalizeRatingFromApi(data?.usta_rating),
+        usta_rating: normalizeRatingFromApi(
+          matchProfileRating ?? data?.usta_rating,
+        ),
         uta_rating: normalizeRatingFromApi(data?.uta_rating),
         about_me: data?.about_me || "",
       };
@@ -81,7 +119,15 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
       setPhoneInput(formatPhoneDisplay(data?.phone) || "");
       setImagePreview(normalizedDetails.profile_picture || "");
       if (onProfileUpdate) {
-        onProfileUpdate({ ...data });
+        onProfileUpdate({
+          ...data,
+          ...(matchProfileId !== undefined && matchProfileId !== null
+            ? { match_profile_id: matchProfileId }
+            : {}),
+          ...(matchProfileRating !== undefined
+            ? { ntrp_rating: matchProfileRating, usta_rating: matchProfileRating }
+            : {}),
+        });
       }
     } catch (err) {
       console.error(err);
@@ -148,20 +194,57 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         about_me: aboutMe || null,
       };
 
-      if (normalizedUstaRating !== undefined) {
-        payload.usta_rating = normalizedUstaRating;
-      }
-
       if (normalizedUtaRating !== undefined) {
         payload.uta_rating = normalizedUtaRating;
       }
 
+      const matchProfileNeedsUpdate =
+        normalizedUstaRating !== undefined ||
+        (!hasValue(details.usta_rating) &&
+          details.match_profile_id !== undefined &&
+          details.match_profile_id !== null);
+
+      let matchProfileResponse = null;
+
+      if (matchProfileNeedsUpdate) {
+        matchProfileResponse = await updatePlayerMatchProfile({
+          player: accessToken,
+          id: details.match_profile_id,
+          ntrp_rating:
+            normalizedUstaRating !== undefined ? normalizedUstaRating : null,
+        });
+      }
+
       await updatePlayerPersonalDetails(payload);
+
+      const nextMatchProfileId =
+        getMatchProfileId(matchProfileResponse) ?? details.match_profile_id;
+      const nextMatchProfileRating =
+        matchProfileResponse?.ntrp_rating ??
+        matchProfileResponse?.usta_rating ??
+        (matchProfileNeedsUpdate
+          ? normalizedUstaRating ?? null
+          : undefined);
+      const nextMatchProfileRatingDisplay =
+        nextMatchProfileRating !== undefined
+          ? normalizeRatingFromApi(nextMatchProfileRating)
+          : undefined;
+      const nextUstaRatingDisplay =
+        normalizedUstaRating !== undefined
+          ? normalizeRatingFromApi(normalizedUstaRating)
+          : nextMatchProfileRatingDisplay;
+
       if (onProfileUpdate) {
         onProfileUpdate({
           ...details,
-          ...(normalizedUstaRating !== undefined
-            ? { usta_rating: normalizeRatingFromApi(normalizedUstaRating) }
+          match_profile_id: nextMatchProfileId,
+          ...(nextMatchProfileRating !== undefined
+            ? {
+                ntrp_rating: nextMatchProfileRating,
+              }
+            : {}),
+          ...(nextUstaRatingDisplay !== undefined
+            ? { usta_rating: nextUstaRatingDisplay }
             : {}),
           ...(normalizedUtaRating !== undefined
             ? { uta_rating: normalizeRatingFromApi(normalizedUtaRating) }

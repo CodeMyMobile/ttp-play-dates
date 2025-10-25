@@ -27,10 +27,10 @@ export const normalizeRatingForApi = (value) => {
   }
 
   if (Number.isInteger(roundedToHalfStep)) {
-    return roundedToHalfStep;
+    return Number(roundedToHalfStep.toFixed(0));
   }
 
-  return Math.round(roundedToHalfStep * 10);
+  return Number(roundedToHalfStep.toFixed(1));
 };
 
 export const normalizeRatingFromApi = (value) => {
@@ -77,14 +77,10 @@ export const updatePlayerPersonalDetails = async ({
     throw new Error("Missing player token");
   }
 
-  const normalizedUstaRating = normalizeRatingForApi(usta_rating);
-  const normalizedUtaRating = normalizeRatingForApi(uta_rating);
-
   const params = Object.entries({
     id,
     date_of_birth,
-    usta_rating: normalizedUstaRating,
-    uta_rating: normalizedUtaRating,
+    uta_rating: normalizeRatingForApi(uta_rating),
     full_name: fullName,
     phone: mobile,
     about_me,
@@ -100,6 +96,72 @@ export const updatePlayerPersonalDetails = async ({
 
   return unwrap(
     api(`/player/personal_details`, {
+      method,
+      authToken: authHeader,
+      authSchemePreference: "token",
+      json: params,
+    }),
+  );
+};
+
+export const getMatchProfileId = (profile) => {
+  if (!profile || typeof profile !== "object") {
+    return null;
+  }
+  return (
+    profile.id ??
+    profile.match_profile_id ??
+    profile.matchProfileId ??
+    profile.profile_id ??
+    profile.profileId ??
+    null
+  );
+};
+
+export const getPlayerMatchProfile = async ({ player = null } = {}) => {
+  const authHeader = normalizeAuthToken(player, {
+    defaultScheme: "token",
+    preferScheme: "token",
+  });
+
+  return unwrap(
+    api(`/player/match_profile`, {
+      authToken: authHeader,
+      authSchemePreference: "token",
+    }),
+  );
+};
+
+export const updatePlayerMatchProfile = async ({
+  player = null,
+  id = null,
+  ntrp_rating = undefined,
+  uta_rating = undefined,
+} = {}) => {
+  const authHeader = normalizeAuthToken(player, {
+    defaultScheme: "token",
+    preferScheme: "token",
+  });
+
+  if (!authHeader) {
+    throw new Error("Missing player token");
+  }
+
+  const params = {};
+  if (id !== undefined && id !== null) {
+    params.id = id;
+  }
+  if (ntrp_rating !== undefined) {
+    params.ntrp_rating = ntrp_rating;
+  }
+  if (uta_rating !== undefined) {
+    params.uta_rating = uta_rating;
+  }
+
+  const method = id ? "PATCH" : "POST";
+
+  return unwrap(
+    api(`/player/match_profile`, {
       method,
       authToken: authHeader,
       authSchemePreference: "token",

@@ -494,12 +494,15 @@ const resolveAuthSession = (data = {}, fallback = {}) => {
   );
 
   const derivedSkill = pickString(
+    profile?.ntrp_rating,
     profile?.usta_rating,
     profile?.skill_level,
     profile?.skillLevel,
+    userFromApi?.ntrp_rating,
     userFromApi?.usta_rating,
     userFromApi?.skill_level,
     userFromApi?.skillLevel,
+    fallbackData?.ntrp_rating,
     fallbackData?.skillLevel,
   );
 
@@ -737,6 +740,9 @@ const TennisMatchApp = () => {
         profileDetails && typeof profileDetails === "object"
           ? {
               ...profileDetails,
+              ...(profileDetails.ntrp_rating !== undefined
+                ? { ntrp_rating: normalizeRatingFromApi(profileDetails.ntrp_rating) }
+                : {}),
               ...(profileDetails.usta_rating !== undefined
                 ? { usta_rating: normalizeRatingFromApi(profileDetails.usta_rating) }
                 : {}),
@@ -761,6 +767,7 @@ const TennisMatchApp = () => {
         );
 
         const derivedSkill = pickFirstValue(
+          normalizedProfileDetails.ntrp_rating,
           normalizedProfileDetails.usta_rating,
           normalizedProfileDetails.ustaRating,
           normalizedProfileDetails.skill_level,
