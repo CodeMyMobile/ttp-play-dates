@@ -507,6 +507,48 @@ const getInviteStatus = (invite) => {
   return "";
 };
 
+const openSmsComposer = (recipients, onToast) => {
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    return;
+  }
+
+  try {
+    const ua =
+      typeof navigator !== "undefined" && navigator.userAgent
+        ? navigator.userAgent
+        : "";
+    const isAndroid = /Android/i.test(ua);
+    const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
+
+    let url = "sms:";
+    if (recipients.length > 0) {
+      if (isAndroid) {
+        const path = recipients.map((value) => encodeURIComponent(value)).join(";");
+        const addresses = encodeURIComponent(recipients.join(";"));
+        url = `smsto:${path}?addresses=${addresses}`;
+      } else if (isAppleMobile) {
+        const addresses = encodeURIComponent(recipients.join(","));
+        url = `sms:&addresses=${addresses}`;
+      } else {
+        const path = recipients.map((value) => encodeURIComponent(value)).join(",");
+        url = `sms:${path}`;
+      }
+    }
+
+    const toastMessage = isAppleMobile
+      ? "Opening Messages..."
+      : "Opening messages...";
+    onToast?.(toastMessage);
+
+    if (typeof window !== "undefined") {
+      window.location.href = url;
+    }
+  } catch (error) {
+    console.error(error);
+    onToast?.("We couldn't open messages", "error");
+  }
+};
+
 const ACCEPTED_INVITE_STATUSES = new Set([
   "accepted",
   "confirmed",
@@ -1656,47 +1698,6 @@ const MatchDetailsModal = ({
       : "Start a group text with your confirmed players."
     : "Add player phone numbers to enable group texts.";
 
-  const handleMessageParticipants = useCallback(() => {
-    if (!canMessageParticipants) return;
-    try {
-      const recipients = participantPhoneRecipients;
-      const ua =
-        typeof navigator !== "undefined" && navigator.userAgent
-          ? navigator.userAgent
-          : "";
-      const isAndroid = /Android/i.test(ua);
-      const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
-
-      let url = "sms:";
-      if (recipients.length > 0) {
-        if (isAndroid) {
-          const path = recipients
-            .map((value) => encodeURIComponent(value))
-            .join(";");
-          const addresses = encodeURIComponent(recipients.join(";"));
-          url = `smsto:${path}?addresses=${addresses}`;
-        } else if (isAppleMobile) {
-          const addresses = encodeURIComponent(recipients.join(","));
-          url = `sms:&addresses=${addresses}`;
-        } else {
-          const path = recipients
-            .map((value) => encodeURIComponent(value))
-            .join(",");
-          url = `sms:${path}`;
-        }
-      }
-
-      const toastMessage = isAppleMobile
-        ? "Opening Messages..."
-        : "Opening messages...";
-      onToast?.(toastMessage);
-      window.location.href = url;
-    } catch (error) {
-      console.error(error);
-      onToast?.("We couldn't open messages", "error");
-    }
-  }, [canMessageParticipants, onToast, participantPhoneRecipients]);
-
   const pendingInvitesList = useMemo(() => {
     if (pendingInvitees.length === 0) return [];
     const seen = new Set();
@@ -2515,7 +2516,9 @@ const MatchDetailsModal = ({
                   </div>
                   <button
                     type="button"
-                    onClick={handleMessageParticipants}
+                    onClick={() =>
+                      openSmsComposer(participantPhoneRecipients, onToast)
+                    }
                     disabled={!canMessageParticipants}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
