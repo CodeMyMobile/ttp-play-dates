@@ -42,6 +42,80 @@ import {
   storeRefreshToken,
 } from "./services/authToken";
 
+function InvitationLayout({ children }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#4c1d95] via-[#4338ca] to-[#2563eb]">
+      <div className="flex min-h-screen flex-col">
+        <Header />
+        <main className="flex flex-1 items-center justify-center px-4 py-10">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function PrimaryButton({
+  onClick,
+  children,
+  className = "",
+  disabled,
+  type = "button",
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500 px-6 py-3 text-base font-semibold text-white shadow-xl shadow-emerald-500/30 transition-transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-emerald-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({
+  onClick,
+  children,
+  className = "",
+  disabled,
+  type = "button",
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-6 py-3 text-base font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ErrorText({ children }) {
+  return (
+    <p className="flex items-center gap-2 text-sm font-medium text-red-600">
+      <AlertCircle className="h-4 w-4" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function StatusCard({ emoji, title, message }) {
+  return (
+    <div className="w-full max-w-xl">
+      <div className="space-y-4 rounded-[32px] border border-white/40 bg-white/85 px-8 py-10 text-center shadow-[0_24px_60px_-15px_rgba(24,24,27,0.45)] backdrop-blur">
+        <div className="text-4xl" aria-hidden="true">
+          {emoji}
+        </div>
+        <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
+        <p className="text-sm text-slate-600">{message}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function InvitationPage() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -1774,81 +1848,7 @@ export default function InvitationPage() {
   );
 }
 
-function InvitationLayout({ children }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-[#4c1d95] via-[#4338ca] to-[#2563eb]">
-      <div className="flex min-h-screen flex-col">
-        <Header />
-        <main className="flex flex-1 items-center justify-center px-4 py-10">
-          {children}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function PrimaryButton({
-  onClick,
-  children,
-  className = "",
-  disabled,
-  type = "button",
-}) {
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500 px-6 py-3 text-base font-semibold text-white shadow-xl shadow-emerald-500/30 transition-transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-emerald-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SecondaryButton({
-  onClick,
-  children,
-  className = "",
-  disabled,
-  type = "button",
-}) {
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-6 py-3 text-base font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-4 focus:ring-slate-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ErrorText({ children }) {
-  return (
-    <p className="flex items-center gap-2 text-sm font-medium text-red-600">
-      <AlertCircle className="h-4 w-4" />
-      <span>{children}</span>
-    </p>
-  );
-}
-
-function StatusCard({ emoji, title, message }) {
-  return (
-    <div className="w-full max-w-xl">
-      <div className="space-y-4 rounded-[32px] border border-white/40 bg-white/85 px-8 py-10 text-center shadow-[0_24px_60px_-15px_rgba(24,24,27,0.45)] backdrop-blur">
-        <div className="text-4xl" aria-hidden="true">
-          {emoji}
-        </div>
-        <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
-        <p className="text-sm text-slate-600">{message}</p>
-      </div>
-    </div>
-  );
-}
-
-// Helpers
+  // Helpers
 function isAcceptError(error) {
   if (!error) return false;
   if (isMatchArchivedError(error)) return true;
