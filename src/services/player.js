@@ -20,8 +20,42 @@ export const normalizeRatingForApi = (value) => {
     return undefined;
   }
 
-  const rounded = Math.round(numeric * 10) / 10;
-  return rounded.toFixed(1);
+  const roundedToHalfStep = Math.round(numeric * 2) / 2;
+  const isHalfStep = Math.abs(roundedToHalfStep - numeric) < 1e-9;
+  if (!isHalfStep) {
+    return undefined;
+  }
+
+  if (Number.isInteger(roundedToHalfStep)) {
+    return roundedToHalfStep;
+  }
+
+  return Math.round(roundedToHalfStep * 10);
+};
+
+export const normalizeRatingFromApi = (value) => {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return "";
+  }
+
+  if (numeric >= 10 && Number.isInteger(numeric)) {
+    const scaled = numeric / 10;
+    if (scaled >= 0 && scaled <= 10) {
+      return scaled.toFixed(1);
+    }
+  }
+
+  if (Number.isInteger(numeric)) {
+    return numeric.toFixed(1);
+  }
+
+  const roundedToHalfStep = Math.round(numeric * 2) / 2;
+  return roundedToHalfStep.toFixed(1);
 };
 
 export const updatePlayerPersonalDetails = async ({

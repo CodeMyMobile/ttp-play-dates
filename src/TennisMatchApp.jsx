@@ -22,7 +22,10 @@ import {
   rejectInvite,
 } from "./services/invites";
 import { login, signup, forgotPassword, getPersonalDetails } from "./services/auth";
-import { updatePlayerPersonalDetails } from "./services/player";
+import {
+  updatePlayerPersonalDetails,
+  normalizeRatingFromApi,
+} from "./services/player";
 import {
   Calendar,
   MapPin,
@@ -730,31 +733,44 @@ const TennisMatchApp = () => {
         return "";
       };
 
+      const normalizedProfileDetails =
+        profileDetails && typeof profileDetails === "object"
+          ? {
+              ...profileDetails,
+              ...(profileDetails.usta_rating !== undefined
+                ? { usta_rating: normalizeRatingFromApi(profileDetails.usta_rating) }
+                : {}),
+              ...(profileDetails.uta_rating !== undefined
+                ? { uta_rating: normalizeRatingFromApi(profileDetails.uta_rating) }
+                : {}),
+            }
+          : profileDetails;
+
       setCurrentUser((prev) => {
         if (!prev || typeof prev !== "object") return prev;
 
         const mergedProfile = {
           ...(prev.profile && typeof prev.profile === "object" ? prev.profile : {}),
-          ...profileDetails,
+          ...normalizedProfileDetails,
         };
 
         const derivedName = pickFirstValue(
-          profileDetails.full_name,
-          profileDetails.fullName,
-          profileDetails.name,
+          normalizedProfileDetails.full_name,
+          normalizedProfileDetails.fullName,
+          normalizedProfileDetails.name,
         );
 
         const derivedSkill = pickFirstValue(
-          profileDetails.usta_rating,
-          profileDetails.ustaRating,
-          profileDetails.skill_level,
-          profileDetails.skillLevel,
+          normalizedProfileDetails.usta_rating,
+          normalizedProfileDetails.ustaRating,
+          normalizedProfileDetails.skill_level,
+          normalizedProfileDetails.skillLevel,
         );
 
         const derivedAvatarUrl = getAvatarUrlFromPlayer({
-          profile: profileDetails,
-          player: profileDetails,
-          user: profileDetails,
+          profile: normalizedProfileDetails,
+          player: normalizedProfileDetails,
+          user: normalizedProfileDetails,
         });
 
         const nextUser = {
@@ -775,16 +791,16 @@ const TennisMatchApp = () => {
         }
 
         const profilePicture = pickFirstValue(
-          profileDetails.profile_picture,
-          profileDetails.profilePicture,
-          profileDetails.profile_picture_url,
-          profileDetails.profilePictureUrl,
-          profileDetails.photo_url,
-          profileDetails.photoUrl,
-          profileDetails.image_url,
-          profileDetails.imageUrl,
-          profileDetails.avatar_url,
-          profileDetails.avatarUrl,
+          normalizedProfileDetails.profile_picture,
+          normalizedProfileDetails.profilePicture,
+          normalizedProfileDetails.profile_picture_url,
+          normalizedProfileDetails.profilePictureUrl,
+          normalizedProfileDetails.photo_url,
+          normalizedProfileDetails.photoUrl,
+          normalizedProfileDetails.image_url,
+          normalizedProfileDetails.imageUrl,
+          normalizedProfileDetails.avatar_url,
+          normalizedProfileDetails.avatarUrl,
         );
 
         if (profilePicture) {

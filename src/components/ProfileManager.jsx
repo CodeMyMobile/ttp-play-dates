@@ -6,6 +6,7 @@ import ProfilePhotoUploader from "./ProfilePhotoUploader";
 import {
   updatePlayerPersonalDetails,
   normalizeRatingForApi,
+  normalizeRatingFromApi,
 } from "../services/player";
 
 const USTA_RATING_OPTIONS = [
@@ -72,14 +73,8 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         date_of_birth: data?.date_of_birth
           ? data.date_of_birth.split("T")[0]
           : "",
-        usta_rating:
-          typeof data?.usta_rating === "number" && !Number.isNaN(data.usta_rating)
-            ? String(data.usta_rating)
-            : data?.usta_rating || "",
-        uta_rating:
-          typeof data?.uta_rating === "number" && !Number.isNaN(data.uta_rating)
-            ? String(data.uta_rating)
-            : data?.uta_rating || "",
+        usta_rating: normalizeRatingFromApi(data?.usta_rating),
+        uta_rating: normalizeRatingFromApi(data?.uta_rating),
         about_me: data?.about_me || "",
       };
       setDetails(normalizedDetails);
@@ -166,10 +161,10 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         onProfileUpdate({
           ...details,
           ...(normalizedUstaRating !== undefined
-            ? { usta_rating: normalizedUstaRating }
+            ? { usta_rating: normalizeRatingFromApi(normalizedUstaRating) }
             : {}),
           ...(normalizedUtaRating !== undefined
-            ? { uta_rating: normalizedUtaRating }
+            ? { uta_rating: normalizeRatingFromApi(normalizedUtaRating) }
             : {}),
         });
       }
