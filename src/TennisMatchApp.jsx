@@ -1781,46 +1781,6 @@ const TennisMatchApp = () => {
     currentUser,
   ]);
 
-  const refreshMatchesAndInvites = useCallback(async () => {
-    await Promise.all([
-      fetchMatches(),
-      fetchPendingInvites(),
-      fetchNotificationSummary(),
-    ]);
-  }, [fetchMatches, fetchPendingInvites, fetchNotificationSummary]);
-
-  const respondToInvite = useCallback(
-    async (token, action) => {
-      if (!token) return;
-      try {
-        if (action === "accept") {
-          await acceptInvite(token);
-          displayToast("Invite accepted! See you on the court. 🎾");
-        } else {
-          await rejectInvite(token);
-          displayToast("Invite declined", "info");
-        }
-        fetchPendingInvites();
-        fetchMatches();
-        fetchNotificationSummary();
-      } catch (err) {
-        const errorCode = err?.response?.data?.error || err?.data?.error;
-        if (isMatchArchivedError(err) || errorCode === MATCH_ARCHIVED_ERROR) {
-          displayToast("This match has been archived. Invites can no longer be updated.", "error");
-          fetchPendingInvites();
-          fetchMatches();
-          fetchNotificationSummary();
-        } else {
-          displayToast(
-            err?.response?.data?.message || err?.message || "Failed to update invite",
-            "error",
-          );
-        }
-      }
-    },
-    [displayToast, fetchMatches, fetchPendingInvites],
-  );
-
   const handleNotificationsSummaryChange = useCallback(
     (summary = {}) => {
       const normalizeCount = (value, fallback) => {
@@ -1899,6 +1859,56 @@ const TennisMatchApp = () => {
       console.error("Failed to load notification summary", error);
     }
   }, [currentUser, handleNotificationsSummaryChange]);
+
+  const refreshMatchesAndInvites = useCallback(async () => {
+    await Promise.all([
+      fetchMatches(),
+      fetchPendingInvites(),
+      fetchNotificationSummary(),
+    ]);
+  }, [fetchMatches, fetchPendingInvites, fetchNotificationSummary]);
+
+  const respondToInvite = useCallback(
+    async (token, action) => {
+      if (!token) return;
+      try {
+        if (action === "accept") {
+          await acceptInvite(token);
+          displayToast("Invite accepted! See you on the court. 🎾");
+        } else {
+          await rejectInvite(token);
+          displayToast("Invite declined", "info");
+        }
+        fetchPendingInvites();
+        fetchMatches();
+        fetchNotificationSummary();
+      } catch (err) {
+        const errorCode = err?.response?.data?.error || err?.data?.error;
+        if (isMatchArchivedError(err) || errorCode === MATCH_ARCHIVED_ERROR) {
+          displayToast(
+            "This match has been archived. Invites can no longer be updated.",
+            "error",
+          );
+          fetchPendingInvites();
+          fetchMatches();
+          fetchNotificationSummary();
+        } else {
+          displayToast(
+            err?.response?.data?.message ||
+              err?.message ||
+              "Failed to update invite",
+            "error",
+          );
+        }
+      }
+    },
+    [
+      displayToast,
+      fetchMatches,
+      fetchPendingInvites,
+      fetchNotificationSummary,
+    ],
+  );
 
   useEffect(() => {
     fetchMatches();
