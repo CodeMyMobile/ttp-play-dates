@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import {
+  clearStoredAuthToken,
+  clearStoredRefreshToken,
+} from "../services/authToken";
 
 export default function Header() {
   const navigate = useNavigate();
@@ -39,9 +43,9 @@ export default function Header() {
   }, [user]);
 
   const handleLogout = () => {
+    clearStoredAuthToken();
+    clearStoredRefreshToken();
     try {
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
     } catch {
       // ignore localStorage removal errors

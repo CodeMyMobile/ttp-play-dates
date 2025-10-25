@@ -22,6 +22,12 @@ import {
   rejectInvite,
 } from "./services/invites";
 import { login, signup, forgotPassword, getPersonalDetails } from "./services/auth";
+import {
+  clearStoredAuthToken,
+  clearStoredRefreshToken,
+  storeAuthToken,
+  storeRefreshToken,
+} from "./services/authToken";
 import { updatePlayerPersonalDetails } from "./services/player";
 import {
   Calendar,
@@ -897,20 +903,11 @@ const TennisMatchApp = () => {
       const safeRefresh = typeof refreshToken === "string" ? refreshToken.trim() : "";
       const fallbackData = fallback && typeof fallback === "object" ? fallback : {};
 
-      const safeSetItem = (key, value) => {
-        if (!value) return;
-        try {
-          localStorage.setItem(key, value);
-        } catch {
-          // ignore storage errors (e.g., private mode)
-        }
-      };
-
       if (safeToken) {
-        safeSetItem("authToken", safeToken);
+        storeAuthToken(safeToken);
       }
       if (safeRefresh) {
-        safeSetItem("refreshToken", safeRefresh);
+        storeRefreshToken(safeRefresh, { maxAgeDays: 60 });
       }
 
       if (!safeToken) return null;
@@ -2217,8 +2214,8 @@ const TennisMatchApp = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("refreshToken");
+    clearStoredAuthToken();
+    clearStoredRefreshToken();
     hydratedProfileIdsRef.current.clear();
     setCurrentUser(null);
     displayToast("Logged out", "success");
