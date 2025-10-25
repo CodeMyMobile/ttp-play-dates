@@ -1781,26 +1781,6 @@ const TennisMatchApp = () => {
     currentUser,
   ]);
 
-  useEffect(() => {
-    fetchMatches();
-  }, [fetchMatches]);
-
-  useEffect(() => {
-    fetchPendingInvites();
-  }, [fetchPendingInvites]);
-
-  useEffect(() => {
-    fetchNotificationSummary();
-  }, [fetchNotificationSummary]);
-
-  useEffect(() => {
-    if (!currentUser) return undefined;
-    const interval = setInterval(() => {
-      fetchNotificationSummary();
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [currentUser, fetchNotificationSummary]);
-
   const refreshMatchesAndInvites = useCallback(async () => {
     await Promise.all([
       fetchMatches(),
@@ -1919,6 +1899,26 @@ const TennisMatchApp = () => {
       console.error("Failed to load notification summary", error);
     }
   }, [currentUser, handleNotificationsSummaryChange]);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [fetchMatches]);
+
+  useEffect(() => {
+    fetchPendingInvites();
+  }, [fetchPendingInvites]);
+
+  useEffect(() => {
+    fetchNotificationSummary();
+  }, [fetchNotificationSummary]);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const interval = setInterval(() => {
+      fetchNotificationSummary();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [currentUser, fetchNotificationSummary]);
 
   const goToBrowse = useCallback(
     (options = {}) => {
