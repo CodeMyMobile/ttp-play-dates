@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   BellRing,
@@ -606,6 +606,9 @@ const NotificationsFeed = ({
   const [notifications, setNotifications] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [requiresAuth, setRequiresAuth] = useState(false);
+  const fallbackErrorLoggedRef = useRef(false);
+  const notificationsErrorLoggedRef = useRef(false);
+  const nextNotificationRetryAtRef = useRef(0);
 
   const loadInvitesFallback = useCallback(async () => {
     try {
@@ -634,6 +637,7 @@ const NotificationsFeed = ({
         });
 
       setNotifications(normalized);
+      fallbackErrorLoggedRef.current = false;
 
       const unreadFallback = invitesArray.filter((invite) => {
         const status = deriveInviteStatus(invite);
@@ -654,14 +658,12 @@ const NotificationsFeed = ({
       onAvailabilityChange?.(false);
       return true;
     } catch (fallbackError) {
-      console.error("Failed to load invites fallback", fallbackError);
+      if (!fallbackErrorLoggedRef.current) {
+        console.error("Failed to load invites fallback", fallbackError);
+        fallbackErrorLoggedRef.current = true;
+      }
       setNotifications([]);
-      setError(
-        fallbackError?.response?.data?.message ||
-          fallbackError?.data?.message ||
-          fallbackError?.message ||
-          "We couldn't load updates right now. Please try again later.",
-      );
+      setError("We couldn't load updates right now. Please try again later.");
       onSummaryChange?.({ total: 0, unread: 0, latest: null });
       onAvailabilityChange?.(false);
       return false;
@@ -686,7 +688,14 @@ const NotificationsFeed = ({
       setError("");
       try {
         let data = null;
-        if (notificationsSupported || forceNotifications) {
+        const now = Date.now();
+        const retryAt = nextNotificationRetryAtRef.current || 0;
+        const allowNotifications =
+          notificationsSupported ||
+          (!notificationsSupported && retryAt && now >= retryAt) ||
+          (forceNotifications && (!retryAt || now >= retryAt));
+
+        if (allowNotifications) {
           data = await listNotifications({ perPage: 50 });
         } else {
           const fallbackLoaded = await loadInvitesFallback();
@@ -717,6 +726,8 @@ const NotificationsFeed = ({
           return bTime - aTime;
         });
       setNotifications(normalized);
+      notificationsErrorLoggedRef.current = false;
+      nextNotificationRetryAtRef.current = 0;
       const summary = {
         total:
           Number(data?.total ?? data?.count ?? normalized.length) || normalized.length,
@@ -742,9 +753,12 @@ const NotificationsFeed = ({
         onAvailabilityChange?.(true);
       } else {
         const fallbackLoaded = await loadInvitesFallback();
-        if (!fallbackLoaded) {
+        if (!fallbackLoaded && !notificationsErrorLoggedRef.current) {
           console.error("Failed to load notifications", err);
+          notificationsErrorLoggedRef.current = true;
         }
+        const cooldownMs = forceNotifications ? 60000 : 5 * 60 * 1000;
+        nextNotificationRetryAtRef.current = Date.now() + cooldownMs;
       }
     } finally {
       setLoading(false);

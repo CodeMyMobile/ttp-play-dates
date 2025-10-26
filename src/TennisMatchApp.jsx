@@ -717,6 +717,9 @@ const TennisMatchApp = () => {
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
   const hydratedProfileIdsRef = useRef(new Set());
+  const notificationSummaryErrorLoggedRef = useRef(false);
+  const inviteSummaryErrorLoggedRef = useRef(false);
+  const notificationSummaryRetryAtRef = useRef(0);
 
   const mergeProfileDetails = useCallback(
     (profileDetails, { persist = true } = {}) => {
@@ -1901,6 +1904,7 @@ const TennisMatchApp = () => {
         : [];
       if (invitesArray.length === 0) {
         handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        inviteSummaryErrorLoggedRef.current = false;
         return true;
       }
       const unreadCount = invitesArray.filter((invite) => {
@@ -1918,21 +1922,30 @@ const TennisMatchApp = () => {
         unread: unreadCount,
         latest: latestDate || null,
       });
+      inviteSummaryErrorLoggedRef.current = false;
       return true;
     } catch (fallbackError) {
-      console.error("Failed to load invite summary fallback", fallbackError);
+      if (!inviteSummaryErrorLoggedRef.current) {
+        console.error("Failed to load invite summary fallback", fallbackError);
+        inviteSummaryErrorLoggedRef.current = true;
+      }
       return false;
     }
   }, [deriveInviteStatus, handleNotificationsSummaryChange, pickInviteTimestamp]);
 
-  const fetchNotificationSummary = useCallback(async () => {
+  const fetchNotificationSummary = useCallback(async ({ forceRetry = false } = {}) => {
     const hasToken = !!getStoredAuthToken();
     if (!currentUser || !hasToken) {
       handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
       setLastSeenNotificationAt(null);
       return;
     }
-    if (!notificationsSupported) {
+    const now = Date.now();
+    const retryAt = notificationSummaryRetryAtRef.current || 0;
+    const shouldAttemptNotifications =
+      notificationsSupported || forceRetry || (retryAt && now >= retryAt);
+
+    if (!shouldAttemptNotifications) {
       await loadInviteSummary();
       return;
     }
@@ -1963,19 +1976,30 @@ const TennisMatchApp = () => {
           0,
         latest: latestRaw,
       });
+      notificationSummaryErrorLoggedRef.current = false;
+      notificationSummaryRetryAtRef.current = 0;
       setNotificationsSupported(true);
     } catch (error) {
       const statusCode = Number(error?.status ?? error?.response?.status);
       if (statusCode === 401 || statusCode === 403) {
         handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
         setLastSeenNotificationAt(null);
+        notificationSummaryErrorLoggedRef.current = false;
+        notificationSummaryRetryAtRef.current = 0;
         setNotificationsSupported(true);
       } else {
         const fallbackLoaded = await loadInviteSummary();
         if (!fallbackLoaded) {
-          console.error("Failed to load notification summary", error);
+          if (!notificationSummaryErrorLoggedRef.current) {
+            console.error("Failed to load notification summary", error);
+            notificationSummaryErrorLoggedRef.current = true;
+          }
+        } else {
+          notificationSummaryErrorLoggedRef.current = false;
         }
         setNotificationsSupported(false);
+        const backoffMs = forceRetry ? 60000 : 5 * 60 * 1000;
+        notificationSummaryRetryAtRef.current = Date.now() + backoffMs;
       }
     }
   }, [
