@@ -2988,7 +2988,7 @@ const TennisMatchApp = () => {
         actions.push({
           label: "Manage invites",
           onClick: () => openInviteScreen(matchId),
-          variant: "warning",
+          variant: "danger",
         });
         actions.push({
           label: "View match",
@@ -3000,7 +3000,7 @@ const TennisMatchApp = () => {
       items.push({
         id: `attention-${matchId}`,
         statusLabel: "Needs Players",
-        tone: "warning",
+        tone: "danger",
         icon: Users,
         title:
           Number.isFinite(spotsNeeded) && spotsNeeded > 0

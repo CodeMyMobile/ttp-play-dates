@@ -11,7 +11,7 @@ import {
 const toneStyles = {
   success: {
     container:
-      "bg-gradient-to-br from-emerald-50 via-white to-emerald-100 border border-emerald-100 text-emerald-900 shadow-sm",
+      "bg-gradient-to-br from-green-50 via-white to-emerald-100 border border-emerald-100 text-emerald-900 shadow-sm",
     badge: "bg-emerald-500/15 text-emerald-700",
     icon: "bg-emerald-500 text-white shadow",
   },
@@ -23,9 +23,9 @@ const toneStyles = {
   },
   warning: {
     container:
-      "bg-gradient-to-br from-orange-50 via-white to-amber-100 border border-amber-100 text-amber-900 shadow-sm",
-    badge: "bg-orange-500/20 text-orange-700",
-    icon: "bg-orange-500 text-white shadow",
+      "bg-gradient-to-br from-amber-50 via-white to-amber-100 border border-amber-100 text-amber-900 shadow-sm",
+    badge: "bg-amber-500/20 text-amber-700",
+    icon: "bg-amber-500 text-white shadow",
   },
   info: {
     container:
@@ -35,9 +35,9 @@ const toneStyles = {
   },
   danger: {
     container:
-      "bg-gradient-to-br from-rose-50 via-white to-rose-100 border border-rose-100 text-rose-900 shadow-sm",
-    badge: "bg-rose-500/15 text-rose-700",
-    icon: "bg-rose-500 text-white shadow",
+      "bg-gradient-to-br from-red-50 via-white to-rose-100 border border-red-100 text-red-900 shadow-sm",
+    badge: "bg-red-500/15 text-red-700",
+    icon: "bg-red-500 text-white shadow",
   },
   neutral: {
     container: "bg-white border border-gray-200 text-gray-900 shadow-sm",
@@ -54,7 +54,7 @@ const actionStyles = {
   warning:
     "inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow transition hover:bg-amber-600",
   danger:
-    "inline-flex items-center justify-center rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow transition hover:bg-rose-600",
+    "inline-flex items-center justify-center rounded-lg bg-red-500 px-3 py-1.5 text-xs font-bold text-white shadow transition hover:bg-red-600",
   outline:
     "inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50",
   ghost:
