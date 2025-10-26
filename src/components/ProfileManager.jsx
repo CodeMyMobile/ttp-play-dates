@@ -36,6 +36,23 @@ const emptyDetails = {
   about_me: "",
 };
 
+const formatRatingOptionValue = (value) => {
+  const normalized = normalizeRatingForApi(value);
+  if (normalized === undefined || normalized === null) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+
+    if (typeof value === "string") {
+      return value.trim();
+    }
+
+    return "";
+  }
+
+  return normalized;
+};
+
 const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
   const [details, setDetails] = useState(emptyDetails);
   const [phoneInput, setPhoneInput] = useState("");
@@ -72,14 +89,8 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         date_of_birth: data?.date_of_birth
           ? data.date_of_birth.split("T")[0]
           : "",
-        usta_rating:
-          typeof data?.usta_rating === "number" && !Number.isNaN(data.usta_rating)
-            ? String(data.usta_rating)
-            : data?.usta_rating || "",
-        uta_rating:
-          typeof data?.uta_rating === "number" && !Number.isNaN(data.uta_rating)
-            ? String(data.uta_rating)
-            : data?.uta_rating || "",
+        usta_rating: formatRatingOptionValue(data?.usta_rating),
+        uta_rating: formatRatingOptionValue(data?.uta_rating),
         about_me: data?.about_me || "",
       };
       setDetails(normalizedDetails);

@@ -1,6 +1,20 @@
 import api, { unwrap } from "./api";
 import { normalizeAuthToken } from "./authToken";
 
+const quantizeRating = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  const quantized = Math.round(numeric * 2) / 2;
+  if (!Number.isFinite(quantized) || quantized < 0) {
+    return undefined;
+  }
+
+  return quantized;
+};
+
 export const normalizeRatingForApi = (value) => {
   if (value === undefined) {
     return undefined;
@@ -15,18 +29,19 @@ export const normalizeRatingForApi = (value) => {
     return undefined;
   }
 
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric) || numeric < 0) {
+  const quantized = quantizeRating(trimmed);
+  if (quantized === undefined) {
     return undefined;
   }
 
-  const rounded = Math.round(numeric * 10) / 10;
-  return rounded.toFixed(1);
+  return quantized.toFixed(1);
 };
+
+const personalDetailsEndpoint = "/player/personal_details/";
 
 export const updatePlayerPersonalDetails = async ({
   player = null,
-  id = null,
+  id: rawId = null,
   date_of_birth = null,
   usta_rating = null,
   uta_rating = null,
@@ -46,11 +61,33 @@ export const updatePlayerPersonalDetails = async ({
   const normalizedUstaRating = normalizeRatingForApi(usta_rating);
   const normalizedUtaRating = normalizeRatingForApi(uta_rating);
 
+  const coerceRatingForTransport = (value) => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    const quantized = quantizeRating(value);
+    if (quantized === undefined) {
+      return undefined;
+    }
+
+    if (Number.isInteger(quantized)) {
+      return quantized;
+    }
+
+    return quantized.toFixed(1);
+  };
+
+  const ustaRatingForApi = coerceRatingForTransport(normalizedUstaRating);
+  const utaRatingForApi = coerceRatingForTransport(normalizedUtaRating);
+
+  const resourceId =
+    rawId === null || rawId === undefined ? null : String(rawId).trim();
+
   const params = Object.entries({
-    id,
     date_of_birth,
-    usta_rating: normalizedUstaRating,
-    uta_rating: normalizedUtaRating,
+    usta_rating: ustaRatingForApi,
+    uta_rating: utaRatingForApi,
     full_name: fullName,
     phone: mobile,
     about_me,
@@ -62,10 +99,13 @@ export const updatePlayerPersonalDetails = async ({
     return acc;
   }, {});
 
-  const method = id ? "PATCH" : "POST";
+  const method = resourceId ? "PATCH" : "POST";
+  const path = resourceId
+    ? `${personalDetailsEndpoint}${resourceId.replace(/\/+$/, "")}/`
+    : personalDetailsEndpoint;
 
   return unwrap(
-    api(`/player/personal_details`, {
+    api(path, {
       method,
       authToken: authHeader,
       authSchemePreference: "token",
