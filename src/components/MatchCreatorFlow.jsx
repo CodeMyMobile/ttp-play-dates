@@ -45,6 +45,11 @@ import {
   recordRecentLocation as persistRecentLocation,
   RECENT_LOCATIONS_EVENT,
 } from "../utils/recentLocations";
+import {
+  loadRecentPlayers as loadStoredRecentPlayers,
+  recordRecentPlayer as persistRecentPlayer,
+  RECENT_PLAYERS_EVENT,
+} from "../utils/recentPlayers";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 12;
@@ -260,6 +265,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactError, setContactError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
   const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
+  const [recentPlayers, setRecentPlayers] = useState(() => loadStoredRecentPlayers());
 
   useEffect(() => {
     const syncRecentLocations = () => {
@@ -281,10 +287,37 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     };
   }, [loadStoredLocations]);
 
+  useEffect(() => {
+    const syncRecentPlayers = () => {
+      setRecentPlayers(loadStoredRecentPlayers());
+    };
+
+    syncRecentPlayers();
+
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    window.addEventListener("storage", syncRecentPlayers);
+    window.addEventListener(RECENT_PLAYERS_EVENT, syncRecentPlayers);
+
+    return () => {
+      window.removeEventListener("storage", syncRecentPlayers);
+      window.removeEventListener(RECENT_PLAYERS_EVENT, syncRecentPlayers);
+    };
+  }, [loadStoredRecentPlayers]);
+
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),
     [currentUser],
   );
+  const currentUserId = useMemo(() => {
+    if (!currentUser || typeof currentUser !== "object") return null;
+    const id = Number(
+      currentUser.id ?? currentUser.user_id ?? currentUser.userId ?? currentUser.profile_id,
+    );
+    return Number.isFinite(id) ? id : null;
+  }, [currentUser]);
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -344,6 +377,19 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     [invitedPlayers, manualInvitees]
   );
 
+  const availableRecentPlayers = useMemo(
+    () =>
+      recentPlayers.filter((player) => {
+        const normalizedId = Number(player?.id);
+        if (!Number.isFinite(normalizedId)) return false;
+        if (currentUserId !== null && normalizedId === currentUserId) {
+          return false;
+        }
+        return !invitedPlayers.some((invitee) => invitee.id === normalizedId);
+      }),
+    [recentPlayers, invitedPlayers, currentUserId],
+  );
+
   const invitedCount = combinedInvitees.length;
   const totalPlayers = matchData.totalPlayers || 4;
 
@@ -394,6 +440,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       invitedPlayers: [...invitedPlayers, normalized],
     }));
     setSearchQuery("");
+    const nextRecent = persistRecentPlayer(normalized);
+    setRecentPlayers(nextRecent);
   };
 
   const handleRemovePlayer = (playerId) => {
@@ -1216,6 +1264,68 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <p className="text-xs text-blue-600 mb-4">
                 🎯 Smart strategy: Invite more than {totalPlayers - 1} players to guarantee a full match!
               </p>
+              {availableRecentPlayers.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Frequent teammates
+                    </h4>
+                    <span className="text-[10px] font-semibold uppercase text-gray-400">
+                      Quick add
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {availableRecentPlayers.map((player) => {
+                      const normalizedId = Number(player.id);
+                      if (!Number.isFinite(normalizedId)) {
+                        return null;
+                      }
+                      const isDisabled = invitedPlayers.some(
+                        (invitee) => invitee.id === normalizedId,
+                      );
+                      const subtitleParts = [];
+                      if (player.ntrp) subtitleParts.push(`NTRP ${player.ntrp}`);
+                      if (player.lastPlayed) {
+                        subtitleParts.push(`Played ${player.lastPlayed}`);
+                      } else {
+                        subtitleParts.push("Recently active");
+                      }
+                      return (
+                        <button
+                          key={`recent-${normalizedId}`}
+                          type="button"
+                          disabled={isDisabled}
+                          onClick={() => handleAddPlayer(player)}
+                          className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                            isDisabled
+                              ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400"
+                              : "border-gray-200 text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          <PlayerAvatar
+                            name={player.name}
+                            imageUrl={player.avatarUrl}
+                            fallback={player.avatar}
+                            variant="violet"
+                            size="sm"
+                            showBadge={false}
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">{player.name}</div>
+                            <div className="text-xs text-gray-500">
+                              {subtitleParts.join(" • ")}
+                            </div>
+                          </div>
+                          <Plus
+                            size={18}
+                            className={isDisabled ? "text-gray-300" : "text-green-500"}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="relative mb-4">
                 <Search
                   size={20}
@@ -1237,12 +1347,18 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   )}
                   {!searchLoading && !searchError &&
                     searchResults
-                      .filter(
-                        (player) =>
-                          player.id &&
-                          !invitedPlayers.some((p) => p.id === player.id) &&
-                          player.id !== currentUser?.id,
-                      )
+                      .filter((player) => {
+                        if (!player || !player.id) return false;
+                        const normalizedId = Number(player.id);
+                        if (!Number.isFinite(normalizedId)) return false;
+                        if (invitedPlayers.some((p) => p.id === normalizedId)) {
+                          return false;
+                        }
+                        if (currentUserId !== null && normalizedId === currentUserId) {
+                          return false;
+                        }
+                        return true;
+                      })
                       .map((player) => (
                         <button
                           key={player.id}
