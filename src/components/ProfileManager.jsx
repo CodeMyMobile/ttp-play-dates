@@ -8,22 +8,82 @@ import {
   normalizeRatingForApi,
 } from "../services/player";
 
+const USTA_RATING_PRESETS = [
+  { value: "beginner", label: "Beginner (1.0 - 2.5)", rating: "2.5" },
+  { value: "intermediate", label: "Intermediate (3.0 - 3.5)", rating: "3.5" },
+  { value: "advanced", label: "Advanced (4.0 - 4.5)", rating: "4.5" },
+  { value: "expert", label: "Expert (5.0+)", rating: "5.0" },
+];
+
 const USTA_RATING_OPTIONS = [
   { value: "", label: "Select your rating" },
-  { value: "1.0", label: "1.0 — New to tennis" },
-  { value: "1.5", label: "1.5" },
-  { value: "2.0", label: "2.0" },
-  { value: "2.5", label: "2.5" },
-  { value: "3.0", label: "3.0" },
-  { value: "3.5", label: "3.5" },
-  { value: "4.0", label: "4.0" },
-  { value: "4.5", label: "4.5" },
-  { value: "5.0", label: "5.0" },
-  { value: "5.5", label: "5.5" },
-  { value: "6.0", label: "6.0" },
-  { value: "6.5", label: "6.5" },
-  { value: "7.0", label: "7.0 — Tour level" },
+  ...USTA_RATING_PRESETS,
 ];
+
+const mapNumericToPreset = (numeric) => {
+  if (!Number.isFinite(numeric)) return "";
+  if (numeric <= 2.5) return "beginner";
+  if (numeric <= 3.5) return "intermediate";
+  if (numeric <= 4.5) return "advanced";
+  return "expert";
+};
+
+const resolvePresetValue = (value) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "number") {
+    return mapNumericToPreset(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+
+    const lower = trimmed.toLowerCase();
+    if (lower === "any level") return "";
+
+    const directMatch = USTA_RATING_PRESETS.find(
+      (preset) =>
+        preset.value === trimmed ||
+        preset.value === lower ||
+        preset.label.toLowerCase() === lower,
+    );
+    if (directMatch) {
+      return directMatch.value;
+    }
+
+    const numeric = Number.parseFloat(trimmed);
+    if (Number.isFinite(numeric)) {
+      return mapNumericToPreset(numeric);
+    }
+  }
+
+  return "";
+};
+
+const resolvePresetRating = (value) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const preset = USTA_RATING_PRESETS.find(
+    (entry) =>
+      entry.value === trimmed || entry.value === trimmed.toLowerCase(),
+  );
+
+  if (preset) {
+    return preset.rating;
+  }
+
+  return trimmed;
+};
 
 const emptyDetails = {
   id: null,
@@ -45,6 +105,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
   const [imagePreview, setImagePreview] = useState("");
   const [showRatingGuide, setShowRatingGuide] = useState(false);
   const accessToken = localStorage.getItem("authToken");
+  const selectedUstaRating = resolvePresetRating(details.usta_rating);
 
   useEffect(() => {
     if (isOpen) {
@@ -64,6 +125,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         setLoading(true);
       }
       const data = await getPersonalDetails();
+      const presetUstaRating = resolvePresetValue(data?.usta_rating);
       const normalizedDetails = {
         id: data?.id ?? null,
         full_name: data?.full_name || "",
@@ -72,10 +134,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         date_of_birth: data?.date_of_birth
           ? data.date_of_birth.split("T")[0]
           : "",
-        usta_rating:
-          typeof data?.usta_rating === "number" && !Number.isNaN(data.usta_rating)
-            ? String(data.usta_rating)
-            : data?.usta_rating || "",
+        usta_rating: presetUstaRating,
         uta_rating:
           typeof data?.uta_rating === "number" && !Number.isNaN(data.uta_rating)
             ? String(data.uta_rating)
@@ -127,10 +186,11 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
         return String(value).trim() !== "";
       };
 
-      const normalizedUstaRating = normalizeRatingForApi(details.usta_rating);
+      const resolvedUstaRating = resolvePresetRating(details.usta_rating);
+      const normalizedUstaRating = normalizeRatingForApi(resolvedUstaRating);
       const normalizedUtaRating = normalizeRatingForApi(details.uta_rating);
 
-      if (hasValue(details.usta_rating) && normalizedUstaRating === undefined) {
+      if (hasValue(resolvedUstaRating) && normalizedUstaRating === undefined) {
         setSaving(false);
         setError("Please enter a valid USTA rating (try numbers like 3.5).");
         return;
@@ -311,22 +371,22 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
-                    USTA Rating
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowRatingGuide((prev) => !prev)}
-                    className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
-                    aria-expanded={showRatingGuide}
-                    aria-controls="usta-rating-guide"
-                  >
-                    <Info className="h-3.5 w-3.5" />
-                    Rating Guide
-                  </button>
-                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm font-black text-gray-700 uppercase tracking-wider">
+                      USTA Rating
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowRatingGuide((prev) => !prev)}
+                      className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
+                      aria-expanded={showRatingGuide}
+                      aria-controls="usta-rating-guide"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                      Rating Guide
+                    </button>
+                  </div>
                   <select
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors font-semibold text-gray-800"
                     value={details.usta_rating}
@@ -347,6 +407,11 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
                     Not sure of your rating? Most new adult players start around 2.5. Open the
                     Rating Guide for a quick breakdown of each level.
                   </p>
+                  {selectedUstaRating && (
+                    <p className="text-xs font-semibold text-emerald-700">
+                      We'll save this as NTRP {selectedUstaRating}.
+                    </p>
+                  )}
                   {showRatingGuide && (
                     <div
                       id="usta-rating-guide"
