@@ -606,11 +606,20 @@ const NotificationsFeed = ({
   const [notifications, setNotifications] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [requiresAuth, setRequiresAuth] = useState(false);
+  const invitesFallbackSupportedRef = useRef(true);
   const fallbackErrorLoggedRef = useRef(false);
   const notificationsErrorLoggedRef = useRef(false);
   const nextNotificationRetryAtRef = useRef(0);
 
   const loadInvitesFallback = useCallback(async () => {
+    if (!invitesFallbackSupportedRef.current) {
+      setNotifications([]);
+      setError("We couldn't load updates right now. Please try again later.");
+      onSummaryChange?.({ total: 0, unread: 0, latest: null });
+      onAvailabilityChange?.(false);
+      return false;
+    }
+
     try {
       const data = await listInvites({ perPage: 50 });
       const invitesArray = Array.isArray(data?.invites)
@@ -637,6 +646,7 @@ const NotificationsFeed = ({
         });
 
       setNotifications(normalized);
+      invitesFallbackSupportedRef.current = true;
       fallbackErrorLoggedRef.current = false;
 
       const unreadFallback = invitesArray.filter((invite) => {
@@ -658,7 +668,10 @@ const NotificationsFeed = ({
       onAvailabilityChange?.(false);
       return true;
     } catch (fallbackError) {
-      if (!fallbackErrorLoggedRef.current) {
+      const statusCode = Number(fallbackError?.status ?? fallbackError?.response?.status);
+      if (statusCode === 404) {
+        invitesFallbackSupportedRef.current = false;
+      } else if (!fallbackErrorLoggedRef.current) {
         console.error("Failed to load invites fallback", fallbackError);
         fallbackErrorLoggedRef.current = true;
       }

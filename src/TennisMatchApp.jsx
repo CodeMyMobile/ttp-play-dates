@@ -719,6 +719,7 @@ const TennisMatchApp = () => {
   const hydratedProfileIdsRef = useRef(new Set());
   const notificationSummaryErrorLoggedRef = useRef(false);
   const inviteSummaryErrorLoggedRef = useRef(false);
+  const inviteSummaryFallbackSupportedRef = useRef(true);
   const notificationSummaryRetryAtRef = useRef(0);
   const handleNotificationsAvailabilityChange = useCallback((supported) => {
     setNotificationsSupported(Boolean(supported));
@@ -1896,6 +1897,11 @@ const TennisMatchApp = () => {
   );
 
   const loadInviteSummary = useCallback(async () => {
+    if (!inviteSummaryFallbackSupportedRef.current) {
+      handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+      return false;
+    }
+
     try {
       const data = await listInvites({ perPage: 20 });
       const invitesArray = Array.isArray(data?.invites)
@@ -1925,16 +1931,27 @@ const TennisMatchApp = () => {
         unread: unreadCount,
         latest: latestDate || null,
       });
+      inviteSummaryFallbackSupportedRef.current = true;
       inviteSummaryErrorLoggedRef.current = false;
       return true;
     } catch (fallbackError) {
+      const statusCode = Number(fallbackError?.status ?? fallbackError?.response?.status);
+      if (statusCode === 404) {
+        inviteSummaryFallbackSupportedRef.current = false;
+        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        return false;
+      }
       if (!inviteSummaryErrorLoggedRef.current) {
         console.error("Failed to load invite summary fallback", fallbackError);
         inviteSummaryErrorLoggedRef.current = true;
       }
       return false;
     }
-  }, [deriveInviteStatus, handleNotificationsSummaryChange, pickInviteTimestamp]);
+  }, [
+    deriveInviteStatus,
+    handleNotificationsSummaryChange,
+    pickInviteTimestamp,
+  ]);
 
   const fetchNotificationSummary = useCallback(async ({ forceRetry = false } = {}) => {
     const hasToken = !!getStoredAuthToken();
