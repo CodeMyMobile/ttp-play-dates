@@ -21,7 +21,7 @@ export const normalizeRatingForApi = (value) => {
   }
 
   const rounded = Math.round(numeric * 10) / 10;
-  return rounded.toFixed(1);
+  return rounded;
 };
 
 export const updatePlayerPersonalDetails = async ({
