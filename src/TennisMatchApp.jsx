@@ -720,6 +720,9 @@ const TennisMatchApp = () => {
   const notificationSummaryErrorLoggedRef = useRef(false);
   const inviteSummaryErrorLoggedRef = useRef(false);
   const notificationSummaryRetryAtRef = useRef(0);
+  const handleNotificationsAvailabilityChange = useCallback((supported) => {
+    setNotificationsSupported(Boolean(supported));
+  }, []);
 
   const mergeProfileDetails = useCallback(
     (profileDetails, { persist = true } = {}) => {
@@ -7246,9 +7249,7 @@ const TennisMatchApp = () => {
               onSummaryChange={handleNotificationsSummaryChange}
               onOpenMatch={handleViewDetails}
               notificationsSupported={notificationsSupported}
-              onAvailabilityChange={(supported) =>
-                setNotificationsSupported(Boolean(supported))
-              }
+              onAvailabilityChange={handleNotificationsAvailabilityChange}
             />
           )}
         </>
