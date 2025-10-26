@@ -708,6 +708,7 @@ const TennisMatchApp = () => {
   const [homeFeedNotifications, setHomeFeedNotifications] = useState([]);
   const [homeFeedLoading, setHomeFeedLoading] = useState(false);
   const [homeFeedError, setHomeFeedError] = useState("");
+  const [localActivityEvents, setLocalActivityEvents] = useState([]);
   const [locationFilter, setLocationFilter] = useState(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -2088,10 +2089,167 @@ const TennisMatchApp = () => {
   const respondToInvite = useCallback(
     async (token, action) => {
       if (!token) return;
+
+      const normalizeCandidate = (value) => {
+        if (value === undefined || value === null) return "";
+        return String(value).trim();
+      };
+
+      const normalizedToken = normalizeCandidate(token);
+      const matchingInvite = pendingInvites.find((invite) => {
+        if (!invite || typeof invite !== "object") return false;
+        const candidates = [
+          invite.token,
+          invite.invite_token,
+          invite.inviteToken,
+          invite.id,
+          invite.uuid,
+        ];
+        return candidates
+          .map(normalizeCandidate)
+          .filter(Boolean)
+          .some((candidate) => candidate === normalizedToken);
+      });
+
       try {
         if (action === "accept") {
           await acceptInvite(token);
           displayToast("Invite accepted! See you on the court. 🎾");
+
+          if (matchingInvite) {
+            const pickString = (...candidates) => {
+              for (const candidate of candidates) {
+                if (!candidate) continue;
+                if (typeof candidate === "string") {
+                  const trimmed = candidate.trim();
+                  if (trimmed) return trimmed;
+                }
+              }
+              return "";
+            };
+
+            const firstDate = (...values) => {
+              for (const value of values) {
+                const parsed = parseDateValue(value);
+                if (parsed) return parsed;
+              }
+              return null;
+            };
+
+            const match = matchingInvite.match || {};
+            const matchId =
+              match?.id ??
+              match?.match_id ??
+              match?.matchId ??
+              matchingInvite?.match_id ??
+              matchingInvite?.matchId;
+
+            const formatLabel =
+              pickString(
+                match.match_format,
+                match.matchFormat,
+                match.format,
+                match.title,
+                match.name,
+                matchingInvite.match_format,
+                matchingInvite.matchFormat,
+                matchingInvite.format,
+              ) || "Match";
+
+            const locationLabel = pickString(
+              match.location,
+              match.location_text,
+              match.locationText,
+              match.venue,
+              match.court_name,
+              match.courtName,
+              matchingInvite.location,
+              matchingInvite.location_text,
+              matchingInvite.locationText,
+            );
+
+            const startDate = firstDate(
+              match.start_date_time,
+              match.startDateTime,
+              match.start_time,
+              match.dateTime,
+              matchingInvite.start_date_time,
+              matchingInvite.startDateTime,
+              matchingInvite.start_time,
+              matchingInvite.dateTime,
+            );
+
+            const hostLabel = pickString(
+              match.host_name,
+              match.hostName,
+              match.host?.name,
+              matchingInvite.host?.full_name,
+              matchingInvite.host?.name,
+              matchingInvite.inviter?.full_name,
+              matchingInvite.inviter?.name,
+              matchingInvite.inviter_name,
+            );
+
+            const acceptedBy = pickString(
+              matchingInvite.player?.full_name,
+              matchingInvite.player?.name,
+              matchingInvite.player_name,
+              matchingInvite.invitee?.full_name,
+              matchingInvite.invitee?.name,
+              matchingInvite.recipient_name,
+              matchingInvite.email,
+              matchingInvite.phone,
+            );
+
+            const descriptorBase = formatLabel || "match";
+            const descriptor = descriptorBase.toLowerCase().includes("match")
+              ? descriptorBase.toLowerCase()
+              : `${descriptorBase.toLowerCase()} match`;
+            const title = acceptedBy
+              ? `${acceptedBy} joined your ${descriptor}`
+              : "Invite accepted";
+            const description = hostLabel
+              ? `Hosted by ${hostLabel}`
+              : locationLabel
+              ? `${formatLabel} at ${locationLabel}`
+              : formatLabel;
+
+            const meta = [];
+            if (startDate) {
+              meta.push({ icon: Calendar, label: formatDateTime(startDate) });
+            }
+            if (locationLabel) {
+              meta.push({ icon: MapPin, label: locationLabel });
+            }
+
+            const actions = [];
+            if (matchId) {
+              actions.push({
+                label: "View match",
+                onClick: () => handleViewDetails(matchId),
+                variant: "outline",
+              });
+              actions.push({
+                label: "Message",
+                onClick: () => openInviteScreen(matchId),
+                variant: "ghost",
+              });
+            }
+
+            recordLocalActivityEvent({
+              id: matchingInvite.id
+                ? `local-invite-accepted-${matchingInvite.id}`
+                : undefined,
+              statusLabel: "Player Accepted",
+              tone: "success",
+              icon: UserCheck,
+              title,
+              description,
+              meta,
+              actions,
+              timestamp: new Date(),
+            });
+          }
         } else {
           await rejectInvite(token);
           displayToast("Invite declined", "info");
@@ -2121,9 +2279,15 @@ const TennisMatchApp = () => {
     },
     [
       displayToast,
+      formatDateTime,
       fetchMatches,
       fetchPendingInvites,
       fetchNotificationSummary,
+      handleViewDetails,
+      openInviteScreen,
+      parseDateValue,
+      pendingInvites,
+      recordLocalActivityEvent,
     ],
   );
 
@@ -2727,10 +2891,60 @@ const TennisMatchApp = () => {
     return formatter.format(years, "year");
   }, []);
 
+  const recordLocalActivityEvent = useCallback(
+    (event) => {
+      if (!event || typeof event !== "object") return;
+
+      setLocalActivityEvents((previous) => {
+        const parsedTimestamp =
+          event.timestamp instanceof Date
+            ? event.timestamp
+            : parseDateValue(event.timestamp) || new Date();
+        const timestamp =
+          parsedTimestamp instanceof Date &&
+          !Number.isNaN(parsedTimestamp.getTime())
+            ? parsedTimestamp
+            : new Date();
+        const relativeTime =
+          event.relativeTime || formatRelativeTimeFromNow(timestamp);
+        const timestampLabel =
+          event.timestampLabel || timestamp.toLocaleString?.() || "";
+        const id =
+          event.id ||
+          `local-activity-${timestamp.getTime()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`;
+
+        const nextEvent = {
+          ...event,
+          id,
+          timestamp,
+          relativeTime,
+          timestampLabel,
+        };
+
+        const filtered = previous.filter((existing) => existing.id !== nextEvent.id);
+        const updated = [...filtered, nextEvent].sort((a, b) => {
+          const aTime =
+            a.timestamp instanceof Date ? a.timestamp.getTime() : -Infinity;
+          const bTime =
+            b.timestamp instanceof Date ? b.timestamp.getTime() : -Infinity;
+          return aTime - bTime;
+        });
+
+        const MAX_LOCAL_EVENTS = 6;
+        return updated.length > MAX_LOCAL_EVENTS
+          ? updated.slice(updated.length - MAX_LOCAL_EVENTS)
+          : updated;
+      });
+    },
+    [formatRelativeTimeFromNow, parseDateValue],
+  );
+
   const activityFeedItems = useMemo(() => {
     if (!currentUser) return [];
 
-    const items = [];
+    const items = [...localActivityEvents];
 
     const pickString = (...candidates) => {
       for (const candidate of candidates) {
@@ -3031,6 +3245,7 @@ const TennisMatchApp = () => {
     goToInvites,
     handleViewDetails,
     homeFeedNotifications,
+    localActivityEvents,
     matchesNeedingAttention,
     openInviteScreen,
     parseDateValue,
@@ -4610,7 +4825,72 @@ const TennisMatchApp = () => {
     const handlePublish = async () => {
       try {
         const payload = buildMatchPayload("upcoming");
-        await createMatchWithCompatibility(payload);
+        const createdMatch = await createMatchWithCompatibility(payload);
+        const createdMatchData =
+          (createdMatch && typeof createdMatch === "object"
+            ? createdMatch.match || createdMatch.data || createdMatch
+            : {}) || {};
+        const createdMatchId =
+          createdMatchData?.id ??
+          createdMatchData?.match_id ??
+          createdMatchData?.matchId ??
+          createdMatch?.match_id ??
+          createdMatch?.matchId ??
+          null;
+
+        const startDate = parseDateValue(matchData.dateTime);
+        const meta = [];
+        if (startDate) {
+          meta.push({ icon: Calendar, label: formatDateTime(startDate) });
+        }
+        if (matchData.location) {
+          meta.push({ icon: MapPin, label: matchData.location });
+        }
+        if (Number.isFinite(Number(matchData.playerCount))) {
+          const count = Number(matchData.playerCount);
+          meta.push({
+            icon: Users,
+            label: `${count} player${count === 1 ? "" : "s"}`,
+          });
+        }
+
+        const formatDescriptor = matchData.format
+          ? matchData.format.toLowerCase()
+          : "match";
+        const title = matchData.format
+          ? `New ${formatDescriptor} match published`
+          : "New match published";
+        const description = matchData.hostName
+          ? `Hosted by ${matchData.hostName}`
+          : matchData.location
+          ? `You're hosting at ${matchData.location}.`
+          : "Invite players to fill your roster.";
+
+        const actions = [];
+        if (createdMatchId) {
+          actions.push({
+            label: "View match",
+            onClick: () => handleViewDetails(createdMatchId),
+            variant: "outline",
+          });
+          actions.push({
+            label: "Invite players",
+            onClick: () => openInviteScreen(createdMatchId),
+            variant: "primary",
+          });
+        }
+
+        recordLocalActivityEvent({
+          id: createdMatchId ? `local-match-created-${createdMatchId}` : undefined,
+          statusLabel: "Match Created",
+          tone: "info",
+          icon: Sparkles,
+          title,
+          description,
+          meta,
+          actions,
+          timestamp: new Date(),
+        });
         if (matchData.location) {
           recordRecentLocation(matchData.location, matchData.latitude, matchData.longitude);
         }
