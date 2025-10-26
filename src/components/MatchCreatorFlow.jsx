@@ -377,7 +377,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     [invitedPlayers, manualInvitees]
   );
 
-  const availableRecentPlayers = useMemo(
+  const quickAddPlayers = useMemo(
     () =>
       recentPlayers.filter((player) => {
         const normalizedId = Number(player?.id);
@@ -385,9 +385,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         if (currentUserId !== null && normalizedId === currentUserId) {
           return false;
         }
-        return !invitedPlayers.some((invitee) => invitee.id === normalizedId);
+        return true;
       }),
-    [recentPlayers, invitedPlayers, currentUserId],
+    [recentPlayers, currentUserId],
   );
 
   const invitedCount = combinedInvitees.length;
@@ -1264,7 +1264,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <p className="text-xs text-blue-600 mb-4">
                 🎯 Smart strategy: Invite more than {totalPlayers - 1} players to guarantee a full match!
               </p>
-              {availableRecentPlayers.length > 0 && (
+              {quickAddPlayers.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -1275,7 +1275,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {availableRecentPlayers.map((player) => {
+                    {quickAddPlayers.map((player) => {
                       const normalizedId = Number(player.id);
                       if (!Number.isFinite(normalizedId)) {
                         return null;
@@ -1316,10 +1316,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                               {subtitleParts.join(" • ")}
                             </div>
                           </div>
-                          <Plus
-                            size={18}
-                            className={isDisabled ? "text-gray-300" : "text-green-500"}
-                          />
+                          {isDisabled ? (
+                            <Check size={18} className="text-gray-300" />
+                          ) : (
+                            <Plus size={18} className="text-green-500" />
+                          )}
                         </button>
                       );
                     })}
