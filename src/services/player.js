@@ -1,6 +1,20 @@
 import api, { unwrap } from "./api";
 import { normalizeAuthToken } from "./authToken";
 
+const quantizeRating = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  const quantized = Math.round(numeric * 2) / 2;
+  if (!Number.isFinite(quantized) || quantized < 0) {
+    return undefined;
+  }
+
+  return quantized;
+};
+
 export const normalizeRatingForApi = (value) => {
   if (value === undefined) {
     return undefined;
@@ -15,13 +29,12 @@ export const normalizeRatingForApi = (value) => {
     return undefined;
   }
 
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric) || numeric < 0) {
+  const quantized = quantizeRating(trimmed);
+  if (quantized === undefined) {
     return undefined;
   }
 
-  const rounded = Math.round(numeric * 10) / 10;
-  return rounded.toFixed(1);
+  return quantized.toFixed(1);
 };
 
 const personalDetailsEndpoint = "/player/personal_details/";
@@ -53,12 +66,16 @@ export const updatePlayerPersonalDetails = async ({
       return value;
     }
 
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) {
+    const quantized = quantizeRating(value);
+    if (quantized === undefined) {
       return undefined;
     }
 
-    return Math.round(numeric * 10) / 10;
+    if (Number.isInteger(quantized)) {
+      return quantized;
+    }
+
+    return quantized.toFixed(1);
   };
 
   const ustaRatingForApi = coerceRatingForTransport(normalizedUstaRating);
