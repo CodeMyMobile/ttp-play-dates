@@ -751,6 +751,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   }, [isFormatManuallySelected, matchData.totalPlayers, setMatchData]);
 
   useEffect(() => {
+    if (currentStep !== 2) return;
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [currentStep]);
+
+  useEffect(() => {
     if (!searchQuery) {
       setSearchResults([]);
       setSearchError("");
