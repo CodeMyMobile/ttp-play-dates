@@ -13,8 +13,10 @@ import {
   getMatch,
   getShareLink,
 } from "./services/matches";
+import { listNotifications } from "./services/notifications";
+import { getStoredAuthToken } from "./services/authToken";
 import ProfileManager from "./components/ProfileManager";
-import InvitesList from "./components/InvitesList";
+import NotificationsFeed from "./components/NotificationsFeed";
 import {
   getInviteByToken,
   listInvites,
@@ -686,6 +688,13 @@ const TennisMatchApp = () => {
   const [showMatchDetailsModal, setShowMatchDetailsModal] = useState(false);
   const [matchDetailsOrigin, setMatchDetailsOrigin] = useState("browse");
   const [pendingInvites, setPendingInvites] = useState([]);
+  const [notificationSummary, setNotificationSummary] = useState({
+    total: 0,
+    unread: 0,
+    latest: null,
+  });
+  const [notificationsSupported, setNotificationsSupported] = useState(true);
+  const [lastSeenNotificationAt, setLastSeenNotificationAt] = useState(null);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState("");
   const [locationFilter, setLocationFilter] = useState(() => {
@@ -714,6 +723,13 @@ const TennisMatchApp = () => {
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
   const hydratedProfileIdsRef = useRef(new Set());
+  const notificationSummaryErrorLoggedRef = useRef(false);
+  const inviteSummaryErrorLoggedRef = useRef(false);
+  const inviteSummaryFallbackSupportedRef = useRef(true);
+  const notificationSummaryRetryAtRef = useRef(0);
+  const handleNotificationsAvailabilityChange = useCallback((supported) => {
+    setNotificationsSupported(Boolean(supported));
+  }, []);
 
   const mergeProfileDetails = useCallback(
     (profileDetails, { persist = true } = {}) => {
@@ -1771,17 +1787,252 @@ const TennisMatchApp = () => {
     currentUser,
   ]);
 
-  useEffect(() => {
-    fetchMatches();
-  }, [fetchMatches]);
+  const deriveInviteStatus = useCallback((invite = {}) => {
+    if (invite?.accepted) return "accepted";
+    if (invite?.rejected) return "rejected";
+    const candidates = [
+      invite?.status,
+      invite?.state,
+      invite?.invite_status,
+      invite?.context?.status,
+      invite?.meta?.status,
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const normalized = candidate.toString().toLowerCase();
+      if (normalized.includes("accept")) return "accepted";
+      if (normalized.includes("reject") || normalized.includes("declin")) {
+        return "rejected";
+      }
+      if (normalized.includes("pending") || normalized.includes("open")) {
+        return "pending";
+      }
+      if (normalized.includes("sent") || normalized.includes("invite")) {
+        return "sent";
+      }
+    }
+    return "pending";
+  }, []);
 
-  useEffect(() => {
-    fetchPendingInvites();
-  }, [fetchPendingInvites]);
+  const parsePossibleDate = useCallback((value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === "number") {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const date = new Date(trimmed);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  }, []);
+
+  const pickInviteTimestamp = useCallback(
+    (invite) => {
+      if (!invite) return null;
+      const candidates = [
+        invite.updated_at,
+        invite.updatedAt,
+        invite.created_at,
+        invite.createdAt,
+        invite.sent_at,
+        invite.sentAt,
+      ];
+      for (const candidate of candidates) {
+        const parsed = parsePossibleDate(candidate);
+        if (parsed) return parsed;
+      }
+      return null;
+    },
+    [parsePossibleDate],
+  );
+
+  const handleNotificationsSummaryChange = useCallback(
+    (summary = {}) => {
+      const normalizeCount = (value, fallback) => {
+        if (value === undefined || value === null) return fallback;
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+      };
+
+      const normalizeDate = (value) => {
+        if (!value) return null;
+        if (value instanceof Date) {
+          return Number.isNaN(value.getTime()) ? null : value;
+        }
+        if (typeof value === "number") {
+          const date = new Date(value);
+          return Number.isNaN(date.getTime()) ? null : date;
+        }
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          if (!trimmed) return null;
+          const date = new Date(trimmed);
+          return Number.isNaN(date.getTime()) ? null : date;
+        }
+        return null;
+      };
+
+      const latestDate = normalizeDate(summary.latest);
+
+      setNotificationSummary((prev) => ({
+        total: normalizeCount(summary.total, prev.total ?? 0),
+        unread: normalizeCount(summary.unread, prev.unread ?? 0),
+        latest: latestDate || prev.latest || null,
+      }));
+
+      if (currentScreen === "invites" && latestDate) {
+        setLastSeenNotificationAt(latestDate);
+      }
+    },
+    [currentScreen],
+  );
+
+  const loadInviteSummary = useCallback(async () => {
+    if (!inviteSummaryFallbackSupportedRef.current) {
+      handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+      return false;
+    }
+
+    try {
+      const data = await listInvites({ perPage: 20 });
+      const invitesArray = Array.isArray(data?.invites)
+        ? data.invites
+        : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+      if (invitesArray.length === 0) {
+        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        inviteSummaryErrorLoggedRef.current = false;
+        return true;
+      }
+      const unreadCount = invitesArray.filter((invite) => {
+        const status = deriveInviteStatus(invite);
+        return status === "pending" || status === "sent";
+      }).length;
+      const latestDate = invitesArray.reduce((latest, invite) => {
+        const timestamp = pickInviteTimestamp(invite);
+        if (!timestamp) return latest;
+        if (!latest) return timestamp;
+        return timestamp.getTime() > latest.getTime() ? timestamp : latest;
+      }, null);
+      handleNotificationsSummaryChange({
+        total: invitesArray.length,
+        unread: unreadCount,
+        latest: latestDate || null,
+      });
+      inviteSummaryFallbackSupportedRef.current = true;
+      inviteSummaryErrorLoggedRef.current = false;
+      return true;
+    } catch (fallbackError) {
+      const statusCode = Number(fallbackError?.status ?? fallbackError?.response?.status);
+      if (statusCode === 404) {
+        inviteSummaryFallbackSupportedRef.current = false;
+        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        return false;
+      }
+      if (!inviteSummaryErrorLoggedRef.current) {
+        console.error("Failed to load invite summary fallback", fallbackError);
+        inviteSummaryErrorLoggedRef.current = true;
+      }
+      return false;
+    }
+  }, [
+    deriveInviteStatus,
+    handleNotificationsSummaryChange,
+    pickInviteTimestamp,
+  ]);
+
+  const fetchNotificationSummary = useCallback(async ({ forceRetry = false } = {}) => {
+    const hasToken = !!getStoredAuthToken();
+    if (!currentUser || !hasToken) {
+      handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+      setLastSeenNotificationAt(null);
+      return;
+    }
+    const now = Date.now();
+    const retryAt = notificationSummaryRetryAtRef.current || 0;
+    const shouldAttemptNotifications =
+      notificationsSupported || forceRetry || (retryAt && now >= retryAt);
+
+    if (!shouldAttemptNotifications) {
+      await loadInviteSummary();
+      return;
+    }
+    try {
+      const data = await listNotifications({ perPage: 10 });
+      const rawList = (() => {
+        if (Array.isArray(data?.notifications)) return data.notifications;
+        if (Array.isArray(data?.data)) return data.data;
+        if (Array.isArray(data?.items)) return data.items;
+        if (Array.isArray(data)) return data;
+        return [];
+      })();
+      const latestRaw = rawList.length > 0
+        ? rawList[0]?.created_at ??
+          rawList[0]?.createdAt ??
+          rawList[0]?.timestamp ??
+          rawList[0]?.time ??
+          null
+        : null;
+      handleNotificationsSummaryChange({
+        total: data?.total ?? data?.count ?? rawList.length,
+        unread:
+          data?.unread ??
+          data?.unread_count ??
+          data?.meta?.unread ??
+          data?.meta?.unread_count ??
+          data?.summary?.unread ??
+          0,
+        latest: latestRaw,
+      });
+      notificationSummaryErrorLoggedRef.current = false;
+      notificationSummaryRetryAtRef.current = 0;
+      setNotificationsSupported(true);
+    } catch (error) {
+      const statusCode = Number(error?.status ?? error?.response?.status);
+      if (statusCode === 401 || statusCode === 403) {
+        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        setLastSeenNotificationAt(null);
+        notificationSummaryErrorLoggedRef.current = false;
+        notificationSummaryRetryAtRef.current = 0;
+        setNotificationsSupported(true);
+      } else {
+        const fallbackLoaded = await loadInviteSummary();
+        if (!fallbackLoaded) {
+          if (!notificationSummaryErrorLoggedRef.current) {
+            console.error("Failed to load notification summary", error);
+            notificationSummaryErrorLoggedRef.current = true;
+          }
+        } else {
+          notificationSummaryErrorLoggedRef.current = false;
+        }
+        setNotificationsSupported(false);
+        const backoffMs = forceRetry ? 60000 : 5 * 60 * 1000;
+        notificationSummaryRetryAtRef.current = Date.now() + backoffMs;
+      }
+    }
+  }, [
+    currentUser,
+    handleNotificationsSummaryChange,
+    loadInviteSummary,
+    notificationsSupported,
+  ]);
 
   const refreshMatchesAndInvites = useCallback(async () => {
-    await Promise.all([fetchMatches(), fetchPendingInvites()]);
-  }, [fetchMatches, fetchPendingInvites]);
+    await Promise.all([
+      fetchMatches(),
+      fetchPendingInvites(),
+      fetchNotificationSummary(),
+    ]);
+  }, [fetchMatches, fetchPendingInvites, fetchNotificationSummary]);
 
   const respondToInvite = useCallback(
     async (token, action) => {
@@ -1796,27 +2047,54 @@ const TennisMatchApp = () => {
         }
         fetchPendingInvites();
         fetchMatches();
+        fetchNotificationSummary();
       } catch (err) {
         const errorCode = err?.response?.data?.error || err?.data?.error;
         if (isMatchArchivedError(err) || errorCode === MATCH_ARCHIVED_ERROR) {
-          displayToast("This match has been archived. Invites can no longer be updated.", "error");
+          displayToast(
+            "This match has been archived. Invites can no longer be updated.",
+            "error",
+          );
           fetchPendingInvites();
           fetchMatches();
+          fetchNotificationSummary();
         } else {
           displayToast(
-            err?.response?.data?.message || err?.message || "Failed to update invite",
+            err?.response?.data?.message ||
+              err?.message ||
+              "Failed to update invite",
             "error",
           );
         }
       }
     },
-    [displayToast, fetchMatches, fetchPendingInvites],
+    [
+      displayToast,
+      fetchMatches,
+      fetchPendingInvites,
+      fetchNotificationSummary,
+    ],
   );
 
-  const handleInviteResponse = useCallback(() => {
+  useEffect(() => {
     fetchMatches();
+  }, [fetchMatches]);
+
+  useEffect(() => {
     fetchPendingInvites();
-  }, [fetchMatches, fetchPendingInvites]);
+  }, [fetchPendingInvites]);
+
+  useEffect(() => {
+    fetchNotificationSummary();
+  }, [fetchNotificationSummary]);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const interval = setInterval(() => {
+      fetchNotificationSummary();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [currentUser, fetchNotificationSummary]);
 
   const goToBrowse = useCallback(
     (options = {}) => {
@@ -1834,6 +2112,26 @@ const TennisMatchApp = () => {
       navigate("/invites");
     }
   }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    if (currentScreen !== "invites") return;
+    if (!notificationSummary.latest) return;
+    setLastSeenNotificationAt((previous) => {
+      if (!previous) return notificationSummary.latest;
+      const previousDate = previous instanceof Date ? previous : new Date(previous);
+      const previousTime = previousDate.getTime();
+      const latestTime = notificationSummary.latest.getTime?.()
+        ? notificationSummary.latest.getTime()
+        : new Date(notificationSummary.latest).getTime();
+      if (!Number.isFinite(previousTime) || !Number.isFinite(latestTime)) {
+        return notificationSummary.latest;
+      }
+      if (latestTime > previousTime) {
+        return notificationSummary.latest;
+      }
+      return previous;
+    });
+  }, [currentScreen, notificationSummary.latest]);
 
   const openInviteScreen = useCallback(
     async (matchId, { skipNavigation = false, onClose } = {}) => {
@@ -6877,6 +7175,33 @@ const TennisMatchApp = () => {
     }
   `;
 
+  const hasNotificationIndicator = useMemo(() => {
+    if (pendingInvites.length > 0) return true;
+    const unreadCount = Number(notificationSummary.unread ?? 0);
+    if (currentScreen !== "invites" && unreadCount > 0) return true;
+    const latestDate = notificationSummary.latest;
+    if (!latestDate) return false;
+    const latestTime = latestDate instanceof Date
+      ? latestDate.getTime()
+      : new Date(latestDate).getTime();
+    if (!Number.isFinite(latestTime)) return false;
+    if (currentScreen === "invites") return false;
+    if (!lastSeenNotificationAt) return true;
+    const seenDate =
+      lastSeenNotificationAt instanceof Date
+        ? lastSeenNotificationAt
+        : new Date(lastSeenNotificationAt);
+    const seenTime = seenDate.getTime();
+    if (!Number.isFinite(seenTime)) return true;
+    return latestTime > seenTime;
+  }, [
+    currentScreen,
+    lastSeenNotificationAt,
+    notificationSummary.latest,
+    notificationSummary.unread,
+    pendingInvites.length,
+  ]);
+
   const shouldShowLanding = !currentUser && currentScreen === "browse";
 
   return (
@@ -6906,6 +7231,7 @@ const TennisMatchApp = () => {
             onLogout={handleLogout}
             onOpenSignIn={() => setShowSignInModal(true)}
             setShowPreview={setShowPreview}
+            hasUpdates={hasNotificationIndicator}
           />
 
           {currentScreen === "browse" && BrowseScreen()}
@@ -6930,7 +7256,13 @@ const TennisMatchApp = () => {
             />
           )}
           {currentScreen === "invites" && (
-            <InvitesList onInviteResponse={handleInviteResponse} />
+            <NotificationsFeed
+              currentUser={currentUser}
+              onSummaryChange={handleNotificationsSummaryChange}
+              onOpenMatch={handleViewDetails}
+              notificationsSupported={notificationsSupported}
+              onAvailabilityChange={handleNotificationsAvailabilityChange}
+            />
           )}
         </>
       )}
