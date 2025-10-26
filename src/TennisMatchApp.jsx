@@ -687,6 +687,7 @@ const TennisMatchApp = () => {
     unread: 0,
     latest: null,
   });
+  const [notificationsSupported, setNotificationsSupported] = useState(true);
   const [lastSeenNotificationAt, setLastSeenNotificationAt] = useState(null);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState("");
@@ -1782,6 +1783,71 @@ const TennisMatchApp = () => {
     currentUser,
   ]);
 
+  const deriveInviteStatus = useCallback((invite = {}) => {
+    if (invite?.accepted) return "accepted";
+    if (invite?.rejected) return "rejected";
+    const candidates = [
+      invite?.status,
+      invite?.state,
+      invite?.invite_status,
+      invite?.context?.status,
+      invite?.meta?.status,
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const normalized = candidate.toString().toLowerCase();
+      if (normalized.includes("accept")) return "accepted";
+      if (normalized.includes("reject") || normalized.includes("declin")) {
+        return "rejected";
+      }
+      if (normalized.includes("pending") || normalized.includes("open")) {
+        return "pending";
+      }
+      if (normalized.includes("sent") || normalized.includes("invite")) {
+        return "sent";
+      }
+    }
+    return "pending";
+  }, []);
+
+  const parsePossibleDate = useCallback((value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === "number") {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const date = new Date(trimmed);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  }, []);
+
+  const pickInviteTimestamp = useCallback(
+    (invite) => {
+      if (!invite) return null;
+      const candidates = [
+        invite.updated_at,
+        invite.updatedAt,
+        invite.created_at,
+        invite.createdAt,
+        invite.sent_at,
+        invite.sentAt,
+      ];
+      for (const candidate of candidates) {
+        const parsed = parsePossibleDate(candidate);
+        if (parsed) return parsed;
+      }
+      return null;
+    },
+    [parsePossibleDate],
+  );
+
   const handleNotificationsSummaryChange = useCallback(
     (summary = {}) => {
       const normalizeCount = (value, fallback) => {
@@ -1823,11 +1889,51 @@ const TennisMatchApp = () => {
     [currentScreen],
   );
 
+  const loadInviteSummary = useCallback(async () => {
+    try {
+      const data = await listInvites({ perPage: 20 });
+      const invitesArray = Array.isArray(data?.invites)
+        ? data.invites
+        : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+      if (invitesArray.length === 0) {
+        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        return true;
+      }
+      const unreadCount = invitesArray.filter((invite) => {
+        const status = deriveInviteStatus(invite);
+        return status === "pending" || status === "sent";
+      }).length;
+      const latestDate = invitesArray.reduce((latest, invite) => {
+        const timestamp = pickInviteTimestamp(invite);
+        if (!timestamp) return latest;
+        if (!latest) return timestamp;
+        return timestamp.getTime() > latest.getTime() ? timestamp : latest;
+      }, null);
+      handleNotificationsSummaryChange({
+        total: invitesArray.length,
+        unread: unreadCount,
+        latest: latestDate || null,
+      });
+      return true;
+    } catch (fallbackError) {
+      console.error("Failed to load invite summary fallback", fallbackError);
+      return false;
+    }
+  }, [deriveInviteStatus, handleNotificationsSummaryChange, pickInviteTimestamp]);
+
   const fetchNotificationSummary = useCallback(async () => {
     const hasToken = !!getStoredAuthToken();
     if (!currentUser || !hasToken) {
       handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
       setLastSeenNotificationAt(null);
+      return;
+    }
+    if (!notificationsSupported) {
+      await loadInviteSummary();
       return;
     }
     try {
@@ -1857,15 +1963,27 @@ const TennisMatchApp = () => {
           0,
         latest: latestRaw,
       });
+      setNotificationsSupported(true);
     } catch (error) {
-      if (error?.status === 401 || error?.response?.status === 401) {
+      const statusCode = Number(error?.status ?? error?.response?.status);
+      if (statusCode === 401 || statusCode === 403) {
         handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
         setLastSeenNotificationAt(null);
+        setNotificationsSupported(true);
       } else {
-        console.error("Failed to load notification summary", error);
+        const fallbackLoaded = await loadInviteSummary();
+        if (!fallbackLoaded) {
+          console.error("Failed to load notification summary", error);
+        }
+        setNotificationsSupported(false);
       }
     }
-  }, [currentUser, handleNotificationsSummaryChange]);
+  }, [
+    currentUser,
+    handleNotificationsSummaryChange,
+    loadInviteSummary,
+    notificationsSupported,
+  ]);
 
   const refreshMatchesAndInvites = useCallback(async () => {
     await Promise.all([
@@ -7103,6 +7221,10 @@ const TennisMatchApp = () => {
               currentUser={currentUser}
               onSummaryChange={handleNotificationsSummaryChange}
               onOpenMatch={handleViewDetails}
+              notificationsSupported={notificationsSupported}
+              onAvailabilityChange={(supported) =>
+                setNotificationsSupported(Boolean(supported))
+              }
             />
           )}
         </>

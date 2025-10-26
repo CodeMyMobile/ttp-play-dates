@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { listNotifications } from "../services/notifications";
+import { listInvites } from "../services/invites";
 import { getStoredAuthToken } from "../services/authToken";
 
 const buildQueryArray = (value) => {
@@ -495,29 +496,204 @@ const filterDefinitions = [
   },
 ];
 
-const NotificationsFeed = ({ currentUser, onSummaryChange, onOpenMatch }) => {
+const deriveInviteStatus = (invite = {}) => {
+  if (invite.accepted) return "accepted";
+  if (invite.rejected) return "rejected";
+  const candidates = [
+    invite.status,
+    invite.state,
+    invite.invite_status,
+    invite.context?.status,
+    invite.meta?.status,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const normalized = candidate.toString().toLowerCase();
+    if (normalized.includes("accept")) return "accepted";
+    if (normalized.includes("reject") || normalized.includes("declin")) {
+      return "rejected";
+    }
+    if (normalized.includes("pending") || normalized.includes("open")) {
+      return "pending";
+    }
+    if (normalized.includes("sent") || normalized.includes("invite")) {
+      return "sent";
+    }
+  }
+  return "pending";
+};
+
+const buildInviteNotification = (invite) => {
+  if (!invite) return null;
+  const status = deriveInviteStatus(invite);
+  const canonicalType =
+    status === "accepted"
+      ? "invite_accepted"
+      : status === "rejected"
+      ? "invite_declined"
+      : "invite_sent";
+  const match =
+    invite.match || invite.match_info || invite.matchInfo || invite.context?.match || null;
+  const playerCandidate =
+    invite.player ||
+    invite.invitee ||
+    invite.member ||
+    invite.context?.player ||
+    (invite.player_name ? { name: invite.player_name } : null) ||
+    (invite.invitee_name ? { name: invite.invitee_name } : null);
+  const actorCandidate =
+    invite.invited_by ||
+    invite.sender ||
+    invite.actor ||
+    invite.context?.actor ||
+    match?.host ||
+    match?.owner ||
+    null;
+  const createdAtValue =
+    invite.updated_at ||
+    invite.updatedAt ||
+    invite.created_at ||
+    invite.createdAt ||
+    invite.sent_at ||
+    invite.sentAt;
+
+  const baseNotification = {
+    id:
+      invite.id ||
+      invite.uuid ||
+      invite.token ||
+      `invite-${createdAtValue || Date.now()}-${Math.random()}`,
+    type: canonicalType,
+    status,
+    created_at: createdAtValue,
+    match,
+    player: playerCandidate,
+    actor: actorCandidate,
+    message: invite.message || invite.note || invite.context?.message,
+    context: {
+      status,
+      player: playerCandidate,
+      match,
+      invite,
+    },
+  };
+
+  if (!baseNotification.message) {
+    const inviteeName = formatPersonName(playerCandidate, "A player");
+    if (canonicalType === "invite_accepted") {
+      baseNotification.message = `${inviteeName} accepted the invite.`;
+    } else if (canonicalType === "invite_declined") {
+      baseNotification.message = `${inviteeName} declined the invite.`;
+    } else {
+      baseNotification.message = `Invite sent${
+        inviteeName && inviteeName !== "A player" ? ` to ${inviteeName}` : ""
+      }.`;
+    }
+  }
+
+  return buildNotificationPresentation(baseNotification);
+};
+
+const NotificationsFeed = ({
+  currentUser,
+  onSummaryChange,
+  onOpenMatch,
+  notificationsSupported = true,
+  onAvailabilityChange,
+}) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [requiresAuth, setRequiresAuth] = useState(false);
 
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    const hasToken = !!getStoredAuthToken();
-    if (!currentUser || !hasToken) {
-      setRequiresAuth(true);
-      setNotifications([]);
-      setError("");
-      onSummaryChange?.({ total: 0, unread: 0, latest: null });
-      setLoading(false);
-      return;
-    }
-
-    setRequiresAuth(false);
-    setError("");
+  const loadInvitesFallback = useCallback(async () => {
     try {
-      const data = await listNotifications({ perPage: 50 });
+      const data = await listInvites({ perPage: 50 });
+      const invitesArray = Array.isArray(data?.invites)
+        ? data.invites
+        : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+      const normalized = invitesArray
+        .map((invite) => {
+          try {
+            return buildInviteNotification(invite);
+          } catch (inviteError) {
+            console.error("Failed to normalize invite for updates feed", inviteError, invite);
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aTime = a.createdAt ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+
+      setNotifications(normalized);
+
+      const unreadFallback = invitesArray.filter((invite) => {
+        const status = deriveInviteStatus(invite);
+        return status === "pending" || status === "sent";
+      }).length;
+
+      onSummaryChange?.({
+        total: normalized.length,
+        unread: unreadFallback,
+        latest: normalized[0]?.createdAt || null,
+      });
+
+      setError(
+        normalized.length
+          ? "We couldn't reach the updates service, so we're showing your latest invites instead."
+          : "We couldn't load updates right now. Please try again later.",
+      );
+      onAvailabilityChange?.(false);
+      return true;
+    } catch (fallbackError) {
+      console.error("Failed to load invites fallback", fallbackError);
+      setNotifications([]);
+      setError(
+        fallbackError?.response?.data?.message ||
+          fallbackError?.data?.message ||
+          fallbackError?.message ||
+          "We couldn't load updates right now. Please try again later.",
+      );
+      onSummaryChange?.({ total: 0, unread: 0, latest: null });
+      onAvailabilityChange?.(false);
+      return false;
+    }
+  }, [onAvailabilityChange, onSummaryChange]);
+
+  const fetchNotifications = useCallback(
+    async ({ forceNotifications = false } = {}) => {
+      setLoading(true);
+      const hasToken = !!getStoredAuthToken();
+      if (!currentUser || !hasToken) {
+        setRequiresAuth(true);
+        setNotifications([]);
+        setError("");
+        onSummaryChange?.({ total: 0, unread: 0, latest: null });
+        setLoading(false);
+        onAvailabilityChange?.(true);
+        return;
+      }
+
+      setRequiresAuth(false);
+      setError("");
+      try {
+        let data = null;
+        if (notificationsSupported || forceNotifications) {
+          data = await listNotifications({ perPage: 50 });
+        } else {
+          const fallbackLoaded = await loadInvitesFallback();
+          setLoading(false);
+          return;
+        }
+
       const rawList = (() => {
         if (Array.isArray(data?.notifications)) return data.notifications;
         if (Array.isArray(data?.data)) return data.data;
@@ -556,27 +732,32 @@ const NotificationsFeed = ({ currentUser, onSummaryChange, onOpenMatch }) => {
         latest: normalized[0]?.createdAt || null,
       };
       onSummaryChange?.(summary);
+      onAvailabilityChange?.(true);
     } catch (err) {
       if (err?.status === 401 || err?.response?.status === 401) {
         setRequiresAuth(true);
         setNotifications([]);
         setError("");
         onSummaryChange?.({ total: 0, unread: 0, latest: null });
+        onAvailabilityChange?.(true);
       } else {
-        console.error("Failed to load notifications", err);
-        setNotifications([]);
-        setError(
-          err?.response?.data?.message ||
-            err?.data?.message ||
-            err?.message ||
-            "Failed to load updates",
-        );
-        onSummaryChange?.({ total: 0, unread: 0, latest: null });
+        const fallbackLoaded = await loadInvitesFallback();
+        if (!fallbackLoaded) {
+          console.error("Failed to load notifications", err);
+        }
       }
     } finally {
       setLoading(false);
     }
-  }, [currentUser, onSummaryChange]);
+    },
+    [
+      currentUser,
+      loadInvitesFallback,
+      notificationsSupported,
+      onAvailabilityChange,
+      onSummaryChange,
+    ],
+  );
 
   useEffect(() => {
     fetchNotifications();
@@ -615,7 +796,7 @@ const NotificationsFeed = ({ currentUser, onSummaryChange, onOpenMatch }) => {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={fetchNotifications}
+            onClick={() => fetchNotifications({ forceNotifications: true })}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
             disabled={loading || requiresAuth}
           >
@@ -653,10 +834,10 @@ const NotificationsFeed = ({ currentUser, onSummaryChange, onOpenMatch }) => {
         </div>
       ) : (
         error && (
-        <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4" />
-          <span>{error}</span>
-        </div>
+          <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            <span>{error}</span>
+          </div>
         )
       )}
 
