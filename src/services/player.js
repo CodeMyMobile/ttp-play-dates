@@ -24,9 +24,11 @@ export const normalizeRatingForApi = (value) => {
   return rounded.toFixed(1);
 };
 
+const personalDetailsEndpoint = "/player/personal_details/";
+
 export const updatePlayerPersonalDetails = async ({
   player = null,
-  id = null,
+  id: rawId = null,
   date_of_birth = null,
   usta_rating = null,
   uta_rating = null,
@@ -46,8 +48,10 @@ export const updatePlayerPersonalDetails = async ({
   const normalizedUstaRating = normalizeRatingForApi(usta_rating);
   const normalizedUtaRating = normalizeRatingForApi(uta_rating);
 
+  const resourceId =
+    rawId === null || rawId === undefined ? null : String(rawId).trim();
+
   const params = Object.entries({
-    id,
     date_of_birth,
     usta_rating: normalizedUstaRating,
     uta_rating: normalizedUtaRating,
@@ -62,10 +66,13 @@ export const updatePlayerPersonalDetails = async ({
     return acc;
   }, {});
 
-  const method = id ? "PATCH" : "POST";
+  const method = resourceId ? "PATCH" : "POST";
+  const path = resourceId
+    ? `${personalDetailsEndpoint}${resourceId.replace(/\/+$/, "")}/`
+    : personalDetailsEndpoint;
 
   return unwrap(
-    api(`/player/personal_details/`, {
+    api(path, {
       method,
       authToken: authHeader,
       authSchemePreference: "token",
