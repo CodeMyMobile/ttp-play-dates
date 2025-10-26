@@ -65,7 +65,7 @@ export const updatePlayerPersonalDetails = async ({
   const method = id ? "PATCH" : "POST";
 
   return unwrap(
-    api(`/player/personal_details`, {
+    api(`/player/personal_details/`, {
       method,
       authToken: authHeader,
       authSchemePreference: "token",
