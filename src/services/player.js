@@ -71,11 +71,7 @@ export const updatePlayerPersonalDetails = async ({
       return undefined;
     }
 
-    if (Number.isInteger(quantized)) {
-      return quantized;
-    }
-
-    return quantized.toFixed(1);
+    return quantized;
   };
 
   const ustaRatingForApi = coerceRatingForTransport(normalizedUstaRating);
