@@ -1562,6 +1562,24 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     <span className="text-gray-700">{player.name}</span>
                   </div>
                 ))}
+                {manualInvitees.map((invitee) => {
+                  const displayName = invitee.name?.trim() || invitee.displayPhone || formatPhoneDisplay(invitee.phone);
+                  const displayPhone = invitee.displayPhone || formatPhoneDisplay(invitee.phone);
+                  return (
+                    <div key={invitee.id} className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                        <Phone size={16} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-gray-700 font-medium">{displayName}</div>
+                        <div className="text-xs text-gray-500">{displayPhone}</div>
+                      </div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                        SMS magic link
+                      </span>
+                    </div>
+                  );
+                })}
                 {invitedCount > totalPlayers - 1 && (
                   <div className="bg-green-100 rounded-lg p-3 mt-3">
                     <div className="text-sm font-medium text-green-700">
