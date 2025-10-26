@@ -2644,7 +2644,12 @@ const TennisMatchApp = () => {
   const displayedMatches = useMemo(() => {
     const baseMatches = hasLocationFilter
       ? matchesWithDistance.filter((match) => {
-          if (!Number.isFinite(match.distanceMiles)) return false;
+          if (!Number.isFinite(match.distanceMiles)) {
+            if (match.type === "hosted" || match.type === "joined" || match.isInvited) {
+              return true;
+            }
+            return false;
+          }
           return match.distanceMiles <= distanceFilter;
         })
       : matchesWithDistance;
