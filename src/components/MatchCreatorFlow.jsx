@@ -1018,7 +1018,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-6">
               Number of Players
             </h3>
-            <div className="flex items-center justify-center gap-8">
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:flex-nowrap sm:gap-8">
               <button
                 onClick={() =>
                   setMatchData((prev) => ({
@@ -1031,8 +1031,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               >
                 −
               </button>
-              <div className="text-center">
-                <div className="text-6xl font-bold text-green-500 mb-2">
+              <div className="text-center min-w-[8rem]">
+                <div className="text-5xl sm:text-6xl font-bold text-green-500 mb-2">
                   {matchData.totalPlayers}
                 </div>
                 <div className="text-sm font-medium text-gray-700">Total Players</div>
