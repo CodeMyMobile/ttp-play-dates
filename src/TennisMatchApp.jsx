@@ -16,7 +16,8 @@ import {
 import { listNotifications } from "./services/notifications";
 import { getStoredAuthToken } from "./services/authToken";
 import ProfileManager from "./components/ProfileManager";
-import NotificationsFeed from "./components/NotificationsFeed";
+import NotificationsFeed, { buildNotificationPresentation } from "./components/NotificationsFeed";
+import ActivityFeed from "./components/ActivityFeed";
 import {
   getInviteByToken,
   listInvites,
@@ -40,17 +41,24 @@ import {
   Plus,
   X,
   Check,
+  CheckCircle2,
   Search,
   Share2,
   Menu,
   Bell,
+  BellRing,
   Star,
   TrendingUp,
   Award,
+  Edit3,
   Filter,
   Settings,
   LogOut,
   User,
+  UserCheck,
+  UserMinus,
+  UserPlus,
+  UserX,
   ChevronLeft,
   MoreVertical,
   Send,
@@ -697,6 +705,9 @@ const TennisMatchApp = () => {
   const [lastSeenNotificationAt, setLastSeenNotificationAt] = useState(null);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState("");
+  const [homeFeedNotifications, setHomeFeedNotifications] = useState([]);
+  const [homeFeedLoading, setHomeFeedLoading] = useState(false);
+  const [homeFeedError, setHomeFeedError] = useState("");
   const [locationFilter, setLocationFilter] = useState(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -1950,81 +1961,121 @@ const TennisMatchApp = () => {
     pickInviteTimestamp,
   ]);
 
-  const fetchNotificationSummary = useCallback(async ({ forceRetry = false } = {}) => {
-    const hasToken = !!getStoredAuthToken();
-    if (!currentUser || !hasToken) {
-      handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
-      setLastSeenNotificationAt(null);
-      return;
-    }
-    const now = Date.now();
-    const retryAt = notificationSummaryRetryAtRef.current || 0;
-    const shouldAttemptNotifications =
-      notificationsSupported || forceRetry || (retryAt && now >= retryAt);
-
-    if (!shouldAttemptNotifications) {
-      await loadInviteSummary();
-      return;
-    }
-    try {
-      const data = await listNotifications({ perPage: 10 });
-      const rawList = (() => {
-        if (Array.isArray(data?.notifications)) return data.notifications;
-        if (Array.isArray(data?.data)) return data.data;
-        if (Array.isArray(data?.items)) return data.items;
-        if (Array.isArray(data)) return data;
-        return [];
-      })();
-      const latestRaw = rawList.length > 0
-        ? rawList[0]?.created_at ??
-          rawList[0]?.createdAt ??
-          rawList[0]?.timestamp ??
-          rawList[0]?.time ??
-          null
-        : null;
-      handleNotificationsSummaryChange({
-        total: data?.total ?? data?.count ?? rawList.length,
-        unread:
-          data?.unread ??
-          data?.unread_count ??
-          data?.meta?.unread ??
-          data?.meta?.unread_count ??
-          data?.summary?.unread ??
-          0,
-        latest: latestRaw,
-      });
-      notificationSummaryErrorLoggedRef.current = false;
-      notificationSummaryRetryAtRef.current = 0;
-      setNotificationsSupported(true);
-    } catch (error) {
-      const statusCode = Number(error?.status ?? error?.response?.status);
-      if (statusCode === 401 || statusCode === 403) {
+  const fetchNotificationSummary = useCallback(
+    async ({ forceRetry = false } = {}) => {
+      const hasToken = !!getStoredAuthToken();
+      if (!currentUser || !hasToken) {
         handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+        setHomeFeedNotifications([]);
+        setHomeFeedError("");
+        setHomeFeedLoading(false);
         setLastSeenNotificationAt(null);
+        return;
+      }
+
+      setHomeFeedLoading(true);
+      setHomeFeedError("");
+
+      const now = Date.now();
+      const retryAt = notificationSummaryRetryAtRef.current || 0;
+      const shouldAttemptNotifications =
+        notificationsSupported || forceRetry || (retryAt && now >= retryAt);
+
+      if (!shouldAttemptNotifications) {
+        const fallbackLoaded = await loadInviteSummary();
+        if (!fallbackLoaded) {
+          setHomeFeedError("We couldn't load updates. Try again soon.");
+        }
+        setHomeFeedNotifications([]);
+        setHomeFeedLoading(false);
+        return;
+      }
+
+      try {
+        const data = await listNotifications({ perPage: 10 });
+        const rawList = (() => {
+          if (Array.isArray(data?.notifications)) return data.notifications;
+          if (Array.isArray(data?.data)) return data.data;
+          if (Array.isArray(data?.items)) return data.items;
+          if (Array.isArray(data)) return data;
+          return [];
+        })();
+        const latestRaw =
+          rawList.length > 0
+            ? rawList[0]?.created_at ??
+              rawList[0]?.createdAt ??
+              rawList[0]?.timestamp ??
+              rawList[0]?.time ??
+              null
+            : null;
+        handleNotificationsSummaryChange({
+          total: data?.total ?? data?.count ?? rawList.length,
+          unread:
+            data?.unread ??
+            data?.unread_count ??
+            data?.meta?.unread ??
+            data?.meta?.unread_count ??
+            data?.summary?.unread ??
+            0,
+          latest: latestRaw,
+        });
+
+        const normalizedNotifications = rawList
+          .map((item) => {
+            try {
+              return buildNotificationPresentation(item);
+            } catch (presentationError) {
+              console.error(
+                "Failed to normalize notification for activity feed",
+                presentationError,
+                item,
+              );
+              return null;
+            }
+          })
+          .filter(Boolean);
+
+        setHomeFeedNotifications(normalizedNotifications.slice(0, 8));
+        setHomeFeedError("");
         notificationSummaryErrorLoggedRef.current = false;
         notificationSummaryRetryAtRef.current = 0;
         setNotificationsSupported(true);
-      } else {
-        const fallbackLoaded = await loadInviteSummary();
-        if (!fallbackLoaded) {
-          if (!notificationSummaryErrorLoggedRef.current) {
-            console.error("Failed to load notification summary", error);
-            notificationSummaryErrorLoggedRef.current = true;
-          }
-        } else {
+      } catch (error) {
+        const statusCode = Number(error?.status ?? error?.response?.status);
+        setHomeFeedNotifications([]);
+        if (statusCode === 401 || statusCode === 403) {
+          handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+          setLastSeenNotificationAt(null);
           notificationSummaryErrorLoggedRef.current = false;
+          notificationSummaryRetryAtRef.current = 0;
+          setNotificationsSupported(true);
+          setHomeFeedError("");
+        } else {
+          const fallbackLoaded = await loadInviteSummary();
+          if (!fallbackLoaded) {
+            if (!notificationSummaryErrorLoggedRef.current) {
+              console.error("Failed to load notification summary", error);
+              notificationSummaryErrorLoggedRef.current = true;
+            }
+            setHomeFeedError("We couldn't load updates. Try again soon.");
+          } else {
+            notificationSummaryErrorLoggedRef.current = false;
+            setHomeFeedError("");
+          }
+          setNotificationsSupported(false);
+          const backoffMs = forceRetry ? 60000 : 5 * 60 * 1000;
+          notificationSummaryRetryAtRef.current = Date.now() + backoffMs;
         }
-        setNotificationsSupported(false);
-        const backoffMs = forceRetry ? 60000 : 5 * 60 * 1000;
-        notificationSummaryRetryAtRef.current = Date.now() + backoffMs;
+      } finally {
+        setHomeFeedLoading(false);
       }
-    }
-  }, [
-    currentUser,
-    handleNotificationsSummaryChange,
-    loadInviteSummary,
-    notificationsSupported,
-  ]);
+    }, [
+      buildNotificationPresentation,
+      currentUser,
+      handleNotificationsSummaryChange,
+      loadInviteSummary,
+      notificationsSupported,
+    ]);
 
   const refreshMatchesAndInvites = useCallback(async () => {
     await Promise.all([
@@ -2632,6 +2683,361 @@ const TennisMatchApp = () => {
       .sort((a, b) => getTimestamp(a) - getTimestamp(b));
   }, [matches]);
 
+  const parseDateValue = useCallback((value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === "number") {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const date = new Date(trimmed);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+    return null;
+  }, []);
+
+  const formatRelativeTimeFromNow = useCallback((date) => {
+    if (!(date instanceof Date)) return "";
+    const now = Date.now();
+    const diffSeconds = Math.round((date.getTime() - now) / 1000);
+    const absSeconds = Math.abs(diffSeconds);
+    const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+    const units = [
+      { limit: 60, unit: "second", divisor: 1 },
+      { limit: 3600, unit: "minute", divisor: 60 },
+      { limit: 86400, unit: "hour", divisor: 3600 },
+      { limit: 604800, unit: "day", divisor: 86400 },
+      { limit: 2629800, unit: "week", divisor: 604800 },
+      { limit: 31557600, unit: "month", divisor: 2629800 },
+    ];
+
+    for (const { limit, unit, divisor } of units) {
+      if (absSeconds < limit) {
+        const value = Math.round(diffSeconds / divisor);
+        return formatter.format(value, unit);
+      }
+    }
+
+    const years = Math.round(diffSeconds / 31557600);
+    return formatter.format(years, "year");
+  }, []);
+
+  const activityFeedItems = useMemo(() => {
+    if (!currentUser) return [];
+
+    const items = [];
+
+    const pickString = (...candidates) => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        if (typeof candidate === "string") {
+          const trimmed = candidate.trim();
+          if (trimmed) return trimmed;
+        }
+      }
+      return "";
+    };
+
+    const pickNumber = (...candidates) => {
+      for (const candidate of candidates) {
+        if (candidate === undefined || candidate === null) continue;
+        const numeric = Number(candidate);
+        if (Number.isFinite(numeric)) return numeric;
+      }
+      return null;
+    };
+
+    pendingInvites.forEach((invite) => {
+      const match = invite?.match || {};
+      const matchId =
+        match?.id ?? match?.match_id ?? match?.matchId ?? invite?.match_id ?? invite?.matchId;
+      const formatLabel =
+        pickString(
+          match.match_format,
+          match.matchFormat,
+          match.format,
+          match.title,
+          match.name,
+        ) || "Match invite";
+      const locationLabel = pickString(
+        match.location_text,
+        match.locationText,
+        match.location,
+        match.venue,
+        match.court_name,
+        match.courtName,
+      );
+      const hostLabel = pickString(
+        match.host_name,
+        match.hostName,
+        invite?.inviter?.full_name,
+        invite?.inviter?.fullName,
+        invite?.inviter?.name,
+      );
+      const startDate =
+        parseDateValue(match.start_date_time) ||
+        parseDateValue(match.startDateTime) ||
+        parseDateValue(match.start_time) ||
+        parseDateValue(match.dateTime);
+      const updatedAt =
+        parseDateValue(invite?.updated_at) ||
+        parseDateValue(invite?.updatedAt) ||
+        parseDateValue(invite?.created_at) ||
+        parseDateValue(invite?.createdAt) ||
+        parseDateValue(invite?.sent_at) ||
+        startDate;
+      const relativeTime = formatRelativeTimeFromNow(updatedAt || startDate);
+      const playerLimit = pickNumber(
+        match.player_limit,
+        match.playerLimit,
+        match.player_cap,
+        match.max_players,
+        match.capacity,
+      );
+      const rosterCount = pickNumber(
+        match.roster_count,
+        match.rosterCount,
+        match.player_count,
+        match.playerCount,
+        match.occupied,
+      );
+      const capacityLabel = (() => {
+        if (Number.isFinite(playerLimit) && Number.isFinite(rosterCount)) {
+          return `${rosterCount}/${playerLimit} players`;
+        }
+        if (Number.isFinite(playerLimit)) {
+          return `${playerLimit} player cap`;
+        }
+        return "";
+      })();
+
+      const meta = [];
+      if (startDate) {
+        meta.push({ icon: Calendar, label: formatDateTime(startDate) });
+      }
+      if (locationLabel) {
+        meta.push({ icon: MapPin, label: locationLabel });
+      }
+      if (capacityLabel) {
+        meta.push({ icon: Users, label: capacityLabel });
+      }
+
+      const inviteStatus = deriveInviteStatus(invite) || "pending";
+      const tone = inviteStatus === "pending" || inviteStatus === "sent" ? "pending" : "info";
+      const statusLabel = inviteStatus === "sent" ? "Invite Sent" : "Pending Invite";
+
+      const actions = [
+        {
+          label: "Accept",
+          onClick: () => respondToInvite(invite.token, "accept"),
+          variant: "success",
+        },
+        {
+          label: "Decline",
+          onClick: () => respondToInvite(invite.token, "reject"),
+          variant: "danger",
+        },
+      ];
+
+      if (matchId) {
+        actions.push({
+          label: "View match",
+          onClick: () => handleViewDetails(matchId, { pendingInvite: invite }),
+          variant: "outline",
+        });
+      } else {
+        actions.push({
+          label: "Review invites",
+          onClick: () => goToInvites(),
+          variant: "outline",
+        });
+      }
+
+      items.push({
+        id: `invite-${invite.token || invite.id}`,
+        statusLabel,
+        tone,
+        icon: Mail,
+        title: locationLabel ? `${formatLabel} at ${locationLabel}` : formatLabel,
+        description: hostLabel ? `Hosted by ${hostLabel}` : "Respond to secure your spot.",
+        meta,
+        timestamp: updatedAt || startDate || null,
+        timestampLabel:
+          (updatedAt || startDate)?.toLocaleString?.() ||
+          (startDate ? startDate.toLocaleString() : ""),
+        relativeTime,
+        actions,
+      });
+    });
+
+    const notificationTypeMap = {
+      invite_accepted: { statusLabel: "Player Accepted", tone: "success", icon: UserCheck },
+      invite_declined: { statusLabel: "Invite Declined", tone: "danger", icon: UserX },
+      invite_sent: { statusLabel: "Invite Sent", tone: "info", icon: CheckCircle2 },
+      match_created: { statusLabel: "Match Created", tone: "info", icon: Sparkles },
+      match_updated: { statusLabel: "Match Updated", tone: "info", icon: Edit3 },
+      match_full: { statusLabel: "Match Full", tone: "warning", icon: Users },
+      match_cancelled: { statusLabel: "Match Cancelled", tone: "danger", icon: AlertCircle },
+      player_joined: { statusLabel: "Player Joined", tone: "success", icon: UserPlus },
+      player_left: { statusLabel: "Player Left", tone: "neutral", icon: UserMinus },
+      general: { statusLabel: "Update", tone: "neutral", icon: BellRing },
+    };
+
+    homeFeedNotifications.forEach((notification) => {
+      const styles = notificationTypeMap[notification.canonicalType] || notificationTypeMap.general;
+      const meta = [];
+      if (notification.matchLabel) {
+        meta.push({ icon: Calendar, label: notification.matchLabel });
+      }
+      if (notification.startLabel) {
+        meta.push({ icon: Clock, label: notification.startLabel });
+      }
+      if (Array.isArray(notification.tags)) {
+        notification.tags
+          .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+          .filter(Boolean)
+          .forEach((tag) => {
+            meta.push({ icon: null, label: tag });
+          });
+      }
+
+      const actions = [];
+      if (notification.matchId) {
+        actions.push({
+          label: "View match",
+          onClick: () => handleViewDetails(notification.matchId),
+          variant: "outline",
+        });
+      }
+
+      items.push({
+        id: `notification-${notification.id}`,
+        statusLabel: styles.statusLabel,
+        tone: styles.tone,
+        icon: styles.icon,
+        title: notification.title || styles.statusLabel,
+        description: notification.body || "",
+        meta,
+        timestamp: notification.createdAt || null,
+        timestampLabel: notification.createdAtLabel || "",
+        relativeTime: notification.relativeTime || "",
+        actions,
+      });
+    });
+
+    matchesNeedingAttention.forEach((match) => {
+      const lowOccupancy = match?.alerts?.lowOccupancy || {};
+      const spotsNeeded = Number(lowOccupancy.spotsNeeded ?? match.rosterSpotsRemaining ?? 0);
+      const matchId = match?.id;
+      const formatLabel =
+        pickString(
+          match.match_format,
+          match.matchFormat,
+          match.format,
+          match.title,
+          match.name,
+        ) || "Match";
+      const locationLabel = pickString(
+        match.location,
+        match.location_text,
+        match.locationText,
+        match.venue,
+        match.court_name,
+        match.courtName,
+      ) || "Location TBA";
+      const startDate = parseDateValue(match.dateTime);
+      const alertStart = parseDateValue(lowOccupancy.startTime);
+      const timestamp = alertStart || startDate || null;
+      const relativeTime = (() => {
+        if (Number.isFinite(lowOccupancy.hoursUntilStart)) {
+          return formatHoursUntilStart(lowOccupancy.hoursUntilStart);
+        }
+        return formatRelativeTimeFromNow(timestamp);
+      })();
+
+      const playerLimit = pickNumber(lowOccupancy.playerLimit, match.playerLimit);
+      const rosterCount = pickNumber(lowOccupancy.rosterCount, match.rosterCount, match.occupied);
+      const capacityLabel = (() => {
+        if (Number.isFinite(playerLimit) && Number.isFinite(rosterCount)) {
+          return `${rosterCount}/${playerLimit} confirmed`;
+        }
+        if (Number.isFinite(rosterCount)) {
+          return `${rosterCount} confirmed`;
+        }
+        return "";
+      })();
+
+      const meta = [];
+      if (startDate) {
+        meta.push({ icon: Calendar, label: formatDateTime(startDate) });
+      }
+      if (locationLabel) {
+        meta.push({ icon: MapPin, label: locationLabel });
+      }
+      if (capacityLabel) {
+        meta.push({ icon: Users, label: capacityLabel });
+      }
+
+      const actions = [];
+      if (matchId) {
+        actions.push({
+          label: "Manage invites",
+          onClick: () => openInviteScreen(matchId),
+          variant: "warning",
+        });
+        actions.push({
+          label: "View match",
+          onClick: () => handleViewDetails(matchId),
+          variant: "outline",
+        });
+      }
+
+      items.push({
+        id: `attention-${matchId}`,
+        statusLabel: "Needs Players",
+        tone: "warning",
+        icon: Users,
+        title:
+          Number.isFinite(spotsNeeded) && spotsNeeded > 0
+            ? `Need ${spotsNeeded} more ${spotsNeeded === 1 ? "player" : "players"}`
+            : "Help fill this match",
+        description: `${formatLabel} at ${locationLabel}`,
+        meta,
+        timestamp,
+        timestampLabel: timestamp?.toLocaleString?.() || "",
+        relativeTime,
+        actions,
+      });
+    });
+
+    return items
+      .sort((a, b) => {
+        const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : -Infinity;
+        const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : -Infinity;
+        return bTime - aTime;
+      })
+      .slice(0, 8);
+  }, [
+    currentUser,
+    deriveInviteStatus,
+    formatDateTime,
+    formatHoursUntilStart,
+    formatRelativeTimeFromNow,
+    goToInvites,
+    handleViewDetails,
+    homeFeedNotifications,
+    matchesNeedingAttention,
+    openInviteScreen,
+    parseDateValue,
+    pendingInvites,
+    respondToInvite,
+  ]);
+
   const getMatchCount = useCallback(
     (filterId) => {
       if (!matchCounts) return 0;
@@ -2844,109 +3250,15 @@ const TennisMatchApp = () => {
               )}
             </section>
 
-            {invitesLoading ? (
-              <div className="bg-white border border-gray-100 rounded-3xl shadow-sm p-6 text-sm text-gray-500 font-semibold">
-                Checking for outstanding invites...
-              </div>
-            ) : invitesError ? (
-              <div className="bg-red-50 border border-red-200 rounded-3xl shadow-sm p-6 text-sm text-red-700 font-semibold">
-                {invitesError}
-              </div>
-            ) : pendingInvites.length > 0 ? (
-              <section className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white rounded-3xl shadow-xl p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide font-bold text-white/80">
-                      Pending Invites
-                    </p>
-                    <h3 className="text-2xl font-black leading-tight">
-                      You have {pendingInvites.length} invite
-                      {pendingInvites.length === 1 ? "" : "s"} waiting for a response
-                    </h3>
-                  </div>
-                  <button
-                    onClick={goToInvites}
-                    className="px-4 py-2 rounded-xl bg-white text-amber-600 font-bold text-sm shadow hover:bg-amber-50 transition-colors"
-                  >
-                    Review all
-                  </button>
-                </div>
-                <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-                  {pendingInvites.slice(0, 4).map((invite) => {
-                    const startTime = invite.match?.start_date_time
-                      ? new Date(invite.match.start_date_time).toLocaleString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : "TBD";
-                    return (
-                      <div
-                        key={invite.token}
-                        className="min-w-[220px] bg-white/15 backdrop-blur-sm rounded-2xl p-4 flex flex-col gap-3 border border-white/30"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-semibold text-white/90">
-                            {invite.match?.match_format || "Match Invite"}
-                          </div>
-                          <span className="px-2 py-1 text-[10px] font-black tracking-wide rounded-full bg-white/25 text-white">
-                            PENDING
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-lg font-black leading-tight">
-                            {invite.match?.location_text || "Location TBA"}
-                          </p>
-                          <p className="text-sm text-white/80 font-semibold">{startTime}</p>
-                        </div>
-                        <div className="text-xs font-semibold text-white/80 space-y-1">
-                          <p className="flex items-center gap-1">
-                            <Users className="w-3.5 h-3.5" />
-                            {invite.match?.player_limit || "Open"} player cap
-                          </p>
-                          {invite.inviter?.full_name && (
-                            <p className="flex items-center gap-1">
-                              <User className="w-3.5 h-3.5" /> Hosted by {invite.inviter.full_name}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 mt-auto">
-                          <button
-                            onClick={() => respondToInvite(invite.token, "reject")}
-                            className="flex-1 px-3 py-1.5 rounded-xl bg-white/15 text-white font-bold text-xs border border-white/30 hover:bg-white/25 transition-colors"
-                          >
-                            Decline
-                          </button>
-                          <button
-                            onClick={() => respondToInvite(invite.token, "accept")}
-                            className="flex-1 px-3 py-1.5 rounded-xl bg-white text-amber-600 font-black text-xs shadow hover:bg-amber-50 transition-colors"
-                          >
-                            Accept
-                          </button>
-                          {invite.match?.id && (
-                            <button
-                              onClick={() =>
-                                handleViewDetails(invite.match.id, {
-                                  pendingInvite: invite,
-                                })
-                              }
-                              className="w-full px-3 py-1.5 rounded-xl bg-white/10 text-white font-bold text-xs border border-white/30 hover:bg-white/20 transition-colors"
-                            >
-                              View & manage
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ) : (
-              <div className="bg-white border border-gray-100 rounded-3xl shadow-sm p-6 text-sm text-gray-500 font-semibold">
-                You're all caught up on invites. 🎉
-              </div>
-            )}
+            <ActivityFeed
+              items={activityFeedItems}
+              loading={homeFeedLoading || invitesLoading}
+              errors={[homeFeedError, invitesError]}
+              onRefresh={() => refreshMatchesAndInvites()}
+              onViewAll={goToInvites}
+              pendingInviteCount={pendingInvites.length}
+              unreadUpdateCount={Number(notificationSummary.unread ?? 0)}
+            />
           </div>
 
       {/* Filter Tabs */}
@@ -3065,73 +3377,6 @@ const TennisMatchApp = () => {
         {hasLocationFilter && displayedMatches.length === 0 && (
           <div className="bg-white border border-dashed border-emerald-200 rounded-2xl p-8 text-center text-sm font-semibold text-emerald-700 mb-6">
             No matches within {distanceFilter} miles of your location yet. Try expanding the distance filter or check back soon!
-          </div>
-        )}
-
-        {matchesNeedingAttention.length > 0 && (
-          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500 text-white shadow-md">
-                <Bell className="h-5 w-5" />
-              </div>
-              <div className="flex-1 space-y-4">
-                <div>
-                  <p className="text-sm font-black text-amber-900">
-                    Last-minute roster alerts
-                  </p>
-                  <p className="text-xs font-semibold text-amber-800">
-                    These matches start soon and still need players. Fill the open spots before they begin.
-                  </p>
-                </div>
-                <ul className="space-y-3">
-                  {matchesNeedingAttention.slice(0, 3).map((match) => {
-                    const lowOccupancy = match?.alerts?.lowOccupancy;
-                    const spotsNeeded = lowOccupancy?.spotsNeeded ?? match.rosterSpotsRemaining ?? 0;
-                    const timeLabel = formatHoursUntilStart(
-                      lowOccupancy?.hoursUntilStart ?? null,
-                    );
-                    return (
-                      <li
-                        key={match.id}
-                        className="rounded-xl border border-amber-100 bg-white/90 p-4 shadow-sm"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-black text-amber-900">
-                              Need {spotsNeeded}{" "}
-                              {spotsNeeded === 1 ? "player" : "players"}{" "}
-                              {timeLabel ? timeLabel : "soon"}
-                            </p>
-                            <p className="text-xs font-semibold text-amber-700">
-                              {formatDateTime(match.dateTime)} • {match.location || "Location TBA"}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              onClick={() => openInviteScreen(match.id)}
-                              className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50"
-                            >
-                              Manage invites
-                            </button>
-                            <button
-                              onClick={() => handleViewDetails(match.id)}
-                              className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow hover:bg-amber-600"
-                            >
-                              View match
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {matchesNeedingAttention.length > 3 && (
-                  <p className="text-xs font-semibold text-amber-700">
-                    And {matchesNeedingAttention.length - 3} more matches need attention.
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
