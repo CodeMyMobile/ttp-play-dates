@@ -48,13 +48,29 @@ export const updatePlayerPersonalDetails = async ({
   const normalizedUstaRating = normalizeRatingForApi(usta_rating);
   const normalizedUtaRating = normalizeRatingForApi(uta_rating);
 
+  const coerceRatingForTransport = (value) => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return undefined;
+    }
+
+    return Math.round(numeric * 10) / 10;
+  };
+
+  const ustaRatingForApi = coerceRatingForTransport(normalizedUstaRating);
+  const utaRatingForApi = coerceRatingForTransport(normalizedUtaRating);
+
   const resourceId =
     rawId === null || rawId === undefined ? null : String(rawId).trim();
 
   const params = Object.entries({
     date_of_birth,
-    usta_rating: normalizedUstaRating,
-    uta_rating: normalizedUtaRating,
+    usta_rating: ustaRatingForApi,
+    uta_rating: utaRatingForApi,
     full_name: fullName,
     phone: mobile,
     about_me,
