@@ -110,6 +110,11 @@ import {
   memberMatchesParticipant,
 } from "./utils/memberIdentity";
 import { getMatchPrivacy, isOpenMatch } from "./utils/matchPrivacy";
+import {
+  deriveListingVisibility,
+  isLinkOnlyVisibility,
+  normalizeListingVisibility,
+} from "./utils/listingVisibility";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 import { buildRecentPartnerSuggestions } from "./utils/inviteSuggestions";
 import {
@@ -1495,7 +1500,7 @@ const TennisMatchApp = () => {
         return true;
       };
 
-      let hiddenPrivateMatches = 0;
+      let hiddenRestrictedMatches = 0;
       const memberIds = memberIdentityIds;
 
       const now = Date.now();
@@ -1507,6 +1512,11 @@ const TennisMatchApp = () => {
             ? m.invitees.filter((invite) => isInviteRelevant(invite))
             : [],
         );
+
+        const listingVisibility = normalizeListingVisibility(
+          deriveListingVisibility(m)
+        );
+        const isLinkOnly = listingVisibility === "link_only";
 
         const capacityInfo =
           m && typeof m.capacity === "object" ? m.capacity : null;
@@ -1688,7 +1698,12 @@ const TennisMatchApp = () => {
         const matchPrivacy = getMatchPrivacy(m);
         const isPrivateMatch = matchPrivacy === "private";
         if (isPrivateMatch && !isHost && !isJoined && !isInvited) {
-          hiddenPrivateMatches += 1;
+          hiddenRestrictedMatches += 1;
+          return null;
+        }
+
+        if (isLinkOnly && !isHost && !isJoined && !isInvited) {
+          hiddenRestrictedMatches += 1;
           return null;
         }
 
@@ -1733,6 +1748,8 @@ const TennisMatchApp = () => {
           format: m.match_format,
           skillLevel: m.skill_level_min,
           notes: m.notes,
+          listingVisibility,
+          isLinkOnly,
           invitees: m.invitees || [],
           participants: m.participants || [],
           playerLimit: normalizedPlayerLimit,
@@ -1776,7 +1793,7 @@ const TennisMatchApp = () => {
       }
 
       const normalizedCounts = { ...counts, archived: archivedCount };
-      if (hiddenPrivateMatches > 0) {
+      if (hiddenRestrictedMatches > 0) {
         const countKey = (() => {
           if (activeFilter === "archived") return "archived";
           if (activeFilter === "draft") return "draft";
@@ -1785,7 +1802,7 @@ const TennisMatchApp = () => {
         if (countKey) {
           const currentCount = Number(normalizedCounts[countKey]) || 0;
           normalizedCounts[countKey] = Math.max(
-            currentCount - hiddenPrivateMatches,
+            currentCount - hiddenRestrictedMatches,
             transformed.length,
             0,
           );
@@ -3003,6 +3020,17 @@ const TennisMatchApp = () => {
     };
 
     homeFeedNotifications.forEach((notification) => {
+      if (
+        isLinkOnlyVisibility(
+          notification.listingVisibility,
+          notification.raw?.match,
+          notification.raw,
+          notification.raw?.context,
+          notification.raw?.meta,
+        )
+      ) {
+        return;
+      }
       const styles = notificationTypeMap[notification.canonicalType] || notificationTypeMap.general;
       const meta = [];
       if (notification.matchLabel) {

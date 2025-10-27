@@ -7,6 +7,7 @@ import {
   Clock,
   Copy,
   Download,
+  EyeOff,
   Globe,
   Home,
   Lock,
@@ -87,6 +88,7 @@ const initialMatchData = () => {
     notes: "",
     invitedPlayers: [],
     manualInvitees: [],
+    listingVisibility: "listed",
   };
 };
 
@@ -392,6 +394,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
   const invitedCount = combinedInvitees.length;
   const totalPlayers = matchData.totalPlayers || 4;
+  const isLinkOnlyListing = matchData.listingVisibility === "link_only";
 
   const canInviteMore = useCallback(() => {
     if (matchData.type !== "private") return false;
@@ -533,6 +536,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       payload.skill_level_min = matchData.skillLevel;
     }
 
+    if (matchData.type === "open") {
+      payload.listing_visibility =
+        matchData.listingVisibility === "link_only" ? "link_only" : "listed";
+    }
+
     setCreating(true);
     let inviteMessage = "";
     try {
@@ -590,12 +598,14 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         }
       }
 
-      let link = "";
-      try {
-        const { shareUrl } = await getShareLink(matchId);
-        link = shareUrl || "";
-      } catch (error) {
-        console.warn("Failed to load share link", error);
+      let link = result?.shareUrl || "";
+      if (!link) {
+        try {
+          const { shareUrl } = await getShareLink(matchId);
+          link = shareUrl || "";
+        } catch (error) {
+          console.warn("Failed to load share link", error);
+        }
       }
       if (!link) link = `${window.location.origin}/#/matches/${matchId}`;
 
@@ -1142,6 +1152,55 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             />
           </div>
 
+          <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+            <div className="flex items-start gap-4">
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  isLinkOnlyListing
+                    ? "bg-amber-100 text-amber-600"
+                    : "bg-emerald-100 text-emerald-600"
+                }`}
+              >
+                {isLinkOnlyListing ? <EyeOff size={20} /> : <Globe size={20} />}
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900">
+                      Hide from public listings
+                    </h3>
+                    <p className="text-xs font-semibold text-emerald-600">
+                      {isLinkOnlyListing ? "Link-only access enabled" : "Currently visible in browse"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMatchData((prev) => ({
+                        ...prev,
+                        listingVisibility: prev.listingVisibility === "link_only" ? "listed" : "link_only",
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
+                      isLinkOnlyListing ? "bg-emerald-600" : "bg-gray-300"
+                    }`}
+                    aria-pressed={isLinkOnlyListing}
+                    aria-label="Toggle link-only visibility"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                        isLinkOnlyListing ? "translate-x-5" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Keep this match out of the public browse feed. Players will need the share link or an invite to join.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-4">
             <button
               onClick={prevStep}
@@ -1533,6 +1592,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   {matchData.type === "open" && matchData.skillLevel && ` • NTRP ${matchData.skillLevel}`}
                 </span>
               </div>
+              {matchData.type === "open" && isLinkOnlyListing && (
+                <div className="flex items-center gap-3">
+                  <EyeOff size={16} className="text-gray-500" />
+                  <span className="text-gray-700">Hidden from public listings (link required)</span>
+                </div>
+              )}
               {matchData.type === "private" && (
                 <div className="flex items-center gap-3">
                   <Lock size={16} className="text-gray-500" />
@@ -1737,6 +1802,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     <span className="text-sm font-medium">Copy Link</span>
                   </button>
                 </div>
+                {isLinkOnlyListing && (
+                  <p className="mt-3 text-sm font-medium text-amber-600">
+                    This match is hidden from browse. Share the link with players you want to invite.
+                  </p>
+                )}
               </div>
             )}
 
