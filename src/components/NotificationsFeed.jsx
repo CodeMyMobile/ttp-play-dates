@@ -992,5 +992,5 @@ const NotificationsFeed = ({
   );
 };
 
-export { buildNotificationPresentation };
+export { buildNotificationPresentation, buildInviteNotification };
 export default NotificationsFeed;
