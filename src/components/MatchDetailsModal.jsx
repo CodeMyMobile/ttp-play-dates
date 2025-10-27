@@ -1084,6 +1084,7 @@ const MatchDetailsModal = ({
   }, [capacityInfo, remainingSpots]);
   const matchId = match?.id ?? null;
   const canManageInvites = Boolean(onManageInvites) && isHost && matchId;
+  const canLeaveMatch = isJoined && !isHost && !isArchived && !isCancelled;
 
   const handleManageInvites = useCallback(() => {
     if (!canManageInvites || !matchId) return;
@@ -2679,7 +2680,7 @@ const MatchDetailsModal = ({
           {status === "alreadyJoined" && !isHost && (
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
               <Check className="mt-0.5 h-4 w-4" />
-              {isOpenMatch
+              {canLeaveMatch
                 ? "You're already on the roster. Need to back out? You can leave the match below."
                 : "You're already on the roster. Reach out to the organizer if you need changes."}
             </div>
@@ -2687,7 +2688,7 @@ const MatchDetailsModal = ({
         </div>
 
         <div className="border-t border-gray-100 pt-5">
-          {isJoined && !isHost && isOpenMatch ? (
+          {canLeaveMatch ? (
             <button
               type="button"
               onClick={handleLeaveMatch}
