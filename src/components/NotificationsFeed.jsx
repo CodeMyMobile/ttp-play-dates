@@ -213,9 +213,29 @@ const resolveMatchFromNotification = (notification) => {
   if (notification.match) return notification.match;
   if (notification.match_info) return notification.match_info;
   if (notification.matchInfo) return notification.matchInfo;
+  if (notification.attributes?.match) return notification.attributes.match;
+  if (notification.attributes?.match_info) return notification.attributes.match_info;
+  if (notification.attributes?.matchInfo) return notification.attributes.matchInfo;
   if (notification.context?.match) return notification.context.match;
+  if (notification.context?.match_info) return notification.context.match_info;
+  if (notification.context?.matchInfo) return notification.context.matchInfo;
+  if (notification.context?.attributes?.match) return notification.context.attributes.match;
+  if (notification.context?.attributes?.match_info)
+    return notification.context.attributes.match_info;
+  if (notification.context?.attributes?.matchInfo)
+    return notification.context.attributes.matchInfo;
   if (notification.meta?.match) return notification.meta.match;
+  if (notification.meta?.match_info) return notification.meta.match_info;
+  if (notification.meta?.matchInfo) return notification.meta.matchInfo;
+  if (notification.meta?.attributes?.match) return notification.meta.attributes.match;
+  if (notification.meta?.attributes?.match_info) return notification.meta.attributes.match_info;
+  if (notification.meta?.attributes?.matchInfo) return notification.meta.attributes.matchInfo;
   if (notification.data?.match) return notification.data.match;
+  if (notification.data?.match_info) return notification.data.match_info;
+  if (notification.data?.matchInfo) return notification.data.matchInfo;
+  if (notification.data?.attributes?.match) return notification.data.attributes.match;
+  if (notification.data?.attributes?.match_info) return notification.data.attributes.match_info;
+  if (notification.data?.attributes?.matchInfo) return notification.data.attributes.matchInfo;
   return null;
 };
 
@@ -226,9 +246,34 @@ const resolvePlayerFromNotification = (notification) => {
     notification.member ||
     notification.invitee ||
     notification.participant ||
+    notification.attributes?.player ||
+    notification.attributes?.member ||
+    notification.attributes?.invitee ||
+    notification.attributes?.participant ||
     notification.context?.player ||
+    notification.context?.member ||
+    notification.context?.invitee ||
+    notification.context?.participant ||
+    notification.context?.attributes?.player ||
+    notification.context?.attributes?.member ||
+    notification.context?.attributes?.invitee ||
+    notification.context?.attributes?.participant ||
     notification.data?.player ||
+    notification.data?.member ||
+    notification.data?.invitee ||
+    notification.data?.participant ||
+    notification.data?.attributes?.player ||
+    notification.data?.attributes?.member ||
+    notification.data?.attributes?.invitee ||
+    notification.data?.attributes?.participant ||
     notification.meta?.player ||
+    notification.meta?.member ||
+    notification.meta?.invitee ||
+    notification.meta?.participant ||
+    notification.meta?.attributes?.player ||
+    notification.meta?.attributes?.member ||
+    notification.meta?.attributes?.invitee ||
+    notification.meta?.attributes?.participant ||
     null
   );
 };
@@ -240,26 +285,52 @@ const resolveActorFromNotification = (notification) => {
     notification.owner ||
     notification.host ||
     notification.user ||
+    notification.attributes?.actor ||
+    notification.attributes?.owner ||
+    notification.attributes?.host ||
+    notification.attributes?.user ||
     notification.context?.actor ||
+    notification.context?.owner ||
+    notification.context?.host ||
+    notification.context?.user ||
+    notification.context?.attributes?.actor ||
+    notification.context?.attributes?.owner ||
+    notification.context?.attributes?.host ||
+    notification.context?.attributes?.user ||
     notification.meta?.actor ||
+    notification.meta?.owner ||
+    notification.meta?.host ||
+    notification.meta?.user ||
+    notification.meta?.attributes?.actor ||
+    notification.meta?.attributes?.owner ||
+    notification.meta?.attributes?.host ||
+    notification.meta?.attributes?.user ||
     notification.data?.actor ||
+    notification.data?.owner ||
+    notification.data?.host ||
+    notification.data?.user ||
+    notification.data?.attributes?.actor ||
+    notification.data?.attributes?.owner ||
+    notification.data?.attributes?.host ||
+    notification.data?.attributes?.user ||
     null
   );
 };
 
-const resolveCanonicalType = (rawType = "", notification = {}) => {
-  const normalized = rawType.toString().toLowerCase();
+const matchCanonicalTypeFromString = (value = "") => {
+  const normalized = cleanString(value).toLowerCase();
+  if (!normalized) return null;
   if (normalized.includes("match") && normalized.includes("create")) {
     return "match_created";
   }
-  if (normalized.includes("match") && normalized.includes("update")) {
-    return "match_updated";
-  }
-  if (normalized.includes("match") && normalized.includes("edit")) {
+  if (normalized.includes("match") && (normalized.includes("update") || normalized.includes("edit"))) {
     return "match_updated";
   }
   if (normalized.includes("match") && normalized.includes("full")) {
     return "match_full";
+  }
+  if (normalized.includes("cancel")) {
+    return "match_cancelled";
   }
   if (normalized.includes("join") || normalized.includes("signup")) {
     return "player_joined";
@@ -267,38 +338,157 @@ const resolveCanonicalType = (rawType = "", notification = {}) => {
   if (normalized.includes("leave") || normalized.includes("remove")) {
     return "player_left";
   }
-  if (normalized.includes("decline") || normalized.includes("reject")) {
+  if (
+    normalized.includes("decline") ||
+    normalized.includes("reject") ||
+    normalized.includes("deny")
+  ) {
     return "invite_declined";
   }
-  if (normalized.includes("accept")) {
+  if (
+    normalized.includes("accept") ||
+    normalized.includes("confirm") ||
+    normalized.includes("approve")
+  ) {
     return "invite_accepted";
   }
-  if (normalized.includes("invite") && normalized.includes("send")) {
+  if (
+    normalized.includes("invite") &&
+    (normalized.includes("send") || normalized.includes("sent"))
+  ) {
     return "invite_sent";
   }
-  if (normalized.includes("cancel")) {
-    return "match_cancelled";
+  return null;
+};
+
+const resolveCanonicalType = (rawType = "", notification = {}) => {
+  const primaryCandidates = [
+    rawType,
+    notification.type,
+    notification.event,
+    notification.kind,
+    notification.action,
+    notification.category,
+    notification.subtype,
+    notification.topic,
+    notification.subject,
+    notification.activity,
+    notification.activity_type,
+    notification.activityType,
+    notification.notification_type,
+    notification.notificationType,
+    notification.event_type,
+    notification.eventType,
+    notification.action_type,
+    notification.actionType,
+    notification.context?.type,
+    notification.context?.event,
+    notification.context?.action,
+    notification.context?.category,
+    notification.context?.subtype,
+    notification.context?.topic,
+    notification.context?.subject,
+    notification.context?.activity,
+    notification.context?.activity_type,
+    notification.meta?.type,
+    notification.meta?.event,
+    notification.meta?.action,
+    notification.meta?.category,
+    notification.meta?.subject,
+    notification.meta?.activity,
+    notification.meta?.activity_type,
+    notification.data?.type,
+    notification.data?.event,
+    notification.data?.action,
+    notification.data?.category,
+    notification.data?.subject,
+    notification.data?.activity,
+    notification.data?.activity_type,
+  ];
+
+  const attributeSources = [
+    notification.attributes,
+    notification.context?.attributes,
+    notification.meta?.attributes,
+    notification.data?.attributes,
+  ];
+
+  for (const source of attributeSources) {
+    if (!source || typeof source !== "object") continue;
+    primaryCandidates.push(
+      source.type,
+      source.event,
+      source.action,
+      source.category,
+      source.subtype,
+      source.topic,
+      source.subject,
+      source.activity,
+      source.activity_type,
+      source.activityType,
+      source.status,
+    );
   }
 
-  const status =
-    notification.status ||
-    notification.context?.status ||
-    notification.meta?.status ||
-    notification.data?.status ||
-    "";
-  const statusNormalized = status.toString().toLowerCase();
-  if (statusNormalized === "full") return "match_full";
-  if (statusNormalized === "declined") return "invite_declined";
-  if (statusNormalized === "accepted") return "invite_accepted";
+  const tagCandidates = [
+    ...buildQueryArray(notification.tags),
+    ...buildQueryArray(notification.labels),
+    ...buildQueryArray(notification.context?.tags),
+    ...buildQueryArray(notification.context?.labels),
+    ...buildQueryArray(notification.meta?.tags),
+    ...buildQueryArray(notification.meta?.labels),
+    ...buildQueryArray(notification.data?.tags),
+    ...buildQueryArray(notification.data?.labels),
+  ];
+
+  primaryCandidates.push(...tagCandidates);
+
+  for (const candidate of primaryCandidates) {
+    const match = matchCanonicalTypeFromString(candidate);
+    if (match) return match;
+  }
+
+  const statusCandidates = [
+    notification.status,
+    notification.context?.status,
+    notification.meta?.status,
+    notification.data?.status,
+    notification.attributes?.status,
+    notification.context?.attributes?.status,
+    notification.meta?.attributes?.status,
+    notification.data?.attributes?.status,
+  ];
+
+  for (const candidate of statusCandidates) {
+    const match = matchCanonicalTypeFromString(candidate);
+    if (match) return match;
+    const normalized = cleanString(candidate).toLowerCase();
+    if (normalized === "full") return "match_full";
+    if (normalized === "declined") return "invite_declined";
+    if (normalized === "accepted" || normalized === "approved" || normalized === "confirmed") {
+      return "invite_accepted";
+    }
+  }
 
   const message =
     cleanString(notification.message) ||
     cleanString(notification.description) ||
-    cleanString(notification.summary);
+    cleanString(notification.summary) ||
+    cleanString(notification.context?.message) ||
+    cleanString(notification.context?.description) ||
+    cleanString(notification.context?.summary) ||
+    cleanString(notification.meta?.message) ||
+    cleanString(notification.meta?.description) ||
+    cleanString(notification.meta?.summary) ||
+    cleanString(notification.data?.message) ||
+    cleanString(notification.data?.description) ||
+    cleanString(notification.data?.summary) ||
+    cleanString(notification.title) ||
+    cleanString(notification.body);
   if (message) {
+    const match = matchCanonicalTypeFromString(message);
+    if (match) return match;
     const lower = message.toLowerCase();
-    if (lower.includes("declined")) return "invite_declined";
-    if (lower.includes("accepted")) return "invite_accepted";
     if (lower.includes("joined")) return "player_joined";
     if (lower.includes("left")) return "player_left";
     if (lower.includes("updated")) return "match_updated";
@@ -365,7 +555,16 @@ const buildNotificationPresentation = (notification) => {
   const message =
     cleanString(notification.message) ||
     cleanString(notification.description) ||
-    cleanString(notification.summary);
+    cleanString(notification.summary) ||
+    cleanString(notification.context?.message) ||
+    cleanString(notification.context?.description) ||
+    cleanString(notification.context?.summary) ||
+    cleanString(notification.meta?.message) ||
+    cleanString(notification.meta?.description) ||
+    cleanString(notification.meta?.summary) ||
+    cleanString(notification.data?.message) ||
+    cleanString(notification.data?.description) ||
+    cleanString(notification.data?.summary);
   const changeDetails =
     parseChangeList(notification.changes || notification.context?.changes || notification.meta?.changes);
   const detailList =
@@ -715,9 +914,7 @@ const NotificationsFeed = ({
         const now = Date.now();
         const retryAt = nextNotificationRetryAtRef.current || 0;
         const allowNotifications =
-          notificationsSupported ||
-          (!notificationsSupported && retryAt && now >= retryAt) ||
-          (forceNotifications && (!retryAt || now >= retryAt));
+          notificationsSupported || forceNotifications || now >= retryAt;
 
         if (allowNotifications) {
           data = await listNotifications({ perPage: 50 });
