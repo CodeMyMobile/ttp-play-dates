@@ -16,7 +16,10 @@ import {
 import { listNotifications } from "./services/notifications";
 import { getStoredAuthToken } from "./services/authToken";
 import ProfileManager from "./components/ProfileManager";
-import NotificationsFeed, { buildNotificationPresentation } from "./components/NotificationsFeed";
+import NotificationsFeed, {
+  buildNotificationPresentation,
+  buildInviteNotification,
+} from "./components/NotificationsFeed";
 import ActivityFeed from "./components/ActivityFeed";
 import {
   getInviteByToken,
@@ -125,6 +128,8 @@ const matchFormatOptions = [
   "Round Robin",
   "Other",
 ];
+
+const HOME_FEED_ITEM_LIMIT = 12;
 
 const getInitialPath = () => {
   if (typeof window === "undefined") return "/";
@@ -1912,13 +1917,15 @@ const TennisMatchApp = () => {
   );
 
   const loadInviteSummary = useCallback(async () => {
+    const emptySummary = { total: 0, unread: 0, latest: null };
     if (!inviteSummaryFallbackSupportedRef.current) {
-      handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
-      return false;
+      handleNotificationsSummaryChange(emptySummary);
+      setHomeFeedNotifications([]);
+      return { success: false, notifications: [] };
     }
 
     try {
-      const data = await listInvites({ perPage: 20 });
+      const data = await listInvites({ perPage: 50 });
       const invitesArray = Array.isArray(data?.invites)
         ? data.invites
         : Array.isArray(data?.data)
@@ -1926,43 +1933,67 @@ const TennisMatchApp = () => {
         : Array.isArray(data)
         ? data
         : [];
-      if (invitesArray.length === 0) {
-        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
-        inviteSummaryErrorLoggedRef.current = false;
-        return true;
-      }
+
+      const normalizedNotifications = invitesArray
+        .map((invite) => {
+          try {
+            return buildInviteNotification(invite);
+          } catch (inviteError) {
+            console.error(
+              "Failed to normalize invite for activity feed",
+              inviteError,
+              invite,
+            );
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aTime = a.createdAt ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+
       const unreadCount = invitesArray.filter((invite) => {
         const status = deriveInviteStatus(invite);
         return status === "pending" || status === "sent";
       }).length;
+
       const latestDate = invitesArray.reduce((latest, invite) => {
         const timestamp = pickInviteTimestamp(invite);
         if (!timestamp) return latest;
         if (!latest) return timestamp;
         return timestamp.getTime() > latest.getTime() ? timestamp : latest;
       }, null);
+
       handleNotificationsSummaryChange({
-        total: invitesArray.length,
+        total: normalizedNotifications.length,
         unread: unreadCount,
         latest: latestDate || null,
       });
+
+      setHomeFeedNotifications(normalizedNotifications.slice(0, HOME_FEED_ITEM_LIMIT));
       inviteSummaryFallbackSupportedRef.current = true;
       inviteSummaryErrorLoggedRef.current = false;
-      return true;
+      return { success: true, notifications: normalizedNotifications };
     } catch (fallbackError) {
-      const statusCode = Number(fallbackError?.status ?? fallbackError?.response?.status);
+      const statusCode = Number(
+        fallbackError?.status ?? fallbackError?.response?.status,
+      );
       if (statusCode === 404) {
         inviteSummaryFallbackSupportedRef.current = false;
-        handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
-        return false;
+        handleNotificationsSummaryChange(emptySummary);
+        setHomeFeedNotifications([]);
+        return { success: false, notifications: [] };
       }
       if (!inviteSummaryErrorLoggedRef.current) {
         console.error("Failed to load invite summary fallback", fallbackError);
         inviteSummaryErrorLoggedRef.current = true;
       }
-      return false;
+      return { success: false, notifications: [] };
     }
   }, [
+    buildInviteNotification,
     deriveInviteStatus,
     handleNotificationsSummaryChange,
     pickInviteTimestamp,
@@ -1989,17 +2020,19 @@ const TennisMatchApp = () => {
         notificationsSupported || forceRetry || (retryAt && now >= retryAt);
 
       if (!shouldAttemptNotifications) {
-        const fallbackLoaded = await loadInviteSummary();
-        if (!fallbackLoaded) {
+        const fallbackResult = await loadInviteSummary();
+        if (!fallbackResult.success) {
+          setHomeFeedNotifications([]);
           setHomeFeedError("We couldn't load updates. Try again soon.");
+        } else {
+          setHomeFeedError("");
         }
-        setHomeFeedNotifications([]);
         setHomeFeedLoading(false);
         return;
       }
 
       try {
-        const data = await listNotifications({ perPage: 10 });
+        const data = await listNotifications({ perPage: HOME_FEED_ITEM_LIMIT });
         const rawList = (() => {
           if (Array.isArray(data?.notifications)) return data.notifications;
           if (Array.isArray(data?.data)) return data.data;
@@ -2042,15 +2075,15 @@ const TennisMatchApp = () => {
           })
           .filter(Boolean);
 
-        setHomeFeedNotifications(normalizedNotifications.slice(0, 8));
+        setHomeFeedNotifications(normalizedNotifications.slice(0, HOME_FEED_ITEM_LIMIT));
         setHomeFeedError("");
         notificationSummaryErrorLoggedRef.current = false;
         notificationSummaryRetryAtRef.current = 0;
         setNotificationsSupported(true);
       } catch (error) {
         const statusCode = Number(error?.status ?? error?.response?.status);
-        setHomeFeedNotifications([]);
         if (statusCode === 401 || statusCode === 403) {
+          setHomeFeedNotifications([]);
           handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
           setLastSeenNotificationAt(null);
           notificationSummaryErrorLoggedRef.current = false;
@@ -2058,8 +2091,9 @@ const TennisMatchApp = () => {
           setNotificationsSupported(true);
           setHomeFeedError("");
         } else {
-          const fallbackLoaded = await loadInviteSummary();
-          if (!fallbackLoaded) {
+          const fallbackResult = await loadInviteSummary();
+          if (!fallbackResult.success) {
+            setHomeFeedNotifications([]);
             if (!notificationSummaryErrorLoggedRef.current) {
               console.error("Failed to load notification summary", error);
               notificationSummaryErrorLoggedRef.current = true;
@@ -3028,7 +3062,7 @@ const TennisMatchApp = () => {
         const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : -Infinity;
         return bTime - aTime;
       })
-      .slice(0, 8);
+      .slice(0, HOME_FEED_ITEM_LIMIT);
   }, [
     currentUser,
     deriveInviteStatus,

@@ -2,9 +2,24 @@ import api, { unwrap } from "./api";
 
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams();
+  const normalizeKey = (key) => {
+    switch (key) {
+      case "perPage":
+        return "per_page";
+      case "matchId":
+        return "match_id";
+      default:
+        return key;
+    }
+  };
+
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
-    search.set(key, value);
+    const normalizedKey = normalizeKey(key);
+    search.set(normalizedKey, value);
+    if (normalizedKey !== key) {
+      search.set(key, value);
+    }
   });
   const str = search.toString();
   return str ? `?${str}` : "";
