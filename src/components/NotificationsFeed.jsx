@@ -903,9 +903,7 @@ const NotificationsFeed = ({
         const now = Date.now();
         const retryAt = nextNotificationRetryAtRef.current || 0;
         const allowNotifications =
-          notificationsSupported ||
-          (!notificationsSupported && retryAt && now >= retryAt) ||
-          (forceNotifications && (!retryAt || now >= retryAt));
+          notificationsSupported || forceNotifications || now >= retryAt;
 
         if (allowNotifications) {
           data = await listNotifications({ perPage: 50 });
