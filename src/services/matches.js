@@ -15,13 +15,41 @@ export const getMatch = async (id, { filter } = {}) => {
   return unwrap(api(`/matches/${id}${query}`));
 };
 
-export const createMatch = (match) =>
-  unwrap(
+export const createMatch = async (match) => {
+  const response = await unwrap(
     api(`/matches`, {
       method: "POST",
       body: JSON.stringify(match),
     })
   );
+
+  const createdMatch =
+    (response && typeof response === "object" && response.match) || response;
+  const matchId =
+    createdMatch?.id ?? createdMatch?.match_id ?? createdMatch?.matchId ?? null;
+
+  let shareUrl =
+    (response && typeof response === "object" && response.shareUrl) || null;
+
+  if (matchId && !shareUrl) {
+    try {
+      const linkResponse = await getShareLink(matchId);
+      shareUrl = linkResponse?.shareUrl || null;
+    } catch (error) {
+      console.warn("Failed to load share link after creating match", error);
+    }
+  }
+
+  if (response && typeof response === "object" && !Array.isArray(response)) {
+    return {
+      ...response,
+      match: createdMatch,
+      shareUrl,
+    };
+  }
+
+  return { match: createdMatch, shareUrl };
+};
 
 const pickArray = (...candidates) => {
   for (const candidate of candidates) {

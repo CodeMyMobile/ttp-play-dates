@@ -18,6 +18,11 @@ import {
 import { listNotifications } from "../services/notifications";
 import { listInvites } from "../services/invites";
 import { getStoredAuthToken } from "../services/authToken";
+import {
+  deriveListingVisibility,
+  normalizeListingVisibility,
+  isLinkOnlyVisibility,
+} from "../utils/listingVisibility";
 
 const buildQueryArray = (value) => {
   if (Array.isArray(value)) return value;
@@ -370,6 +375,10 @@ const buildNotificationPresentation = (notification) => {
 
   const tags = buildQueryArray(notification.tags || notification.labels).map(cleanString).filter(Boolean);
 
+  const listingVisibility = normalizeListingVisibility(
+    deriveListingVisibility(notification, notification.context, notification.meta, match)
+  );
+
   let title = message || "";
   let body = cleanString(notification.body) || cleanString(notification.note) || "";
 
@@ -452,6 +461,8 @@ const buildNotificationPresentation = (notification) => {
     details: detailList,
     actorName,
     playerName,
+    listingVisibility,
+    isLinkOnly: isLinkOnlyVisibility(listingVisibility),
     raw: notification,
   };
 };
