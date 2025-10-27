@@ -50,13 +50,21 @@ const formatPersonName = (subject, fallback = "") => {
       lastName,
       display_name,
       displayName,
+      player_name,
+      playerName,
+      member_name,
+      memberName,
     } = subject;
     const direct =
       cleanString(name) ||
       cleanString(full_name) ||
       cleanString(fullName) ||
       cleanString(display_name) ||
-      cleanString(displayName);
+      cleanString(displayName) ||
+      cleanString(player_name) ||
+      cleanString(playerName) ||
+      cleanString(member_name) ||
+      cleanString(memberName);
     if (direct) return direct;
     const first = cleanString(first_name) || cleanString(firstName);
     const last = cleanString(last_name) || cleanString(lastName);
@@ -226,9 +234,17 @@ const resolvePlayerFromNotification = (notification) => {
     notification.member ||
     notification.invitee ||
     notification.participant ||
+    notification.player_name ||
+    notification.playerName ||
     notification.context?.player ||
+    notification.context?.player_name ||
+    notification.context?.playerName ||
     notification.data?.player ||
+    notification.data?.player_name ||
+    notification.data?.playerName ||
     notification.meta?.player ||
+    notification.meta?.player_name ||
+    notification.meta?.playerName ||
     null
   );
 };
