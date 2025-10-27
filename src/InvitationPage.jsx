@@ -1969,7 +1969,7 @@ function mapAcceptError(error) {
     return "This invite is no longer available. Ask the host to send a new link.";
   }
   if (status === 409 || code.includes("full")) {
-    return "This match is already full or unavailable.";
+    return "This match is already full or unavailable. Let the organizer know you're available if a spot opens up.";
   }
   if (code.includes("revoked")) {
     return "The host revoked this invite. Ask them for a new link.";

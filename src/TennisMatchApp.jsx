@@ -4331,7 +4331,7 @@ const TennisMatchApp = () => {
                         normalizedMessage.includes("full")
                       ) {
                         displayToast(
-                          "This match is already full. We'll let you know if a spot opens up.",
+                          "This match is already full. Let the organizer know if you're available to sub in.",
                           "error",
                         );
                       } else if (
