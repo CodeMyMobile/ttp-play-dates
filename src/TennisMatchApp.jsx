@@ -81,6 +81,7 @@ import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
 import MatchDetailsModal from "./components/MatchDetailsModal";
 import LandingPage from "./pages/LandingPage.jsx";
+import PlayerConnectionsPage from "./pages/PlayerConnectionsPage.jsx";
 import {
   formatPhoneNumber,
   normalizePhoneValue,
@@ -148,6 +149,7 @@ const getInitialPath = () => {
 
 const deriveScreenFromPath = (path) => {
   if (path === "/invites") return "invites";
+  if (path === "/players") return "players";
   if (/^\/matches\/[^/]+\/invite$/.test(path)) return "invite";
   return "browse";
 };
@@ -2223,6 +2225,13 @@ const TennisMatchApp = () => {
     }
   }, [location.pathname, navigate]);
 
+  const goToPlayers = useCallback(() => {
+    setCurrentScreen("players");
+    if (location.pathname !== "/players") {
+      navigate("/players");
+    }
+  }, [location.pathname, navigate]);
+
   useEffect(() => {
     if (currentScreen !== "invites") return;
     if (!notificationSummary.latest) return;
@@ -2514,6 +2523,14 @@ const TennisMatchApp = () => {
       lastInviteLoadRef.current = null;
       if (currentScreen !== "invites") {
         setCurrentScreen("invites");
+      }
+      return;
+    }
+
+    if (path === "/players") {
+      lastInviteLoadRef.current = null;
+      if (currentScreen !== "players") {
+        setCurrentScreen("players");
       }
       return;
     }
@@ -7629,6 +7646,7 @@ const TennisMatchApp = () => {
             showPreview={showPreview}
             goToInvites={goToInvites}
             goToBrowse={() => goToBrowse()}
+            goToPlayers={goToPlayers}
             onOpenProfile={() => setShowProfileManager(true)}
             onLogout={handleLogout}
             onOpenSignIn={() => setShowSignInModal(true)}
@@ -7664,6 +7682,14 @@ const TennisMatchApp = () => {
               onOpenMatch={handleViewDetails}
               notificationsSupported={notificationsSupported}
               onAvailabilityChange={handleNotificationsAvailabilityChange}
+            />
+          )}
+          {currentScreen === "players" && (
+            <PlayerConnectionsPage
+              currentUser={currentUser}
+              memberIdentityIds={memberIdentityIds}
+              onOpenMatch={handleViewDetails}
+              formatDateTime={formatDateTime}
             />
           )}
         </>
