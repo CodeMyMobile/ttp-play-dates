@@ -109,7 +109,7 @@ import {
   memberMatchesInvite,
   memberMatchesParticipant,
 } from "./utils/memberIdentity";
-import { getMatchPrivacy } from "./utils/matchPrivacy";
+import { getMatchPrivacy, isOpenMatch } from "./utils/matchPrivacy";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
 import { buildRecentPartnerSuggestions } from "./utils/inviteSuggestions";
 import {
@@ -713,6 +713,7 @@ const TennisMatchApp = () => {
   const [homeFeedNotifications, setHomeFeedNotifications] = useState([]);
   const [homeFeedLoading, setHomeFeedLoading] = useState(false);
   const [homeFeedError, setHomeFeedError] = useState("");
+  const [sharingMatchIds, setSharingMatchIds] = useState(() => new Set());
   const [locationFilter, setLocationFilter] = useState(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -2397,6 +2398,78 @@ const TennisMatchApp = () => {
     [displayToast, goToBrowse, navigate],
   );
 
+  const handleShareMatch = useCallback(
+    async (matchId) => {
+      const numericMatchId = Number(matchId);
+      if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) {
+        displayToast("Match not found", "error");
+        return;
+      }
+
+      const shareKey = String(matchId);
+      let shouldFetch = false;
+      setSharingMatchIds((previous) => {
+        if (previous.has(shareKey)) {
+          return previous;
+        }
+        shouldFetch = true;
+        const next = new Set(previous);
+        next.add(shareKey);
+        return next;
+      });
+
+      if (!shouldFetch) return;
+
+      try {
+        const { shareUrl } = await getShareLink(numericMatchId);
+        const link = typeof shareUrl === "string" ? shareUrl.trim() : "";
+        if (!link) {
+          displayToast("Share link unavailable right now", "error");
+          return;
+        }
+
+        const clipboard =
+          typeof navigator !== "undefined" ? navigator.clipboard : null;
+        if (clipboard?.writeText) {
+          try {
+            await clipboard.writeText(link);
+            displayToast("Share link copied!");
+            return;
+          } catch (clipboardError) {
+            console.warn("Failed to copy share link", clipboardError);
+          }
+        }
+
+        if (typeof window !== "undefined") {
+          try {
+            window.prompt("Copy this share link:", link);
+          } catch (promptError) {
+            console.warn("Prompt for share link failed", promptError);
+          }
+        }
+
+        displayToast("Share link ready to send.", "success");
+      } catch (error) {
+        console.error("Failed to generate share link", error);
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Failed to generate share link";
+        displayToast(message, "error");
+      } finally {
+        setSharingMatchIds((previous) => {
+          if (!previous.has(shareKey)) {
+            return previous;
+          }
+          const next = new Set(previous);
+          next.delete(shareKey);
+          return next;
+        });
+      }
+    },
+    [displayToast],
+  );
+
   const closeMatchDetailsModal = useCallback(() => {
     setShowMatchDetailsModal(false);
     setViewMatch(null);
@@ -3026,11 +3099,22 @@ const TennisMatchApp = () => {
 
       const actions = [];
       if (matchId) {
-        actions.push({
-          label: "Manage invites",
-          onClick: () => openInviteScreen(matchId),
-          variant: "danger",
-        });
+        const shareKey = String(matchId);
+        const shareInProgress = sharingMatchIds.has(shareKey);
+        if (isOpenMatch(match)) {
+          actions.push({
+            label: shareInProgress ? "Copying..." : "Share match",
+            onClick: () => handleShareMatch(matchId),
+            variant: "success",
+            disabled: shareInProgress,
+          });
+        } else {
+          actions.push({
+            label: "Manage invites",
+            onClick: () => openInviteScreen(matchId),
+            variant: "danger",
+          });
+        }
         actions.push({
           label: "View match",
           onClick: () => handleViewDetails(matchId),
@@ -3071,9 +3155,11 @@ const TennisMatchApp = () => {
     formatRelativeTimeFromNow,
     goToInvites,
     handleViewDetails,
+    handleShareMatch,
     homeFeedNotifications,
     matchesNeedingAttention,
     openInviteScreen,
+    sharingMatchIds,
     parseDateValue,
     pendingInvites,
     respondToInvite,
