@@ -37,13 +37,21 @@ export const login = async (email, password) => {
 
 export const signup = async ({ email, password, name, phone, user_type = 2 }) => {
   const normalizedPhone = getPhoneDigits(phone);
+  const trimmedName = typeof name === "string" ? name.trim() : "";
+
+  if (!trimmedName) {
+    const error = new Error("Please enter your full name to continue.");
+    error.fieldErrors = { fullName: "Please enter your full name" };
+    throw error;
+  }
 
   const payload = {
     email,
     password,
     user_type,
     // Common backend field names; adjust if your API differs
-    full_name: name,
+    full_name: trimmedName,
+    name: trimmedName,
     ...(normalizedPhone ? { phone: normalizedPhone } : {}),
   };
   const data = await unwrap(
