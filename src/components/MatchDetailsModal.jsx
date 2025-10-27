@@ -2098,7 +2098,7 @@ const MatchDetailsModal = ({
         );
       })}
       {openSpotCount > 0 && (
-        <section className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 shadow-inner">
+        <section className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 shadow-inner">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
             <Users className="h-4 w-4 text-slate-500" />
             <span>
@@ -2133,7 +2133,7 @@ const MatchDetailsModal = ({
   );
 
   const renderPendingInvites = () => (
-    <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+    <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
       <div className="flex items-center gap-2">
         <Mail className="h-4 w-4 text-blue-600" />
         <p className="text-sm font-black text-blue-900">
@@ -2504,7 +2504,7 @@ const MatchDetailsModal = ({
             </div>
             {renderPlayers()}
             {isHost && (
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-black text-emerald-900">
@@ -2536,7 +2536,7 @@ const MatchDetailsModal = ({
 
           {!isArchived && !isCancelled && (
             isOpenMatch ? (
-              <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+              <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
                 <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
                   <Share2 className="h-4 w-4" />
                   Invite other players
@@ -2608,7 +2608,7 @@ const MatchDetailsModal = ({
               </section>
             ) : (
               isHost && (
-                <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+                <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
                   <div className="flex items-center gap-2 text-sm font-black text-blue-900">
                     <UserPlus className="h-4 w-4" />
                     Invite players directly
@@ -2823,7 +2823,7 @@ const MatchDetailsModal = ({
       </section>
 
       {isOpenMatch && !isHost && (
-        <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+        <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
           <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
             <Share2 className="h-4 w-4" />
             Invite other players
@@ -2993,7 +2993,7 @@ const MatchDetailsModal = ({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-gray-600 shadow hover:text-gray-900"
+          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-600 shadow hover:text-gray-900"
           aria-label="Close match details"
         >
           <X className="h-5 w-5" />
