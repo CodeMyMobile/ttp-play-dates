@@ -976,6 +976,13 @@ const TennisMatchApp = () => {
       const trimmedName = name?.trim() ?? "";
       const normalizedPhoneDigits = getPhoneDigits(phone);
 
+      if (!trimmedName) {
+        const message = "Please enter your full name to continue.";
+        const missingNameError = new Error(message);
+        missingNameError.fieldErrors = { fullName: "Please enter your full name" };
+        throw missingNameError;
+      }
+
       const parseSignupError = (error) => {
         const fieldErrors = {};
         const assignFieldError = (field, value) => {
