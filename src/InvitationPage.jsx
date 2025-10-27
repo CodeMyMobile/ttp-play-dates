@@ -979,6 +979,10 @@ export default function InvitationPage() {
     const trimmedEmail = signUpEmail.trim();
     const trimmedName = signUpName.trim();
     const trimmedPhone = signUpPhone.trim();
+    if (!trimmedName) {
+      setError("Please enter your full name to sign up.");
+      return;
+    }
     if (!trimmedEmail || !signUpPassword) {
       setError("Please enter your email and create a password to sign up.");
       return;
@@ -1544,7 +1548,7 @@ export default function InvitationPage() {
         <form onSubmit={handleSignUpSubmit} className="space-y-4">
           <label className="block">
             <span className="mb-1 block text-sm font-semibold text-slate-700">
-              Full name (optional)
+              Full name
             </span>
             <input
               value={signUpName}
@@ -1552,6 +1556,7 @@ export default function InvitationPage() {
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
               placeholder="Your name"
               autoComplete="name"
+              required
             />
           </label>
           <label className="block">
