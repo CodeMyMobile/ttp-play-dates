@@ -360,8 +360,10 @@ const buildNotificationPresentation = (notification) => {
     parseTimestamp(notification.time);
   const matchLabel = deriveMatchLabel(match);
   const matchId = deriveMatchId(match);
-  const actorName = formatPersonName(actor, "Someone");
-  const playerName = formatPersonName(player, "A player");
+  const actorNameRaw = formatPersonName(actor, "");
+  const actorName = actorNameRaw || "Someone";
+  const playerNameRaw = formatPersonName(player, "");
+  const playerName = playerNameRaw || actorNameRaw || "A player";
   const message =
     cleanString(notification.message) ||
     cleanString(notification.description) ||
