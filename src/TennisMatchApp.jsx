@@ -2138,7 +2138,8 @@ const TennisMatchApp = () => {
   const loadInviteSummary = useCallback(async () => {
     if (!inviteSummaryFallbackSupportedRef.current) {
       handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
-      return false;
+      inviteSummaryErrorLoggedRef.current = false;
+      return true;
     }
 
     try {
@@ -2274,12 +2275,21 @@ const TennisMatchApp = () => {
       } catch (error) {
         const statusCode = Number(error?.status ?? error?.response?.status);
         setHomeFeedNotifications([]);
+
         if (statusCode === 401 || statusCode === 403) {
           handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
           setLastSeenNotificationAt(null);
           notificationSummaryErrorLoggedRef.current = false;
           notificationSummaryRetryAtRef.current = 0;
           setNotificationsSupported(true);
+          setHomeFeedError("");
+        } else if (statusCode === 404) {
+          handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+          setLastSeenNotificationAt(null);
+          inviteSummaryFallbackSupportedRef.current = false;
+          notificationSummaryErrorLoggedRef.current = false;
+          notificationSummaryRetryAtRef.current = Number.POSITIVE_INFINITY;
+          setNotificationsSupported(false);
           setHomeFeedError("");
         } else {
           const fallbackLoaded = await loadInviteSummary();
