@@ -19,6 +19,7 @@ import {
 } from "../utils/participants";
 import { memberMatchesParticipant } from "../utils/memberIdentity";
 import { getAvatarUrlFromPlayer } from "../utils/avatar";
+import { ARCHIVE_FILTER_VALUE } from "../utils/archive";
 
 const PARTICIPANT_ID_KEYS = [
   "match_participant_id",
@@ -203,6 +204,31 @@ const MATCH_DATE_KEYS = [
   ["match", "dateTime"],
 ];
 
+const pickArrayLike = (...candidates) => {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+    if (
+      candidate &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate)
+    ) {
+      if (Array.isArray(candidate.data)) {
+        return candidate.data;
+      }
+      if (Array.isArray(candidate.items)) {
+        return candidate.items;
+      }
+      if (Array.isArray(candidate.results)) {
+        return candidate.results;
+      }
+    }
+  }
+  return [];
+};
+
 const readValue = (subject, key) => {
   if (!subject || typeof subject !== "object") return undefined;
   if (Array.isArray(key)) {
@@ -335,14 +361,61 @@ const extractMatchDate = (match) => {
 
 const normalizeMatchRecord = (raw) => {
   if (!raw || typeof raw !== "object") return {};
+
   if (raw.match && typeof raw.match === "object") {
+    const matchData = raw.match;
+    const participants = pickArrayLike(
+      raw.participants,
+      matchData.participants,
+      raw.match_participants,
+      raw.matchParticipants,
+      matchData.match_participants,
+      matchData.matchParticipants,
+      raw.players,
+      matchData.players,
+      raw.player_participants,
+      raw.playerParticipants,
+      matchData.player_participants,
+      matchData.playerParticipants,
+    );
+    const invitees = pickArrayLike(
+      raw.invitees,
+      matchData.invitees,
+      raw.match_invites,
+      raw.matchInvites,
+      matchData.match_invites,
+      matchData.matchInvites,
+      raw.invites,
+      matchData.invites,
+    );
+
     return {
-      ...raw.match,
-      participants: raw.participants || raw.match.participants || [],
-      invitees: raw.invitees || raw.match.invitees || [],
+      ...matchData,
+      participants,
+      invitees,
     };
   }
-  return raw;
+
+  const participants = pickArrayLike(
+    raw.participants,
+    raw.match_participants,
+    raw.matchParticipants,
+    raw.players,
+    raw.player_participants,
+    raw.playerParticipants,
+  );
+  const invitees = pickArrayLike(
+    raw.invitees,
+    raw.match_invites,
+    raw.matchInvites,
+    raw.invites,
+  );
+
+  return {
+    ...raw,
+    participants,
+    invitees,
+  };
 };
 
 const buildPlayerSummaries = (matches, currentUser, memberIdentityIds) => {
@@ -481,6 +554,58 @@ const PlayerConnectionsPage = ({
   useEffect(() => {
     let isMounted = true;
 
+    const fetchMatchesForFilter = async (filterValue) => {
+      const aggregated = [];
+      let page = 1;
+      const perPage = 25;
+      let keepFetching = true;
+
+      while (keepFetching) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await listMatches(filterValue, { page, perPage });
+        const batch = Array.isArray(response?.matches)
+          ? response.matches
+          : Array.isArray(response)
+            ? response
+            : [];
+        aggregated.push(...batch);
+
+        const pagination = response?.pagination || {};
+        const received = batch.length;
+        const per = Number(
+          pagination.perPage ??
+            pagination.per_page ??
+            pagination.page_size ??
+            perPage,
+        );
+        const total = Number(pagination.total);
+        const pageCount = Number(
+          pagination.pageCount ?? pagination.total_pages ?? pagination.pages,
+        );
+        const currentPage = Number(pagination.page ?? page);
+
+        const reachedTotal = Number.isFinite(total)
+          ? aggregated.length >= total
+          : false;
+        const reachedPageCount = Number.isFinite(pageCount)
+          ? currentPage >= pageCount
+          : false;
+        const exhaustedBatch =
+          !Number.isFinite(per) || per <= 0 ? received === 0 : received < per;
+
+        if (reachedTotal || reachedPageCount || exhaustedBatch) {
+          keepFetching = false;
+        } else {
+          page += 1;
+          if (page > 20) {
+            keepFetching = false;
+          }
+        }
+      }
+
+      return aggregated;
+    };
+
     const fetchMatches = async () => {
       if (!currentUser) {
         if (isMounted) {
@@ -496,67 +621,75 @@ const PlayerConnectionsPage = ({
         setError("");
       }
 
+      const filtersToFetch = Array.from(
+        new Set(["my", ARCHIVE_FILTER_VALUE].filter(Boolean)),
+      );
+
+      const aggregated = [];
+      let firstError = null;
+      let successfulFetches = 0;
+
       try {
-        const aggregated = [];
-        let page = 1;
-        const perPage = 25;
-        let keepFetching = true;
-
-        while (keepFetching) {
-          // eslint-disable-next-line no-await-in-loop
-          const response = await listMatches("my", { page, perPage });
-          const batch = Array.isArray(response?.matches)
-            ? response.matches
-            : Array.isArray(response)
-              ? response
-              : [];
-          aggregated.push(...batch);
-
-          const pagination = response?.pagination || {};
-          const received = batch.length;
-          const per = Number(
-            pagination.perPage ??
-              pagination.per_page ??
-              pagination.page_size ??
-              perPage,
-          );
-          const total = Number(pagination.total);
-          const pageCount = Number(
-            pagination.pageCount ?? pagination.total_pages ?? pagination.pages,
-          );
-          const currentPage = Number(pagination.page ?? page);
-
-          const reachedTotal = Number.isFinite(total)
-            ? aggregated.length >= total
-            : false;
-          const reachedPageCount = Number.isFinite(pageCount)
-            ? currentPage >= pageCount
-            : false;
-          const exhaustedBatch =
-            !Number.isFinite(per) || per <= 0 ? received === 0 : received < per;
-
-          if (reachedTotal || reachedPageCount || exhaustedBatch) {
-            keepFetching = false;
-          } else {
-            page += 1;
-            if (page > 20) {
-              keepFetching = false;
+        for (const filterValue of filtersToFetch) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const results = await fetchMatchesForFilter(filterValue);
+            aggregated.push(...results);
+            successfulFetches += 1;
+          } catch (filterError) {
+            console.error(
+              `Failed to load match history for filter "${filterValue}"`,
+              filterError,
+            );
+            if (!firstError) {
+              firstError = filterError;
             }
           }
         }
 
+        const dedupedMatches = (() => {
+          if (aggregated.length <= 1) return aggregated;
+          const seenIds = new Set();
+          const deduped = [];
+          aggregated.forEach((match) => {
+            const normalized = normalizeMatchRecord(match);
+            const matchId = extractMatchId(normalized);
+            if (matchId) {
+              if (seenIds.has(matchId)) {
+                return;
+              }
+              seenIds.add(matchId);
+            }
+            deduped.push(match);
+          });
+          return deduped;
+        })();
+
         if (isMounted) {
-          setMatches(aggregated);
+          setMatches(dedupedMatches);
+          if (
+            dedupedMatches.length === 0 &&
+            successfulFetches === 0 &&
+            firstError
+          ) {
+            setError(
+              firstError?.response?.data?.message ||
+                firstError?.message ||
+                "We couldn't load your match history.",
+            );
+          } else {
+            setError("");
+          }
         }
       } catch (err) {
         console.error("Failed to load match history", err);
         if (isMounted) {
+          setMatches([]);
           setError(
             err?.response?.data?.message ||
               err?.message ||
               "We couldn't load your match history.",
           );
-          setMatches([]);
         }
       } finally {
         if (isMounted) {
