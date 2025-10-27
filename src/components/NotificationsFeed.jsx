@@ -50,13 +50,21 @@ const formatPersonName = (subject, fallback = "") => {
       lastName,
       display_name,
       displayName,
+      player_name,
+      playerName,
+      member_name,
+      memberName,
     } = subject;
     const direct =
       cleanString(name) ||
       cleanString(full_name) ||
       cleanString(fullName) ||
       cleanString(display_name) ||
-      cleanString(displayName);
+      cleanString(displayName) ||
+      cleanString(player_name) ||
+      cleanString(playerName) ||
+      cleanString(member_name) ||
+      cleanString(memberName);
     if (direct) return direct;
     const first = cleanString(first_name) || cleanString(firstName);
     const last = cleanString(last_name) || cleanString(lastName);
@@ -226,9 +234,46 @@ const resolvePlayerFromNotification = (notification) => {
     notification.member ||
     notification.invitee ||
     notification.participant ||
+    notification.subject ||
+    notification.member_name ||
+    notification.memberName ||
+    notification.participant_name ||
+    notification.participantName ||
+    notification.player_name ||
+    notification.playerName ||
     notification.context?.player ||
+    notification.context?.member ||
+    notification.context?.invitee ||
+    notification.context?.participant ||
+    notification.context?.subject ||
+    notification.context?.member_name ||
+    notification.context?.memberName ||
+    notification.context?.participant_name ||
+    notification.context?.participantName ||
+    notification.context?.player_name ||
+    notification.context?.playerName ||
     notification.data?.player ||
+    notification.data?.member ||
+    notification.data?.invitee ||
+    notification.data?.participant ||
+    notification.data?.subject ||
+    notification.data?.member_name ||
+    notification.data?.memberName ||
+    notification.data?.participant_name ||
+    notification.data?.participantName ||
+    notification.data?.player_name ||
+    notification.data?.playerName ||
     notification.meta?.player ||
+    notification.meta?.member ||
+    notification.meta?.invitee ||
+    notification.meta?.participant ||
+    notification.meta?.subject ||
+    notification.meta?.member_name ||
+    notification.meta?.memberName ||
+    notification.meta?.participant_name ||
+    notification.meta?.participantName ||
+    notification.meta?.player_name ||
+    notification.meta?.playerName ||
     null
   );
 };
@@ -360,8 +405,10 @@ const buildNotificationPresentation = (notification) => {
     parseTimestamp(notification.time);
   const matchLabel = deriveMatchLabel(match);
   const matchId = deriveMatchId(match);
-  const actorName = formatPersonName(actor, "Someone");
-  const playerName = formatPersonName(player, "A player");
+  const actorNameRaw = formatPersonName(actor, "");
+  const actorName = actorNameRaw || "Someone";
+  const playerNameRaw = formatPersonName(player, "");
+  const playerName = playerNameRaw || actorNameRaw || "A player";
   const message =
     cleanString(notification.message) ||
     cleanString(notification.description) ||

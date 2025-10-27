@@ -2989,12 +2989,14 @@ const TennisMatchApp = () => {
         });
       }
 
+      const title = formatLabel || locationLabel || "Match invite";
+
       items.push({
         id: `invite-${invite.token || invite.id}`,
         statusLabel,
         tone,
         icon: Mail,
-        title: locationLabel ? `${formatLabel} at ${locationLabel}` : formatLabel,
+        title,
         description: hostLabel ? `Hosted by ${hostLabel}` : "Respond to secure your spot.",
         meta,
         timestamp: updatedAt || startDate || null,
