@@ -242,19 +242,20 @@ const resolveActorFromNotification = (notification) => {
   );
 };
 
-const resolveCanonicalType = (rawType = "", notification = {}) => {
-  const normalized = rawType.toString().toLowerCase();
+const matchCanonicalTypeFromString = (value = "") => {
+  const normalized = cleanString(value).toLowerCase();
+  if (!normalized) return null;
   if (normalized.includes("match") && normalized.includes("create")) {
     return "match_created";
   }
-  if (normalized.includes("match") && normalized.includes("update")) {
-    return "match_updated";
-  }
-  if (normalized.includes("match") && normalized.includes("edit")) {
+  if (normalized.includes("match") && (normalized.includes("update") || normalized.includes("edit"))) {
     return "match_updated";
   }
   if (normalized.includes("match") && normalized.includes("full")) {
     return "match_full";
+  }
+  if (normalized.includes("cancel")) {
+    return "match_cancelled";
   }
   if (normalized.includes("join") || normalized.includes("signup")) {
     return "player_joined";
@@ -262,38 +263,81 @@ const resolveCanonicalType = (rawType = "", notification = {}) => {
   if (normalized.includes("leave") || normalized.includes("remove")) {
     return "player_left";
   }
-  if (normalized.includes("decline") || normalized.includes("reject")) {
+  if (
+    normalized.includes("decline") ||
+    normalized.includes("reject") ||
+    normalized.includes("deny")
+  ) {
     return "invite_declined";
   }
-  if (normalized.includes("accept")) {
+  if (
+    normalized.includes("accept") ||
+    normalized.includes("confirm") ||
+    normalized.includes("approve")
+  ) {
     return "invite_accepted";
   }
-  if (normalized.includes("invite") && normalized.includes("send")) {
+  if (
+    normalized.includes("invite") &&
+    (normalized.includes("send") || normalized.includes("sent"))
+  ) {
     return "invite_sent";
   }
-  if (normalized.includes("cancel")) {
-    return "match_cancelled";
+  return null;
+};
+
+const resolveCanonicalType = (rawType = "", notification = {}) => {
+  const primaryCandidates = [
+    rawType,
+    notification.type,
+    notification.event,
+    notification.kind,
+    notification.action,
+    notification.category,
+    notification.context?.type,
+    notification.context?.event,
+    notification.context?.action,
+    notification.meta?.type,
+    notification.meta?.event,
+    notification.meta?.action,
+    notification.data?.type,
+    notification.data?.event,
+    notification.data?.action,
+  ];
+
+  for (const candidate of primaryCandidates) {
+    const match = matchCanonicalTypeFromString(candidate);
+    if (match) return match;
   }
 
-  const status =
-    notification.status ||
-    notification.context?.status ||
-    notification.meta?.status ||
-    notification.data?.status ||
-    "";
-  const statusNormalized = status.toString().toLowerCase();
-  if (statusNormalized === "full") return "match_full";
-  if (statusNormalized === "declined") return "invite_declined";
-  if (statusNormalized === "accepted") return "invite_accepted";
+  const statusCandidates = [
+    notification.status,
+    notification.context?.status,
+    notification.meta?.status,
+    notification.data?.status,
+  ];
+
+  for (const candidate of statusCandidates) {
+    const match = matchCanonicalTypeFromString(candidate);
+    if (match) return match;
+    const normalized = cleanString(candidate).toLowerCase();
+    if (normalized === "full") return "match_full";
+    if (normalized === "declined") return "invite_declined";
+    if (normalized === "accepted" || normalized === "approved" || normalized === "confirmed") {
+      return "invite_accepted";
+    }
+  }
 
   const message =
     cleanString(notification.message) ||
     cleanString(notification.description) ||
-    cleanString(notification.summary);
+    cleanString(notification.summary) ||
+    cleanString(notification.title) ||
+    cleanString(notification.body);
   if (message) {
+    const match = matchCanonicalTypeFromString(message);
+    if (match) return match;
     const lower = message.toLowerCase();
-    if (lower.includes("declined")) return "invite_declined";
-    if (lower.includes("accepted")) return "invite_accepted";
     if (lower.includes("joined")) return "player_joined";
     if (lower.includes("left")) return "player_left";
     if (lower.includes("updated")) return "match_updated";
