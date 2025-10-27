@@ -228,25 +228,38 @@ const pickValueByKeys = (subject, keys) => {
   return "";
 };
 
-const parseNumericId = (value) => {
+const normalizeIdentifier = (value) => {
   if (value === null || value === undefined) return null;
+
   if (typeof value === "number") {
-    return Number.isFinite(value) && value > 0 ? value : null;
+    return Number.isFinite(value) ? String(value) : null;
   }
+
   if (typeof value === "string") {
     const trimmed = value.trim();
-    if (!trimmed) return null;
-    const numeric = Number(trimmed);
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+    return trimmed.length > 0 ? trimmed : null;
   }
+
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+
+  if (typeof value === "object" && typeof value.toString === "function") {
+    const stringValue = value.toString();
+    if (typeof stringValue === "string") {
+      const trimmed = stringValue.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+
   const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  return Number.isFinite(numeric) ? String(numeric) : null;
 };
 
 const extractParticipantId = (participant) => {
   for (const key of PARTICIPANT_ID_KEYS) {
     const candidate = readValue(participant, key);
-    const parsed = parseNumericId(candidate);
+    const parsed = normalizeIdentifier(candidate);
     if (parsed !== null) {
       return parsed;
     }
@@ -257,7 +270,7 @@ const extractParticipantId = (participant) => {
 const extractMatchId = (match) => {
   for (const key of MATCH_ID_KEYS) {
     const candidate = readValue(match, key);
-    const parsed = parseNumericId(candidate);
+    const parsed = normalizeIdentifier(candidate);
     if (parsed !== null) return parsed;
   }
   return null;
