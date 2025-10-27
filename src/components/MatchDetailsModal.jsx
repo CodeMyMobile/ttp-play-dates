@@ -2734,8 +2734,8 @@ const MatchDetailsModal = ({
   };
 
   const renderSuccessView = () => (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
+    <div className="flex flex-col gap-5 sm:gap-6">
+      <div className="flex flex-col gap-3 border-b border-gray-100 pb-5 sm:gap-4">
         <div className="flex items-center gap-3">
           <PlayerAvatar
             name={hostName}
@@ -2752,7 +2752,7 @@ const MatchDetailsModal = ({
           </div>
         </div>
         {headerChips}
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 sm:p-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600">
             <CheckCircle2 className="h-5 w-5" />
           </div>
@@ -2763,7 +2763,7 @@ const MatchDetailsModal = ({
         </div>
       </div>
 
-      <section className="rounded-2xl bg-gray-50 p-4">
+      <section className="rounded-2xl bg-gray-50 p-3 sm:p-4">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
             <MapPin className="h-5 w-5 text-red-600" />
@@ -2792,7 +2792,7 @@ const MatchDetailsModal = ({
         </div>
       </section>
 
-      <section className="rounded-2xl bg-gray-50 p-4">
+      <section className="rounded-2xl bg-gray-50 p-3 sm:p-4">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
             <Trophy className="h-5 w-5 text-amber-600" />
@@ -2811,7 +2811,7 @@ const MatchDetailsModal = ({
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-2.5 sm:space-y-3">
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-emerald-500" />
           <p className="text-sm font-black text-gray-900">
@@ -2892,7 +2892,7 @@ const MatchDetailsModal = ({
       )}
 
       {match.notes && (
-        <section className="rounded-2xl border border-gray-100 bg-white p-4">
+        <section className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100">
               <FileText className="h-5 w-5 text-indigo-600" />
@@ -2905,7 +2905,7 @@ const MatchDetailsModal = ({
         </section>
       )}
 
-      <section className="rounded-2xl border border-gray-100 bg-white p-4">
+      <section className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4">
         <p className="text-sm font-black text-gray-900">What happens next</p>
         <ul className="mt-3 space-y-2 text-sm font-semibold text-gray-600">
           <li className="flex items-start gap-2">
@@ -2923,7 +2923,7 @@ const MatchDetailsModal = ({
         </ul>
       </section>
 
-      <section className="rounded-2xl border border-gray-100 bg-white p-4">
+      <section className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4">
         <p className="text-sm font-black text-gray-900">Add to calendar</p>
         <div className="mt-3 grid grid-cols-1 gap-3 text-sm font-semibold sm:grid-cols-2">
           <button
@@ -2957,7 +2957,7 @@ const MatchDetailsModal = ({
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
         <button
           type="button"
           onClick={handleLeaveMatch}
@@ -2979,7 +2979,7 @@ const MatchDetailsModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 sm:items-center sm:py-10"
+      className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-black/50 px-0 py-0 sm:items-center sm:px-4 sm:py-10"
       role="dialog"
       aria-modal="true"
       aria-labelledby="match-details-heading"
@@ -2989,7 +2989,7 @@ const MatchDetailsModal = ({
         }
       }}
     >
-      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl max-h-[calc(100vh-3rem)]">
+      <div className="relative flex w-full flex-col bg-white shadow-2xl sm:w-full sm:max-w-xl sm:max-h-[calc(100vh-3rem)] sm:overflow-hidden sm:rounded-3xl">
         <button
           type="button"
           onClick={onClose}
@@ -2998,7 +2998,7 @@ const MatchDetailsModal = ({
         >
           <X className="h-5 w-5" />
         </button>
-        <div className="flex-1 overflow-y-auto px-5 pb-6 pt-10 sm:px-8">
+        <div className="flex-1 px-5 pb-8 pt-14 sm:overflow-y-auto sm:px-8 sm:pb-6 sm:pt-12">
           {status === "success" ? renderSuccessView() : renderDefaultView()}
         </div>
       </div>
