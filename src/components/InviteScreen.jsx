@@ -28,6 +28,8 @@ import {
   memberMatchesParticipant,
 } from "../utils/memberIdentity";
 import { buildRecentPartnerSuggestions } from "../utils/inviteSuggestions";
+import PlayerAvatar from "./PlayerAvatar";
+import { getAvatarInitials, getAvatarUrlFromPlayer } from "../utils/avatar";
 
 const InviteScreen = ({
   matchId,
@@ -520,6 +522,8 @@ const InviteScreen = ({
                         const name = player.full_name || "Unknown player";
                         const pid = Number(player.user_id);
                         const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                        const avatarUrl = getAvatarUrlFromPlayer(player);
+                        const avatarInitials = getAvatarInitials(name, "UP");
                         return (
                           <li key={player.user_id}>
                             <button
@@ -533,27 +537,24 @@ const InviteScreen = ({
                                   return next;
                                 });
                               }}
-                              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
+                              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors ${
                                 selected
                                   ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-700"
                                   : "bg-white hover:bg-gray-50"
                               }`}
                             >
-                              <div
-                                className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black shadow-md ${
+                              <PlayerAvatar
+                                name={name}
+                                imageUrl={avatarUrl}
+                                fallback={avatarInitials}
+                                size="sm"
+                                showBadge={false}
+                                className={
                                   selected
-                                    ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                                    : "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
-                                }`}
-                              >
-                                {name
-                                  .split(" ")
-                                  .filter(Boolean)
-                                  .map((part) => part[0])
-                                  .join("")
-                                  .slice(0, 2)
-                                  .toUpperCase()}
-                              </div>
+                                    ? "ring-2 ring-emerald-500 ring-offset-1 ring-offset-emerald-50"
+                                    : "ring-1 ring-transparent"
+                                }
+                              />
                               <span className="text-sm font-bold text-gray-700">{name}</span>
                               {selected && <Check className="ml-auto h-4 w-4 text-green-600" />}
                             </button>
