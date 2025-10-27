@@ -2,19 +2,60 @@ import api, { unwrap } from "./api";
 
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams();
+  const normalizeKey = (key) => {
+    switch (key) {
+      case "perPage":
+        return "per_page";
+      case "matchId":
+        return "match_id";
+      default:
+        return key;
+    }
+  };
+
+  const applyValue = (targetKey, targetValue) => {
+    if (targetKey && targetValue !== undefined && targetValue !== null) {
+      search.set(targetKey, String(targetValue));
+    }
+  };
+
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
+
+    const normalizedKey = normalizeKey(key);
+
     if (Array.isArray(value)) {
-      if (value.length === 0) return;
-      search.set(key, value.join(","));
+      const normalizedValues = value
+        .map((entry) => {
+          if (entry === undefined || entry === null) return "";
+          const str = String(entry).trim();
+          return str;
+        })
+        .filter((entry) => entry.length > 0);
+      if (normalizedValues.length === 0) return;
+      const joined = normalizedValues.join(",");
+      applyValue(normalizedKey, joined);
+      if (normalizedKey !== key) {
+        applyValue(key, joined);
+      }
       return;
     }
+
     if (typeof value === "boolean") {
-      search.set(key, value ? "1" : "0");
+      const stringValue = value ? "1" : "0";
+      applyValue(normalizedKey, stringValue);
+      if (normalizedKey !== key) {
+        applyValue(key, stringValue);
+      }
       return;
     }
-    search.set(key, value);
+
+    applyValue(normalizedKey, value);
+    if (normalizedKey !== key) {
+      applyValue(key, value);
+    }
   });
+
   const str = search.toString();
   return str ? `?${str}` : "";
 };

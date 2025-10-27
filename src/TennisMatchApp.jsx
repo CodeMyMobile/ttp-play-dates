@@ -129,6 +129,8 @@ const matchFormatOptions = [
   "Other",
 ];
 
+const HOME_FEED_ITEM_LIMIT = 12;
+
 const getInitialPath = () => {
   if (typeof window === "undefined") return "/";
   const hash = window.location.hash || "";
@@ -1970,7 +1972,7 @@ const TennisMatchApp = () => {
         latest: latestDate || null,
       });
 
-      setHomeFeedNotifications(normalizedNotifications.slice(0, 8));
+      setHomeFeedNotifications(normalizedNotifications.slice(0, HOME_FEED_ITEM_LIMIT));
       inviteSummaryFallbackSupportedRef.current = true;
       inviteSummaryErrorLoggedRef.current = false;
       return { success: true, notifications: normalizedNotifications };
@@ -2030,7 +2032,7 @@ const TennisMatchApp = () => {
       }
 
       try {
-        const data = await listNotifications({ perPage: 10 });
+        const data = await listNotifications({ perPage: HOME_FEED_ITEM_LIMIT });
         const rawList = (() => {
           if (Array.isArray(data?.notifications)) return data.notifications;
           if (Array.isArray(data?.data)) return data.data;
@@ -2073,7 +2075,7 @@ const TennisMatchApp = () => {
           })
           .filter(Boolean);
 
-        setHomeFeedNotifications(normalizedNotifications.slice(0, 8));
+        setHomeFeedNotifications(normalizedNotifications.slice(0, HOME_FEED_ITEM_LIMIT));
         setHomeFeedError("");
         notificationSummaryErrorLoggedRef.current = false;
         notificationSummaryRetryAtRef.current = 0;
@@ -3060,7 +3062,7 @@ const TennisMatchApp = () => {
         const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : -Infinity;
         return bTime - aTime;
       })
-      .slice(0, 8);
+      .slice(0, HOME_FEED_ITEM_LIMIT);
   }, [
     currentUser,
     deriveInviteStatus,
