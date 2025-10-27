@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { ChevronLeft, LogOut, Bell } from "lucide-react";
+import { ChevronLeft, LogOut, Bell, Users } from "lucide-react";
 import PlayerAvatar from "./PlayerAvatar";
 import { getAvatarUrlFromPlayer } from "../utils/avatar";
 
@@ -9,6 +9,7 @@ const AppHeader = ({
   showPreview,
   goToInvites,
   goToBrowse,
+  goToPlayers,
   onOpenProfile,
   onLogout,
   onOpenSignIn,
@@ -44,6 +45,13 @@ const AppHeader = ({
             </div>
             {currentUser ? (
               <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+                <button
+                  onClick={goToPlayers}
+                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-gray-50"
+                  aria-label="View players"
+                >
+                  <Users className="w-5 h-5 text-gray-600" />
+                </button>
                 <button
                   onClick={goToInvites}
                   className="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-gray-50"
@@ -112,6 +120,26 @@ const AppHeader = ({
               <span className="text-gray-700 font-bold">Back</span>
             </button>
             <h1 className="text-xl font-black text-gray-800">Updates</h1>
+            {currentUser && (
+              <PlayerAvatar
+                name={avatarName}
+                imageUrl={currentUserAvatarUrl}
+                variant="violet"
+                size="sm"
+                className="shadow-lg"
+              />
+            )}
+          </div>
+        ) : currentScreen === "players" ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              onClick={goToBrowse}
+              className="flex items-center gap-2 rounded-xl px-3 py-2 transition-colors hover:bg-gray-50"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+              <span className="text-gray-700 font-bold">Back</span>
+            </button>
+            <h1 className="text-xl font-black text-gray-800">Match partners</h1>
             {currentUser && (
               <PlayerAvatar
                 name={avatarName}
