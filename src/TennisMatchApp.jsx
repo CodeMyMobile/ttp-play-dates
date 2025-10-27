@@ -2645,7 +2645,12 @@ const TennisMatchApp = () => {
     const baseMatches = hasLocationFilter
       ? matchesWithDistance.filter((match) => {
           if (!Number.isFinite(match.distanceMiles)) {
-            if (match.type === "hosted" || match.type === "joined" || match.isInvited) {
+            if (
+              activeFilter === "my" ||
+              match.type === "hosted" ||
+              match.type === "joined" ||
+              match.isInvited
+            ) {
               return true;
             }
             return false;
@@ -2656,6 +2661,7 @@ const TennisMatchApp = () => {
 
     return sortMatchesByRecency(baseMatches);
   }, [
+    activeFilter,
     distanceFilter,
     hasLocationFilter,
     matchesWithDistance,
