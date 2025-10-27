@@ -195,6 +195,208 @@ const calculateDistanceMiles = (lat1, lon1, lat2, lon2) => {
   return Math.round(distance * 10) / 10;
 };
 
+const TRUTHY_STRINGS = new Set(["true", "1", "yes", "y", "t", "on"]);
+const FALSY_STRINGS = new Set(["false", "0", "no", "n", "f", "off"]);
+
+const HOST_KEYWORDS = [
+  "host",
+  "hosting",
+  "organizer",
+  "organiser",
+  "owner",
+  "creator",
+  "captain",
+];
+const JOINED_KEYWORDS = [
+  "join",
+  "player",
+  "participant",
+  "playing",
+  "member",
+  "accepted",
+  "confirmed",
+  "active",
+];
+const INVITED_KEYWORDS = [
+  "invite",
+  "invited",
+  "pending",
+  "request",
+  "awaiting",
+  "sent",
+];
+
+const HOST_BOOLEAN_KEYS = [
+  "is_host",
+  "isHost",
+  "hosting",
+  "is_hosting",
+  "isHosting",
+  "user_is_host",
+  "userIsHost",
+  "member_is_host",
+  "memberIsHost",
+  "viewer_is_host",
+  "viewerIsHost",
+  "is_organizer",
+  "isOrganizer",
+  "is_organiser",
+  "isOrganiser",
+  "user_is_organizer",
+  "userIsOrganizer",
+  "user_is_organiser",
+  "userIsOrganiser",
+  "is_owner",
+  "isOwner",
+  "user_is_owner",
+  "userIsOwner",
+  "is_creator",
+  "isCreator",
+];
+const JOINED_BOOLEAN_KEYS = [
+  "is_joined",
+  "isJoined",
+  "joined",
+  "has_joined",
+  "hasJoined",
+  "is_participant",
+  "isParticipant",
+  "participating",
+  "is_playing",
+  "isPlaying",
+  "user_is_participant",
+  "userIsParticipant",
+  "member_is_participant",
+  "memberIsParticipant",
+  "viewer_is_participant",
+  "viewerIsParticipant",
+  "is_member",
+  "isMember",
+  "is_player",
+  "isPlayer",
+];
+const INVITED_BOOLEAN_KEYS = [
+  "is_invited",
+  "isInvited",
+  "invited",
+  "has_invite",
+  "hasInvite",
+  "has_pending_invite",
+  "hasPendingInvite",
+  "pending_invite",
+  "pendingInvite",
+  "user_is_invited",
+  "userIsInvited",
+  "member_is_invited",
+  "memberIsInvited",
+  "viewer_is_invited",
+  "viewerIsInvited",
+];
+
+const HOST_RELATION_KEYS = [
+  "viewer_role",
+  "viewerRole",
+  "viewer_relationship",
+  "viewerRelationship",
+  "viewer_status",
+  "viewerStatus",
+  "user_role",
+  "userRole",
+  "user_relationship",
+  "userRelationship",
+  "user_status",
+  "userStatus",
+  "membership_role",
+  "membershipRole",
+  "membership_status",
+  "membershipStatus",
+  "member_role",
+  "memberRole",
+  "member_status",
+  "memberStatus",
+  "match_membership_role",
+  "matchMembershipRole",
+  "match_membership_status",
+  "matchMembershipStatus",
+  "viewer_membership_role",
+  "viewerMembershipRole",
+  "viewer_membership_status",
+  "viewerMembershipStatus",
+  "relationship",
+  "role",
+];
+const JOINED_RELATION_KEYS = [
+  "viewer_membership_status",
+  "viewerMembershipStatus",
+  "membership_status",
+  "membershipStatus",
+  "member_status",
+  "memberStatus",
+  "match_membership_status",
+  "matchMembershipStatus",
+  "match_membership_role",
+  "matchMembershipRole",
+  "viewer_role",
+  "viewerRole",
+  "viewer_relationship",
+  "viewerRelationship",
+  "user_status",
+  "userStatus",
+  "relationship",
+  "role",
+  "participant_status",
+  "participantStatus",
+  "status_reason",
+  "statusReason",
+];
+const INVITED_RELATION_KEYS = [
+  "viewer_invite_status",
+  "viewerInviteStatus",
+  "invite_status",
+  "inviteStatus",
+  "invitation_status",
+  "invitationStatus",
+  "viewer_membership_status",
+  "viewerMembershipStatus",
+  "membership_status",
+  "membershipStatus",
+  "match_membership_status",
+  "matchMembershipStatus",
+  "viewer_role",
+  "viewerRole",
+  "viewer_relationship",
+  "viewerRelationship",
+  "relationship",
+  "role",
+];
+
+const getNestedValue = (subject, path) => {
+  if (!subject || typeof subject !== "object" || !path) return undefined;
+  if (!path.includes(".")) return subject[path];
+  return path.split(".").reduce((acc, segment) => {
+    if (!acc || typeof acc !== "object") return undefined;
+    return acc[segment];
+  }, subject);
+};
+
+const valueMatchesKeywords = (value, keywords) => {
+  if (value === undefined || value === null) return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => valueMatchesKeywords(item, keywords));
+  }
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  if (TRUTHY_STRINGS.has(normalized)) return true;
+  if (FALSY_STRINGS.has(normalized)) return false;
+  return keywords.some((keyword) => normalized.includes(keyword));
+};
+
+const matchKeywords = (subject, keys, keywords) =>
+  keys.some((key) => valueMatchesKeywords(getNestedValue(subject, key), keywords));
+
 const collectHostContactDetails = (match) => {
   const emails = new Set();
   const normalizedPhones = new Set();
@@ -1571,7 +1773,11 @@ const TennisMatchApp = () => {
           }
           return false;
         })();
-        const isHost = hostMatchByIds || matchesHostEmail || matchesHostPhone;
+        const hostRelationshipHints =
+          matchKeywords(m, HOST_BOOLEAN_KEYS, HOST_KEYWORDS) ||
+          matchKeywords(m, HOST_RELATION_KEYS, HOST_KEYWORDS);
+        const isHost =
+          hostMatchByIds || matchesHostEmail || matchesHostPhone || hostRelationshipHints;
 
         const matchStartDate = (() => {
           if (!m || !m.start_date_time) return null;
@@ -1653,7 +1859,7 @@ const TennisMatchApp = () => {
           }
           return false;
         };
-        const isInvited = !isHost && invitees.some(inviteMatchesCurrentUser);
+        const inviteMatchesUser = invitees.some(inviteMatchesCurrentUser);
         const participantRecord = Array.isArray(m.participants)
           ? m.participants.find((participant) =>
               memberMatchesParticipant(currentUser, participant, memberIds),
@@ -1675,16 +1881,41 @@ const TennisMatchApp = () => {
             !hasActiveParticipant &&
             !hasAcceptedInvite);
         const joinedTimestampActive = Boolean(joinedTimestamp) && !hasDeparted;
+        const joinedRelationshipHints =
+          matchKeywords(m, JOINED_BOOLEAN_KEYS, JOINED_KEYWORDS) ||
+          matchKeywords(m, JOINED_RELATION_KEYS, JOINED_KEYWORDS);
+        const invitedRelationshipHints =
+          matchKeywords(m, INVITED_BOOLEAN_KEYS, INVITED_KEYWORDS) ||
+          matchKeywords(m, INVITED_RELATION_KEYS, INVITED_KEYWORDS);
+        const isInvitedWithHints =
+          !isHost && (inviteMatchesUser || invitedRelationshipHints);
         const isJoined =
           !isHost &&
-          (hasActiveParticipant || hasAcceptedInvite || joinedTimestampActive);
+          (hasActiveParticipant ||
+            hasAcceptedInvite ||
+            joinedTimestampActive ||
+            joinedRelationshipHints);
 
         const matchPrivacy = getMatchPrivacy(m);
         const isPrivateMatch = matchPrivacy === "private";
-        if (isPrivateMatch && !isHost && !isJoined && !isInvited) {
+        const belongsToCurrentUser = isHost || isJoined || isInvitedWithHints;
+        const filterRequiresOwnership =
+          activeFilter === "my" ||
+          activeFilter === "draft" ||
+          activeFilter === "archived";
+        if (isPrivateMatch && !belongsToCurrentUser && !filterRequiresOwnership) {
           hiddenPrivateMatches += 1;
           return null;
         }
+
+        const normalizedType = (() => {
+          if (isHost || (!belongsToCurrentUser && filterRequiresOwnership)) {
+            return "hosted";
+          }
+          if (isJoined) return "joined";
+          if (isInvitedWithHints) return "joined";
+          return "available";
+        })();
 
         const lowOccupancyAlertActive =
           isHost &&
@@ -1695,7 +1926,7 @@ const TennisMatchApp = () => {
 
         return {
           id: matchId,
-          type: isHost ? "hosted" : isJoined ? "joined" : "available",
+          type: normalizedType,
           status: m.status || "upcoming",
           privacy: matchPrivacy,
           dateTime: m.start_date_time,
@@ -1735,7 +1966,7 @@ const TennisMatchApp = () => {
           rosterSpotsRemaining,
           spotsAvailable: computedSpotsAvailable,
           capacity: capacityInfo,
-          isInvited,
+          isInvited: isInvitedWithHints,
           alerts: {
             ...(lowOccupancyAlertActive
               ? {
@@ -1914,7 +2145,8 @@ const TennisMatchApp = () => {
   const loadInviteSummary = useCallback(async () => {
     if (!inviteSummaryFallbackSupportedRef.current) {
       handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
-      return false;
+      inviteSummaryErrorLoggedRef.current = false;
+      return true;
     }
 
     try {
@@ -2050,12 +2282,21 @@ const TennisMatchApp = () => {
       } catch (error) {
         const statusCode = Number(error?.status ?? error?.response?.status);
         setHomeFeedNotifications([]);
+
         if (statusCode === 401 || statusCode === 403) {
           handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
           setLastSeenNotificationAt(null);
           notificationSummaryErrorLoggedRef.current = false;
           notificationSummaryRetryAtRef.current = 0;
           setNotificationsSupported(true);
+          setHomeFeedError("");
+        } else if (statusCode === 404) {
+          handleNotificationsSummaryChange({ total: 0, unread: 0, latest: null });
+          setLastSeenNotificationAt(null);
+          inviteSummaryFallbackSupportedRef.current = false;
+          notificationSummaryErrorLoggedRef.current = false;
+          notificationSummaryRetryAtRef.current = Number.POSITIVE_INFINITY;
+          setNotificationsSupported(false);
           setHomeFeedError("");
         } else {
           const fallbackLoaded = await loadInviteSummary();
@@ -2651,13 +2892,24 @@ const TennisMatchApp = () => {
   const displayedMatches = useMemo(() => {
     const baseMatches = hasLocationFilter
       ? matchesWithDistance.filter((match) => {
-          if (!Number.isFinite(match.distanceMiles)) return false;
+          if (!Number.isFinite(match.distanceMiles)) {
+            if (
+              activeFilter === "my" ||
+              match.type === "hosted" ||
+              match.type === "joined" ||
+              match.isInvited
+            ) {
+              return true;
+            }
+            return false;
+          }
           return match.distanceMiles <= distanceFilter;
         })
       : matchesWithDistance;
 
     return sortMatchesByRecency(baseMatches);
   }, [
+    activeFilter,
     distanceFilter,
     hasLocationFilter,
     matchesWithDistance,
