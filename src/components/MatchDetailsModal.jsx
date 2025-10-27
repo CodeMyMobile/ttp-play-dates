@@ -2998,8 +2998,10 @@ const MatchDetailsModal = ({
         >
           <X className="h-5 w-5" />
         </button>
-        <div className="flex-1 px-5 pb-8 pt-14 sm:overflow-y-auto sm:px-8 sm:pb-6 sm:pt-12">
-          {status === "success" ? renderSuccessView() : renderDefaultView()}
+        <div className="flex-1 bg-slate-50 px-5 pb-8 pt-14 sm:overflow-y-auto sm:bg-white sm:px-8 sm:pb-6 sm:pt-12">
+          <div className="mx-auto w-full max-w-2xl">
+            {status === "success" ? renderSuccessView() : renderDefaultView()}
+          </div>
         </div>
       </div>
     </div>
