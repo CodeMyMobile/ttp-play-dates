@@ -23,6 +23,107 @@ export const createMatch = (match) =>
     })
   );
 
+const pickArray = (...candidates) => {
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return [];
+};
+
+const pickObject = (...candidates) => {
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      continue;
+    }
+    return candidate;
+  }
+  return {};
+};
+
+const normalizePagination = (data) => {
+  const explicit = pickObject(
+    data?.pagination,
+    data?.meta?.pagination,
+    data?.meta?.page_info,
+    data?.meta?.pageInfo,
+  );
+  if (explicit && Object.keys(explicit).length > 0) {
+    return explicit;
+  }
+
+  const parseNumeric = (...values) => {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      const numeric =
+        typeof value === "string" ? Number.parseFloat(value) : Number(value);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+    }
+    return null;
+  };
+
+  const page = parseNumeric(
+    data?.page,
+    data?.current_page,
+    data?.meta?.page,
+    data?.meta?.current_page,
+    data?.meta?.pageNumber,
+  );
+  const perPage = parseNumeric(
+    data?.perPage,
+    data?.per_page,
+    data?.page_size,
+    data?.meta?.perPage,
+    data?.meta?.per_page,
+    data?.meta?.page_size,
+    data?.meta?.pageSize,
+  );
+  const total = parseNumeric(
+    data?.total,
+    data?.count,
+    data?.meta?.total,
+    data?.meta?.total_count,
+    data?.meta?.count,
+  );
+
+  if (!Number.isFinite(perPage) || perPage <= 0) {
+    return null;
+  }
+
+  return {
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+    perPage,
+    ...(Number.isFinite(total) && total >= 0 ? { total } : {}),
+  };
+};
+
+const normalizeMatchesResponse = (data) => {
+  const matches = pickArray(
+    data?.matches,
+    data?.data,
+    data?.items,
+    data?.results,
+    Array.isArray(data) ? data : null,
+  );
+
+  const counts = pickObject(
+    data?.counts,
+    data?.summary,
+    data?.meta?.counts,
+    data?.meta?.summary,
+  );
+
+  const base = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+
+  return {
+    ...base,
+    matches,
+    counts,
+    pagination: normalizePagination(base) || null,
+  };
+};
+
 export const listMatches = (
   filter,
   {
@@ -54,7 +155,7 @@ export const listMatches = (
   if (!Object.prototype.hasOwnProperty.call(params, "distance")) {
     addNumericParam("radius", radius);
   }
-  return unwrap(api(`/matches${qs(params)}`));
+  return unwrap(api(`/matches${qs(params)}`)).then(normalizeMatchesResponse);
 };
 
 export const updateMatch = (id, updates) =>
