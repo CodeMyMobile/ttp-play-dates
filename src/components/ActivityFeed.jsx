@@ -126,98 +126,102 @@ const ActivityFeed = ({
       )}
 
       {showSkeleton ? (
-        <div className="space-y-2">
-          {[...Array(3)].map((_, index) => (
-            <div
-              key={index}
-              className="flex flex-col gap-2 rounded-2xl border border-gray-100 bg-white p-3"
-            >
-              <div className="h-4 w-20 rounded-full bg-gray-100 animate-pulse" />
-              <div className="h-3 w-3/4 rounded bg-gray-100 animate-pulse" />
-              <div className="h-3 w-1/2 rounded bg-gray-100 animate-pulse" />
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <div className="flex w-max max-w-full gap-2.5 pb-1">
+            {[...Array(3)].map((_, index) => (
+              <div
+                key={index}
+                className="flex min-w-[220px] max-w-[240px] shrink-0 flex-col gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2"
+              >
+                <div className="h-3.5 w-20 rounded-full bg-gray-100 animate-pulse" />
+                <div className="h-2.5 w-3/4 rounded bg-gray-100 animate-pulse" />
+                <div className="h-2 w-1/2 rounded bg-gray-100 animate-pulse" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : hasItems ? (
-        <div className="space-y-2.5">
-          {items.map((item) => {
-            const tone = toneStyles[item.tone] || toneStyles.neutral;
-            const IconComponent = item.icon;
-            return (
-              <article
-                key={item.id}
-                className={`flex items-start gap-3 rounded-xl px-3 py-2.5 text-sm shadow-sm ${tone.container}`}
-              >
-                {IconComponent && (
-                  <IconComponent className={`mt-0.5 h-4 w-4 flex-shrink-0 ${tone.icon}`} />
-                )}
-                <div className="flex-1 space-y-1">
-                  <div className="flex flex-wrap items-center gap-1">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone.badge}`}>
-                      {item.statusLabel}
-                    </span>
-                    {item.relativeTime && (
-                      <span className="text-[10px] font-medium text-gray-500" title={item.timestampLabel}>
-                        {item.relativeTime}
+        <div className="overflow-x-auto">
+          <div className="flex w-max max-w-full gap-2.5 pb-1">
+            {items.map((item) => {
+              const tone = toneStyles[item.tone] || toneStyles.neutral;
+              const IconComponent = item.icon;
+              return (
+                <article
+                  key={item.id}
+                  className={`flex min-w-[230px] max-w-[260px] shrink-0 items-start gap-2 rounded-xl px-3 py-2 text-[13px] shadow-sm ${tone.container}`}
+                >
+                  {IconComponent && (
+                    <IconComponent className={`mt-0.5 h-4 w-4 flex-shrink-0 ${tone.icon}`} />
+                  )}
+                  <div className="flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${tone.badge}`}>
+                        {item.statusLabel}
                       </span>
+                      {item.relativeTime && (
+                        <span className="text-[9px] font-medium text-gray-500" title={item.timestampLabel}>
+                          {item.relativeTime}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="text-[12px] font-semibold leading-snug text-gray-900">
+                      {item.title}
+                    </h4>
+                    {item.description && (
+                      <p className="text-[11px] font-medium leading-snug text-gray-600">
+                        {item.description}
+                      </p>
+                    )}
+                    {item.meta?.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1">
+                        {item.meta.map((meta, metaIndex) => {
+                          const MetaIcon = meta.icon;
+                          return (
+                            <span
+                              key={`${item.id}-meta-${metaIndex}`}
+                              className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-1.5 py-0.5 text-[9px] font-medium text-gray-600"
+                            >
+                              {MetaIcon && <MetaIcon className="h-3 w-3" />}
+                              <span className="truncate max-w-[120px]">
+                                {meta.label}
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {item.actions?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {item.actions.map((action, actionIndex) => {
+                          const variant =
+                            action.variant && actionStyles[action.variant]
+                              ? action.variant
+                              : "outline";
+                          const className = `${actionStyles[variant]} ${action.className || ""}`.trim();
+                          return (
+                            <button
+                              key={`${item.id}-action-${actionIndex}`}
+                              type="button"
+                              onClick={action.onClick}
+                              disabled={action.disabled}
+                              className={`${className} ${
+                                action.disabled
+                                  ? "cursor-not-allowed opacity-60"
+                                  : ""
+                              }`}
+                            >
+                              {action.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-                  <h4 className="text-[13px] font-semibold leading-tight text-gray-900">
-                    {item.title}
-                  </h4>
-                  {item.description && (
-                    <p className="text-[12px] font-medium leading-tight text-gray-600">
-                      {item.description}
-                    </p>
-                  )}
-                  {item.meta?.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {item.meta.map((meta, metaIndex) => {
-                        const MetaIcon = meta.icon;
-                        return (
-                          <span
-                            key={`${item.id}-meta-${metaIndex}`}
-                            className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-600"
-                          >
-                            {MetaIcon && <MetaIcon className="h-3 w-3" />}
-                            <span className="truncate max-w-[140px]">
-                              {meta.label}
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {item.actions?.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      {item.actions.map((action, actionIndex) => {
-                        const variant =
-                          action.variant && actionStyles[action.variant]
-                            ? action.variant
-                            : "outline";
-                        const className = `${actionStyles[variant]} ${action.className || ""}`.trim();
-                        return (
-                          <button
-                            key={`${item.id}-action-${actionIndex}`}
-                            type="button"
-                            onClick={action.onClick}
-                            disabled={action.disabled}
-                            className={`${className} ${
-                              action.disabled
-                                ? "cursor-not-allowed opacity-60"
-                                : ""
-                            }`}
-                          >
-                            {action.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white px-5 py-10 text-center shadow-sm">
