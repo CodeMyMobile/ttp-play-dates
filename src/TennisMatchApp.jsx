@@ -3052,6 +3052,10 @@ const TennisMatchApp = () => {
       }
       const styles = notificationTypeMap[notification.canonicalType] || notificationTypeMap.general;
       const meta = [];
+      const playerName =
+        typeof notification.playerName === "string" ? notification.playerName.trim() : "";
+      const matchLabel =
+        typeof notification.matchLabel === "string" ? notification.matchLabel.trim() : "";
       if (notification.matchLabel) {
         meta.push({ icon: Calendar, label: notification.matchLabel });
       }
@@ -3066,6 +3070,9 @@ const TennisMatchApp = () => {
             meta.push({ icon: null, label: tag });
           });
       }
+      if (playerName) {
+        meta.unshift({ icon: User, label: playerName });
+      }
 
       const actions = [];
       if (notification.matchId) {
@@ -3076,13 +3083,98 @@ const TennisMatchApp = () => {
         });
       }
 
+      const joinedMatchLabel = matchLabel ? ` ${matchLabel}` : "";
+      const inviteMatchLabel = matchLabel ? ` for ${matchLabel}` : "";
+      const ensureSentence = (value) => {
+        if (!value) return "";
+        const trimmed = value.trim();
+        if (!trimmed) return "";
+        return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+      };
+      let title = typeof notification.title === "string" ? notification.title.trim() : "";
+      let description = typeof notification.body === "string" ? notification.body.trim() : "";
+
+      if (!title) {
+        switch (notification.canonicalType) {
+          case "player_joined":
+            title = playerName
+              ? `${playerName} joined${joinedMatchLabel}`
+              : `${styles.statusLabel}${joinedMatchLabel ? ` ·${joinedMatchLabel}` : ""}`;
+            break;
+          case "player_left":
+            title = playerName
+              ? `${playerName} left${joinedMatchLabel}`
+              : `${styles.statusLabel}${joinedMatchLabel ? ` ·${joinedMatchLabel}` : ""}`;
+            break;
+          case "invite_accepted":
+            title = playerName
+              ? `${playerName} accepted the invite${inviteMatchLabel}`
+              : styles.statusLabel;
+            break;
+          case "invite_declined":
+            title = playerName
+              ? `${playerName} declined the invite${inviteMatchLabel}`
+              : styles.statusLabel;
+            break;
+          case "invite_sent":
+            title = playerName
+              ? `Invite sent to ${playerName}${inviteMatchLabel}`
+              : styles.statusLabel;
+            break;
+          default:
+            title = styles.statusLabel;
+        }
+      }
+
+      if (!description) {
+        switch (notification.canonicalType) {
+          case "player_joined":
+            description = ensureSentence(
+              playerName
+                ? `${playerName} is confirmed to play${joinedMatchLabel}`
+                : `A player joined${joinedMatchLabel}`,
+            );
+            break;
+          case "player_left":
+            description = ensureSentence(
+              playerName
+                ? `${playerName} is no longer participating${joinedMatchLabel}`
+                : `A player left${joinedMatchLabel}`,
+            );
+            break;
+          case "invite_accepted":
+            description = ensureSentence(
+              playerName
+                ? `${playerName} will be joining${joinedMatchLabel || " this match"}`
+                : `An invite was accepted${inviteMatchLabel}`,
+            );
+            break;
+          case "invite_declined":
+            description = ensureSentence(
+              playerName
+                ? `${playerName} passed on${joinedMatchLabel || " this match"}`
+                : `An invite was declined${inviteMatchLabel}`,
+            );
+            break;
+          case "invite_sent":
+            description = ensureSentence(
+              playerName
+                ? `An invite was delivered to ${playerName}${inviteMatchLabel}`
+                : `An invite was sent${inviteMatchLabel}`,
+            );
+            break;
+          default:
+            description = "";
+        }
+      }
+
       items.push({
         id: `notification-${notification.id}`,
         statusLabel: styles.statusLabel,
         tone: styles.tone,
         icon: styles.icon,
-        title: notification.title || styles.statusLabel,
-        description: notification.body || "",
+        title,
+        description,
         meta,
         timestamp: notification.createdAt || null,
         timestampLabel: notification.createdAtLabel || "",
