@@ -1805,7 +1805,8 @@ const MatchDetailsModal = ({
     if (isArchived) return "This match has been archived.";
     if (isCancelled) return "This match has been cancelled.";
     if (!isUpcoming) return "This match is no longer accepting players.";
-    if (isFull) return "This match is currently full.";
+    if (isFull)
+      return "This match is full. Reach out to the organizer if you're available.";
     return null;
   };
 
@@ -1935,7 +1936,7 @@ const MatchDetailsModal = ({
       ) {
         setStatus("full");
         onToast?.(
-          "This match is already full. We'll let you know if a spot opens up.",
+          "This match is already full. Let the organizer know you're available in case a spot opens up.",
           "error",
         );
       } else if (
@@ -2673,7 +2674,7 @@ const MatchDetailsModal = ({
           {status === "full" && !isJoined && (
             <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
               <AlertCircle className="mt-0.5 h-4 w-4" />
-              This match is currently full. We'll let you know if a spot opens up.
+              This match is currently full. Let the organizer know if you're available to step in.
             </div>
           )}
 
