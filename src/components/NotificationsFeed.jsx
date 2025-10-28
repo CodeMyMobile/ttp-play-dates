@@ -37,42 +37,128 @@ const cleanString = (value) => {
 };
 
 const formatPersonName = (subject, fallback = "") => {
-  if (!subject) return fallback;
-  if (typeof subject === "string") return subject.trim() || fallback;
-  if (typeof subject === "object") {
+  const seen = new Set();
+
+  const extractFromObject = (value, depth = 0) => {
+    if (!value || depth > 4) return "";
+    if (typeof value === "string") return cleanString(value);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return cleanString(String(value));
+    }
+    if (typeof value !== "object") return "";
+    if (seen.has(value)) return "";
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const arrayResult = extractFromObject(entry, depth + 1);
+        if (arrayResult) return arrayResult;
+      }
+      return "";
+    }
+
     const {
       name,
       full_name,
       fullName,
-      first_name,
-      firstName,
-      last_name,
-      lastName,
+      preferred_name,
+      preferredName,
       display_name,
       displayName,
+      nickname,
+      nick_name,
+      nickName,
+      given_name,
+      givenName,
+      family_name,
+      familyName,
+      surname,
       player_name,
       playerName,
       member_name,
       memberName,
-    } = subject;
+      participant_name,
+      participantName,
+      subject_name,
+      subjectName,
+      player_full_name,
+      playerFullName,
+      member_full_name,
+      memberFullName,
+    } = value;
+
     const direct =
       cleanString(name) ||
       cleanString(full_name) ||
       cleanString(fullName) ||
+      cleanString(preferred_name) ||
+      cleanString(preferredName) ||
       cleanString(display_name) ||
       cleanString(displayName) ||
+      cleanString(nickname) ||
+      cleanString(nick_name) ||
+      cleanString(nickName) ||
+      cleanString(player_full_name) ||
+      cleanString(playerFullName) ||
+      cleanString(member_full_name) ||
+      cleanString(memberFullName) ||
       cleanString(player_name) ||
       cleanString(playerName) ||
       cleanString(member_name) ||
-      cleanString(memberName);
+      cleanString(memberName) ||
+      cleanString(participant_name) ||
+      cleanString(participantName) ||
+      cleanString(subject_name) ||
+      cleanString(subjectName);
     if (direct) return direct;
-    const first = cleanString(first_name) || cleanString(firstName);
-    const last = cleanString(last_name) || cleanString(lastName);
+
+    const first =
+      cleanString(preferred_name) ||
+      cleanString(preferredName) ||
+      cleanString(given_name) ||
+      cleanString(givenName) ||
+      cleanString(name) ||
+      cleanString(value.first_name) ||
+      cleanString(value.firstName);
+    const last =
+      cleanString(family_name) ||
+      cleanString(familyName) ||
+      cleanString(surname) ||
+      cleanString(value.last_name) ||
+      cleanString(value.lastName);
     if (first || last) {
       return [first, last].filter(Boolean).join(" ");
     }
-  }
-  return fallback;
+
+    const nestedCandidates = [
+      value.player,
+      value.member,
+      value.participant,
+      value.invitee,
+      value.user,
+      value.person,
+      value.subject,
+      value.profile,
+      value.owner,
+      value.contact,
+      value.context,
+      value.meta,
+      value.details,
+      value.data,
+      value.attributes,
+      value.info,
+    ];
+
+    for (const candidate of nestedCandidates) {
+      const nestedResult = extractFromObject(candidate, depth + 1);
+      if (nestedResult) return nestedResult;
+    }
+
+    return "";
+  };
+
+  const result = extractFromObject(subject);
+  return result || fallback;
 };
 
 const humanizeKey = (value = "") => {
@@ -229,6 +315,32 @@ const resolveMatchFromNotification = (notification) => {
 
 const resolvePlayerFromNotification = (notification) => {
   if (!notification) return null;
+  const directName =
+    cleanString(notification.player_full_name) ||
+    cleanString(notification.playerFullName) ||
+    cleanString(notification.member_full_name) ||
+    cleanString(notification.memberFullName) ||
+    cleanString(notification.subject_name) ||
+    cleanString(notification.subjectName) ||
+    cleanString(notification.context?.player_full_name) ||
+    cleanString(notification.context?.playerFullName) ||
+    cleanString(notification.context?.member_full_name) ||
+    cleanString(notification.context?.memberFullName) ||
+    cleanString(notification.context?.subject_name) ||
+    cleanString(notification.context?.subjectName) ||
+    cleanString(notification.meta?.player_full_name) ||
+    cleanString(notification.meta?.playerFullName) ||
+    cleanString(notification.meta?.member_full_name) ||
+    cleanString(notification.meta?.memberFullName) ||
+    cleanString(notification.meta?.subject_name) ||
+    cleanString(notification.meta?.subjectName) ||
+    cleanString(notification.data?.player_full_name) ||
+    cleanString(notification.data?.playerFullName) ||
+    cleanString(notification.data?.member_full_name) ||
+    cleanString(notification.data?.memberFullName) ||
+    cleanString(notification.data?.subject_name) ||
+    cleanString(notification.data?.subjectName);
+  if (directName) return directName;
   return (
     notification.player ||
     notification.member ||
