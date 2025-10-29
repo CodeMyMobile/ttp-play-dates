@@ -70,12 +70,13 @@ import {
   MessageCircle,
   Phone,
   AlertCircle,
+  Compass,
+  Navigation,
   ArrowRight,
   Zap,
   Trophy,
   Sparkles,
   Target,
-  ShieldCheck,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
@@ -3213,27 +3214,6 @@ const TennisMatchApp = () => {
     respondToInvite,
   ]);
 
-  const personalScheduleMatches = useMemo(() => {
-    const relevant = matches.filter((match) => {
-      if (!match) return false;
-      const status = typeof match.status === "string" ? match.status.toLowerCase() : match.status;
-      if (status === "archived" || status === "cancelled" || status === "canceled") {
-        return false;
-      }
-      if (match.type === "hosted" || match.type === "joined") {
-        return true;
-      }
-      if (match.isInvited) {
-        return true;
-      }
-      return false;
-    });
-
-    return sortMatchesByRecency(relevant).slice(0, 3);
-  }, [matches, sortMatchesByRecency]);
-
-  const nearbyMatchesPreview = useMemo(() => displayedMatches.slice(0, 6), [displayedMatches]);
-
   const getMatchCount = useCallback(
     (filterId) => {
       if (!matchCounts) return 0;
@@ -3250,461 +3230,494 @@ const TennisMatchApp = () => {
     [matchCounts],
   );
 
-  const BrowseScreen = () => {
-    if (!currentUser) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-emerald-50/30">
-          <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-6">
-            <h2 className="text-3xl font-black text-gray-900">Find your next match in seconds</h2>
-            <p className="text-sm font-medium text-gray-600">
-              Create matches, invite partners, and discover open courts once you sign in.
-            </p>
-            <button
-              onClick={() => setShowSignInModal(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-base font-bold text-white shadow-lg transition-transform hover:-translate-y-0.5 hover:shadow-xl"
-            >
-              <Sparkles className="h-5 w-5" />
-              Sign Up / Log In
-            </button>
-          </div>
-        </div>
-      );
-    }
+  const personalScheduleMatches = useMemo(() => {
+    if (!Array.isArray(matches) || matches.length === 0) return [];
 
-    const welcomeName = currentUser?.name?.split(" ")[0] || "there";
-    const unreadUpdates = Number(notificationSummary.unread ?? 0);
-    const highlightStats = [
+    const now = Date.now();
+    const normalizeString = (value) => {
+      if (typeof value !== "string") return "";
+      const trimmed = value.trim();
+      return trimmed;
+    };
+
+    const pickString = (...candidates) => {
+      for (const candidate of candidates) {
+        const normalized = normalizeString(candidate);
+        if (normalized) return normalized;
+      }
+      return "";
+    };
+
+    return matches
+      .filter((match) => {
+        if (!match) return false;
+        const membership = normalizeString(match.type).toLowerCase();
+        if (membership !== "hosted" && membership !== "joined") return false;
+        const startTs = getMatchTimestamp(match);
+        if (startTs === null) return false;
+        // Keep matches that are upcoming or started in the last two hours
+        return startTs >= now - 1000 * 60 * 60 * 2;
+      })
+      .map((match) => {
+        const start = parseDateValue(match.dateTime);
+        const locationLabel = pickString(
+          match.location,
+          match.location_text,
+          match.locationText,
+          match.venue,
+          match.court_name,
+          match.courtName,
+        );
+        const formatLabel = pickString(
+          match.match_format,
+          match.matchFormat,
+          match.format,
+          match.title,
+          match.name,
+        );
+        const skillLabel = pickString(match.skill_level, match.skillLevel, match.skill);
+        const startLabel = start ? formatDateTime(start) : "Date TBA";
+        return {
+          id: match.id,
+          match,
+          start,
+          startLabel,
+          relativeTime: formatRelativeTimeFromNow(start),
+          locationLabel,
+          formatLabel,
+          skillLabel,
+          membership: normalizeString(match.type).toLowerCase(),
+          status: normalizeString(match.status).toLowerCase(),
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.start instanceof Date ? a.start.getTime() : Number.POSITIVE_INFINITY;
+        const bTime = b.start instanceof Date ? b.start.getTime() : Number.POSITIVE_INFINITY;
+        return aTime - bTime;
+      })
+      .slice(0, 5);
+  }, [
+    matches,
+    formatDateTime,
+    formatRelativeTimeFromNow,
+    getMatchTimestamp,
+    parseDateValue,
+  ]);
+
+  const nearbyMatchesPreview = useMemo(() => {
+    if (!Array.isArray(displayedMatches) || displayedMatches.length === 0) return [];
+
+    const normalizeString = (value) => {
+      if (typeof value !== "string") return "";
+      const trimmed = value.trim();
+      return trimmed;
+    };
+
+    const pickString = (...candidates) => {
+      for (const candidate of candidates) {
+        const normalized = normalizeString(candidate);
+        if (normalized) return normalized;
+      }
+      return "";
+    };
+
+    return displayedMatches.slice(0, 4).map((match) => {
+      const start = parseDateValue(match.dateTime);
+      const formatLabel = pickString(
+        match.match_format,
+        match.matchFormat,
+        match.format,
+        match.title,
+        match.name,
+      );
+      const locationLabel = pickString(
+        match.location,
+        match.location_text,
+        match.locationText,
+        match.venue,
+        match.court_name,
+        match.courtName,
+      );
+      const distanceLabel = Number.isFinite(match.distanceMiles)
+        ? `${match.distanceMiles.toFixed(match.distanceMiles < 10 ? 1 : 0)} mi`
+        : "";
+      return {
+        id: match.id,
+        match,
+        start,
+        startLabel: start ? formatDateTime(start) : "Date TBA",
+        relativeTime: formatRelativeTimeFromNow(start),
+        locationLabel,
+        formatLabel,
+        distanceLabel,
+      };
+    });
+  }, [
+    displayedMatches,
+    formatDateTime,
+    formatRelativeTimeFromNow,
+    parseDateValue,
+  ]);
+
+  const BrowseScreen = () => {
+    const nextMatch = personalScheduleMatches[0];
+    const remainingSchedule = personalScheduleMatches.slice(1);
+
+    const statCards = [
       {
-        id: "my",
-        label: "Matches Hosting / Playing",
-        value: getMatchCount("my"),
+        label: "Upcoming matches",
+        value: personalScheduleMatches.length,
+        icon: Calendar,
+      },
+      {
+        label: "Open nearby",
+        value: getMatchCount("open") || displayedMatches.length,
         icon: Users,
-        gradient: "from-emerald-50 to-emerald-100",
-        iconColor: "text-emerald-600",
       },
       {
-        id: "open",
-        label: "Open Spots Nearby",
-        value: getMatchCount("open"),
-        icon: Target,
-        gradient: "from-sky-50 to-indigo-100",
-        iconColor: "text-indigo-600",
-      },
-      {
-        id: "invites",
-        label: "Pending Invites",
+        label: "Invites waiting",
         value: pendingInvites.length,
         icon: Mail,
-        gradient: "from-amber-50 to-orange-100",
-        iconColor: "text-orange-600",
       },
       {
-        id: "updates",
-        label: "New Updates",
-        value: unreadUpdates,
-        icon: Bell,
-        gradient: "from-purple-50 to-fuchsia-100",
-        iconColor: "text-purple-600",
+        label: "Needs players",
+        value: matchesNeedingAttention.length,
+        icon: AlertCircle,
       },
     ];
 
-    const nextHighlightedMatch = personalScheduleMatches[0] || nearbyMatchesPreview[0] || null;
     const quickActions = [
       {
         id: "create",
-        title: "Create Match",
-        description: "Start a match and invite players in seconds.",
+        label: "Create a match",
+        description: "Host a new meetup with your preferred format.",
         icon: Sparkles,
-        accent: "from-emerald-500 to-green-500",
-        action: () => navigate("/create"),
-      },
-      {
-        id: "browse",
-        title: "Browse Matches",
-        description: "See local matches ready for another player.",
-        icon: Search,
-        accent: "from-sky-500 to-indigo-500",
-        action: () => {
-          setActiveFilter("open");
-          const section =
-            typeof document !== "undefined"
-              ? document.getElementById("matches-nearby-section")
-              : null;
-          section?.scrollIntoView({ behavior: "smooth", block: "start" });
+        onClick: () => {
+          if (!currentUser) {
+            setShowSignInModal(true);
+          } else {
+            navigate("/create");
+          }
         },
       },
       {
+        id: "invites",
+        label: "Review invites",
+        description: "Confirm spots and respond to requests.",
+        icon: Bell,
+        onClick: () => goToInvites(),
+      },
+      {
         id: "players",
-        title: "Find Players",
-        description: "Discover partners by skill level and availability.",
+        label: "Discover players",
+        description: "Find partners that match your level.",
         icon: Users,
-        accent: "from-purple-500 to-fuchsia-500",
-        action: () => goToPlayers(),
+        onClick: () => goToPlayers(),
       },
       {
-        id: "courts",
-        title: "Find Courts",
-        description: "Explore nearby clubs and public courts to host.",
+        id: "location",
+        label: hasLocationFilter ? "Adjust location" : "Set location",
+        description: "Tune the feed to courts near you.",
         icon: MapPin,
-        accent: "from-amber-500 to-orange-500",
-        action: () => navigate("/courts"),
+        onClick: () => {
+          setShowLocationPicker(true);
+          setGeoError("");
+        },
       },
     ];
 
-    const featuredCoaches = [
-      {
-        id: "coach-rogers",
-        name: "Mia Rogers",
-        specialty: "Singles Strategy",
-        rating: "4.9",
-        price: "$85/hr",
-        color: "from-emerald-100 to-emerald-200",
-        initials: "MR",
-      },
-      {
-        id: "coach-lane",
-        name: "David Lane",
-        specialty: "Serve & Volley",
-        rating: "4.8",
-        price: "$95/hr",
-        color: "from-blue-100 to-indigo-200",
-        initials: "DL",
-      },
-      {
-        id: "coach-carter",
-        name: "Jill Carter",
-        specialty: "Doubles Chemistry",
-        rating: "5.0",
-        price: "$75/hr",
-        color: "from-purple-100 to-fuchsia-200",
-        initials: "JC",
-      },
-      {
-        id: "coach-ramirez",
-        name: "Carlos Ramirez",
-        specialty: "Footwork & Agility",
-        rating: "4.7",
-        price: "$90/hr",
-        color: "from-amber-100 to-orange-200",
-        initials: "CR",
-      },
-    ];
+    const highlightTitle = (() => {
+      if (!nextMatch) return "No upcoming matches";
+      const source = nextMatch.match || {};
+      const pickString = (...candidates) => {
+        for (const candidate of candidates) {
+          if (typeof candidate === "string" && candidate.trim()) {
+            return candidate.trim();
+          }
+        }
+        return "Match";
+      };
+      return (
+        pickString(
+          source.title,
+          source.name,
+          source.match_format,
+          source.matchFormat,
+          source.format,
+        ) || "Match"
+      );
+    })();
 
-    const filterOptions = [
+    const highlightMeta = [
+      nextMatch?.startLabel && { icon: Calendar, label: nextMatch.startLabel },
+      nextMatch?.relativeTime && { icon: Clock, label: nextMatch.relativeTime },
+      nextMatch?.locationLabel && { icon: MapPin, label: nextMatch.locationLabel },
+      nextMatch?.skillLabel && { icon: Star, label: nextMatch.skillLabel },
+    ].filter(Boolean);
+
+    const filterDefinitions = [
       {
         id: "my",
         label: "My Matches",
-        count: getMatchCount("my"),
-        gradient: "from-emerald-500 to-green-500",
+        gradient: "linear-gradient(135deg, rgb(16 185 129), rgb(5 150 105))",
         icon: "⭐",
       },
       {
         id: "open",
         label: "Open Matches",
-        count: getMatchCount("open"),
-        gradient: "from-sky-500 to-indigo-500",
+        gradient: "linear-gradient(135deg, rgb(56 189 248), rgb(99 102 241))",
         icon: "🔥",
       },
       {
         id: "today",
         label: "Today",
-        count: getMatchCount("today"),
-        gradient: "from-blue-500 to-cyan-500",
+        gradient: "linear-gradient(135deg, rgb(245 158 11), rgb(234 88 12))",
         icon: "📅",
       },
       {
         id: "tomorrow",
         label: "Tomorrow",
-        count: getMatchCount("tomorrow"),
-        gradient: "from-amber-500 to-orange-500",
+        gradient: "linear-gradient(135deg, rgb(244 114 182), rgb(168 85 247))",
         icon: "⏰",
       },
       {
         id: "weekend",
         label: "Weekend",
-        count: getMatchCount("weekend"),
-        gradient: "from-purple-500 to-fuchsia-500",
+        gradient: "linear-gradient(135deg, rgb(59 130 246), rgb(124 58 237))",
         icon: "🎉",
       },
       {
         id: "draft",
         label: "Drafts",
-        count: getMatchCount("draft"),
-        gradient: "from-slate-500 to-slate-600",
+        gradient: "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))",
         icon: "📝",
       },
       {
         id: "archived",
         label: "Archived",
-        count: getMatchCount("archived"),
-        gradient: "from-gray-500 to-slate-600",
+        gradient: "linear-gradient(135deg, rgb(113 113 122), rgb(82 82 91))",
         icon: "🗂️",
       },
     ];
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-emerald-50/30">
-        <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-          <section className="grid gap-6 lg:grid-cols-[1.6fr,1fr]">
-            <div className="rounded-3xl border border-emerald-100 bg-white/95 p-6 shadow-sm sm:p-8 space-y-6">
-              <div className="space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">
-                  Welcome Back
-                </span>
-                <h1 className="text-3xl font-black text-gray-900 sm:text-4xl">
-                  Welcome back, {welcomeName}!
+      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-white">
+        <div className="relative overflow-hidden bg-slate-900 text-white">
+          <div className="absolute inset-0 opacity-60" aria-hidden="true">
+            <div className="absolute -top-24 right-12 h-56 w-56 rounded-full bg-emerald-500 blur-3xl" />
+            <div className="absolute bottom-0 left-12 h-64 w-64 rounded-full bg-sky-500/60 blur-3xl" />
+          </div>
+          <div className="relative mx-auto max-w-7xl px-4 py-12 sm:py-16">
+            <div className="grid gap-8 lg:grid-cols-[1.65fr,1fr] lg:items-center">
+              <div className="space-y-6">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
+                  <span>Welcome</span>
+                  {currentUser?.name && (
+                    <span className="truncate text-emerald-100/90">
+                      {currentUser.name.split(" ")[0]}
+                    </span>
+                  )}
+                </div>
+                <h1 className="text-3xl font-black leading-tight sm:text-5xl">
+                  Rally up for your next play date
                 </h1>
-                <p className="text-sm font-medium text-gray-600">
-                  Your complete match dashboard for players, invites, and courts.
+                <p className="max-w-xl text-sm text-emerald-100/90 sm:text-lg">
+                  Discover nearby games, keep an eye on your schedule, and jump back into the action with a couple of taps.
                 </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {highlightStats.map((stat) => {
-                  const Icon = stat.icon;
-                  return (
-                    <div
-                      key={stat.id}
-                      className={`rounded-2xl border border-gray-100 bg-gradient-to-br ${stat.gradient} p-4 shadow-sm`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`rounded-xl bg-white/80 p-2 text-sm font-bold shadow ${stat.iconColor}`}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                          {stat.label}
-                        </span>
-                      </div>
-                      <p className="mt-3 text-2xl font-black text-gray-900">{stat.value}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-3xl bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 p-6 text-white shadow-lg sm:p-8 flex flex-col justify-between">
-              <div className="space-y-4">
-                <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-white/80">
-                  <Calendar className="h-4 w-4" /> Next on your calendar
-                </span>
-                {nextHighlightedMatch ? (
-                  <>
-                    <h2 className="text-2xl font-black leading-snug">
-                      {nextHighlightedMatch.format || "Match"} at {nextHighlightedMatch.location || "Location TBA"}
-                    </h2>
-                    <p className="text-sm font-semibold text-white/80">
-                      {nextHighlightedMatch.dateTime ? formatDateTime(nextHighlightedMatch.dateTime) : "Time to be announced"}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-white/80">
-                      {nextHighlightedMatch.type === "hosted" && (
-                        <span className="rounded-full bg-white/20 px-3 py-1">Hosting</span>
-                      )}
-                      {nextHighlightedMatch.type === "joined" && (
-                        <span className="rounded-full bg-white/20 px-3 py-1">Playing</span>
-                      )}
-                      {Number.isFinite(nextHighlightedMatch.spotsAvailable) && (
-                        <span className="rounded-full bg-white/20 px-3 py-1">
-                          {nextHighlightedMatch.spotsAvailable} spot{nextHighlightedMatch.spotsAvailable === 1 ? "" : "s"} open
-                        </span>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <h2 className="text-2xl font-black leading-snug">Plan your next tennis session</h2>
-                    <p className="text-sm font-semibold text-white/80">
-                      Create a match or explore the browse feed to get something on the books.
-                    </p>
-                  </>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate("/create")}
-                className="mt-6 inline-flex items-center justify-center gap-2 rounded-2xl bg-white/95 px-5 py-3 text-sm font-bold text-emerald-700 shadow-lg transition hover:bg-white"
-              >
-                <Plus className="h-5 w-5" /> Create a match
-              </button>
-            </div>
-          </section>
-
-          <section className="grid gap-6 lg:grid-cols-[1.6fr,1fr]">
-            <div className="rounded-3xl border border-gray-100 bg-white/95 p-6 shadow-sm sm:p-8 space-y-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-xl font-black text-gray-900">My Schedule</h3>
-                  <p className="text-sm font-medium text-gray-600">
-                    Upcoming matches you're hosting or playing in.
-                  </p>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentUser) {
+                        setShowSignInModal(true);
+                      } else {
+                        navigate("/create");
+                      }
+                    }}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl sm:w-auto sm:text-base"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Create match
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToInvites()}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur transition hover:border-white/50 hover:bg-white/20 sm:w-auto sm:text-base"
+                  >
+                    <Bell className="h-4 w-4" />
+                    View invites
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilter("my")}
-                  className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
-                >
-                  View all
-                  <ChevronRight className="h-4 w-4" />
-                </button>
               </div>
 
-              {personalScheduleMatches.length > 0 ? (
-                <ul className="space-y-3">
-                  {personalScheduleMatches.map((match) => {
-                    const spotsOpen = Number.isFinite(match.spotsAvailable)
-                      ? match.spotsAvailable
-                      : Number.isFinite(match.rosterSpotsRemaining)
-                      ? match.rosterSpotsRemaining
-                      : null;
-                    return (
-                      <li
-                        key={`schedule-${match.id}`}
-                        className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50/80 p-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="flex flex-1 flex-col gap-1 text-sm text-gray-600">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-                            {match.format || "Match"}
-                          </span>
-                          <span className="text-base font-bold text-gray-900">
-                            {match.dateTime ? formatDateTime(match.dateTime) : "Time coming soon"}
-                          </span>
-                          <span className="text-xs font-medium text-gray-500">
-                            {match.location || "Location to be announced"}
-                          </span>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-600">
-                            {match.type === "hosted" && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-emerald-700">
-                                <ShieldCheck className="h-3 w-3" /> Hosting
-                              </span>
-                            )}
-                            {match.type === "joined" && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-indigo-700">
-                                <User className="h-3 w-3" /> Playing
-                              </span>
-                            )}
-                            {Number.isFinite(spotsOpen) && spotsOpen > 0 && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-amber-600">
-                                <Users className="h-3 w-3" /> {spotsOpen} spot{spotsOpen === 1 ? "" : "s"} open
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleViewDetails(match.id)}
-                            className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
-                          >
-                            Details
-                          </button>
-                          {match.type === "hosted" && (
-                            <button
-                              type="button"
-                              onClick={() => openInviteScreen(match.id)}
-                              className="inline-flex items-center gap-1 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-600"
-                            >
-                              Manage invites
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white p-6 text-center text-sm font-semibold text-gray-500">
-                  No upcoming matches yet. Create one or join an open match to see it here.
+              <div className="rounded-3xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur">
+                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
+                  <span>Next on your schedule</span>
+                  {nextMatch?.membership && (
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-[0.7rem]">
+                      {nextMatch.membership === "hosted" ? "Hosting" : "Playing"}
+                    </span>
+                  )}
                 </div>
-              )}
-            </div>
-
-            <div className="space-y-6">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {quickActions.map((action) => {
-                  const Icon = action.icon;
-                  return (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">{highlightTitle}</h3>
+                    {nextMatch?.skillLabel && (
+                      <p className="mt-1 text-sm font-semibold text-emerald-100/80">
+                        {nextMatch.skillLabel}
+                      </p>
+                    )}
+                  </div>
+                  {nextMatch ? (
+                    <ul className="space-y-2 text-sm text-emerald-100/90">
+                      {highlightMeta.map((meta) => (
+                        <li key={`${meta.icon?.name}-${meta.label}`} className="flex items-center gap-2">
+                          {meta.icon && <meta.icon className="h-4 w-4 text-emerald-200" />}
+                          <span>{meta.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-emerald-100/90">
+                      Add or join a match to see it spotlighted here.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2 pt-2">
                     <button
-                      key={action.id}
                       type="button"
-                      onClick={action.action}
-                      className={`group flex h-full flex-col justify-between gap-2 rounded-3xl bg-gradient-to-br ${action.accent} p-4 text-left text-white shadow-lg transition hover:shadow-xl`}
+                      onClick={() => (nextMatch ? handleViewDetails(nextMatch.match.id) : navigate("/create"))}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-emerald-600 shadow-sm transition hover:bg-emerald-50 sm:flex-none"
                     >
-                      <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-white/80">
-                        <Icon className="h-5 w-5" />
-                        {action.title}
-                      </div>
-                      <p className="text-xs font-medium text-white/80">{action.description}</p>
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-white">
-                        Get started <ChevronRight className="h-3.5 w-3.5" />
-                      </span>
+                      <ChevronRight className="h-4 w-4" />
+                      {nextMatch ? "View match" : "Plan one"}
                     </button>
-                  );
-                })}
+                    {nextMatch?.membership === "hosted" && (
+                      <button
+                        type="button"
+                        onClick={() => openInviteScreen(nextMatch.match.id)}
+                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/60 hover:bg-white/10 sm:flex-none"
+                      >
+                        <Users className="h-4 w-4" />
+                        Manage roster
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
+            </div>
 
-              <div className="rounded-3xl border border-gray-100 bg-white/95 p-6 shadow-sm space-y-4">
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-emerald-100 p-2 text-emerald-600">
-                        <MapPin className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Match Location</p>
-                        <p className="text-sm font-bold text-gray-900">
-                          {hasLocationFilter ? activeLocationLabel : "Showing all locations"}
-                        </p>
-                      </div>
+            <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {statCards.map((card) => (
+                <div
+                  key={card.label}
+                  className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 text-white">
+                      <card.icon className="h-5 w-5" />
                     </div>
+                    <div>
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-emerald-100/80">
+                        {card.label}
+                      </p>
+                      <p className="text-2xl font-black text-white">{card.value}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto -mt-8 max-w-7xl space-y-10 px-4 pb-16">
+          <div className="grid gap-6 lg:grid-cols-[1.75fr,1fr]">
+            <div className="space-y-6">
+              <section className="rounded-3xl border border-emerald-100/60 bg-white p-6 shadow-sm">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                      <MapPin className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        Location focus
+                      </p>
+                      <p className="text-lg font-bold text-slate-900">
+                        {hasLocationFilter ? activeLocationLabel : "All locations"}
+                      </p>
+                      <p className="text-sm font-medium text-slate-500">
+                        {hasLocationFilter
+                          ? `Within ${distanceFilter} miles`
+                          : "Set a location to prioritize nearby matches"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasLocationFilter && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLocationFilter(null);
+                          setLocationSearchTerm("");
+                          setGeoError("");
+                        }}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                      >
+                        <X className="h-4 w-4" />
+                        Clear
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         setShowLocationPicker((prev) => !prev);
                         setGeoError("");
                       }}
-                      className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
                     >
-                      {showLocationPicker
-                        ? "Hide tools"
-                        : hasLocationFilter
-                        ? "Change"
-                        : "Set location"}
+                      <Compass className="h-4 w-4" />
+                      {showLocationPicker ? "Hide tools" : hasLocationFilter ? "Change" : "Set location"}
                     </button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {distanceOptions.map((distance) => (
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {distanceOptions.map((distance) => {
+                    const isActive = distanceFilter === distance;
+                    return (
                       <button
-                        key={`distance-${distance}`}
+                        key={distance}
                         type="button"
                         onClick={() => setDistanceFilter(distance)}
-                        disabled={!hasLocationFilter && distance !== distanceFilter}
-                        className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                          distanceFilter === distance
-                            ? "bg-emerald-500 text-white shadow"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        disabled={!hasLocationFilter && !isActive}
+                        className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "border-emerald-500 bg-emerald-500 text-white shadow"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-600"
                         } ${
-                          !hasLocationFilter && distance !== distanceFilter
+                          !hasLocationFilter && !isActive
                             ? "cursor-not-allowed opacity-50"
                             : ""
                         }`}
                       >
                         {distance} mi
                       </button>
-                    ))}
-                  </div>
-                  {hasLocationFilter && (
-                    <p className="text-xs font-semibold text-gray-500">
-                      Showing matches within {distanceFilter} miles of your saved location.
-                    </p>
-                  )}
+                    );
+                  })}
                 </div>
 
+                {hasLocationFilter && (
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                    Showing matches within {distanceFilter} miles of {activeLocationLabel}.
+                  </p>
+                )}
+
                 {showLocationPicker && (
-                  <div className="space-y-4 border-t border-gray-100 pt-4">
+                  <div className="mt-6 space-y-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
                     <Autocomplete
                       apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
                       placeholder="Search for a city, club, or court"
-                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                       value={locationSearchTerm}
                       onChange={(event) => setLocationSearchTerm(event.target.value)}
                       onPlaceSelected={(place) => {
@@ -3715,7 +3728,10 @@ const TennisMatchApp = () => {
                         const lat = place.geometry?.location?.lat?.();
                         const lng = place.geometry?.location?.lng?.();
                         const label =
-                          place.formatted_address || place.name || locationSearchTerm || "Custom location";
+                          place.formatted_address ||
+                          place.name ||
+                          locationSearchTerm ||
+                          "Custom location";
                         if (
                           typeof lat === "number" &&
                           !Number.isNaN(lat) &&
@@ -3726,43 +3742,26 @@ const TennisMatchApp = () => {
                           setGeoError("");
                           setShowLocationPicker(false);
                         } else {
-                          setGeoError("We couldn't read that location. Try another search.");
+                          setGeoError(
+                            "We couldn't read that location's coordinates. Try another search.",
+                          );
                         }
                       }}
                       options={{
-                    types: ["geocode", "establishment"],
-                    fields: [
-                      "formatted_address",
-                      "geometry",
-                      "name",
-                      "address_components",
-                    ],
-                  }}
+                        types: ["geocode", "establishment"],
+                        fields: ["formatted_address", "geometry", "name", "address_components"],
+                      }}
                     />
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <button
                         type="button"
                         onClick={detectCurrentLocation}
                         disabled={isDetectingLocation}
-                        className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {isDetectingLocation ? "Detecting location..." : "Use my current location"}
                       </button>
                       <div className="flex flex-wrap items-center gap-2">
-                        {hasLocationFilter && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLocationFilter(null);
-                              setLocationSearchTerm("");
-                              setShowLocationPicker(false);
-                              setGeoError("");
-                            }}
-                            className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
-                          >
-                            Clear location
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -3770,24 +3769,231 @@ const TennisMatchApp = () => {
                             setGeoError("");
                             setLocationSearchTerm(locationFilter?.label || "");
                           }}
-                          className="rounded-xl bg-gray-900 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-gray-700"
+                          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
                         >
                           Close
                         </button>
                       </div>
                     </div>
-                    {geoError && (
-                      <p className="text-sm font-semibold text-red-600">{geoError}</p>
-                    )}
+                    {geoError && <p className="text-sm font-semibold text-red-600">{geoError}</p>}
                     {!import.meta.env.VITE_GOOGLE_API_KEY && (
                       <p className="text-xs font-semibold text-amber-600">
-                        Tip: Add a Google Places API key to enable autocomplete suggestions.
+                        Tip: Provide a Google Places API key to enable location search suggestions.
                       </p>
                     )}
                   </div>
                 )}
-              </div>
+              </section>
 
+              <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Your quick actions
+                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">Jump back in</h3>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {quickActions.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={action.onClick}
+                      className="group flex h-full flex-col justify-between rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 transition group-hover:bg-emerald-500 group-hover:text-white">
+                          <action.icon className="h-5 w-5" />
+                        </span>
+                        <p className="text-base font-bold text-slate-900">{action.label}</p>
+                      </div>
+                      <p className="mt-3 text-sm font-medium text-slate-500">
+                        {action.description}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Personal schedule
+                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {personalScheduleMatches.length > 0
+                        ? "Coming up for you"
+                        : "Save time slots"
+                      }
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => goToInvites()}
+                    className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                  >
+                    View invites
+                  </button>
+                </div>
+                <div className="mt-5 space-y-4">
+                  {nextMatch ? (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        Next match
+                      </p>
+                      <p className="mt-1 text-lg font-bold text-emerald-900">{highlightTitle}</p>
+                      <ul className="mt-3 space-y-2 text-sm text-emerald-800">
+                        {highlightMeta.map((meta) => (
+                          <li key={`next-${meta.label}`} className="flex items-center gap-2">
+                            {meta.icon && <meta.icon className="h-4 w-4 text-emerald-600" />}
+                            <span>{meta.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm font-semibold text-emerald-700">
+                      No upcoming matches yet. Create one or join an open match to fill your calendar.
+                    </div>
+                  )}
+
+                  {remainingSchedule.length > 0 && (
+                    <div className="space-y-3">
+                      {remainingSchedule.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                              {entry.membership === "hosted" ? "Hosting" : "Playing"}
+                            </p>
+                            <p className="text-base font-bold text-slate-900">{entry.formatLabel || "Match"}</p>
+                            <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                              {entry.startLabel && (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Calendar className="h-4 w-4 text-emerald-500" />
+                                  {entry.startLabel}
+                                </span>
+                              )}
+                              {entry.locationLabel && (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <MapPin className="h-4 w-4 text-emerald-500" />
+                                  {entry.locationLabel}
+                                </span>
+                              )}
+                              {entry.relativeTime && (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Clock className="h-4 w-4 text-emerald-500" />
+                                  {entry.relativeTime}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(entry.match.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                            >
+                              View details
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                            {entry.membership === "hosted" && (
+                              <button
+                                type="button"
+                                onClick={() => openInviteScreen(entry.match.id)}
+                                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                              >
+                                Manage invites
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Nearby highlights
+                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">Matches worth a look</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }
+                    }}
+                    className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                  >
+                    Jump to listings
+                  </button>
+                </div>
+                <div className="mt-5 space-y-4">
+                  {nearbyMatchesPreview.length > 0 ? (
+                    nearbyMatchesPreview.map((preview) => (
+                      <div
+                        key={preview.id}
+                        className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="text-base font-bold text-slate-900">{preview.formatLabel || "Match"}</p>
+                          <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                            {preview.startLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="h-4 w-4 text-emerald-500" />
+                                {preview.startLabel}
+                              </span>
+                            )}
+                            {preview.locationLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="h-4 w-4 text-emerald-500" />
+                                {preview.locationLabel}
+                              </span>
+                            )}
+                            {preview.distanceLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <Navigation className="h-4 w-4 text-emerald-500" />
+                                {preview.distanceLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isOpenMatch(preview.match) && (
+                            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
+                              Open match
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleViewDetails(preview.match.id)}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            View details
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-4 text-sm font-semibold text-slate-600">
+                      We’ll highlight nearby matches here once you set a location or new events are posted.
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <aside className="space-y-6">
               <ActivityFeed
                 items={activityFeedItems}
                 loading={homeFeedLoading || invitesLoading}
@@ -3795,155 +4001,175 @@ const TennisMatchApp = () => {
                 onRefresh={() => refreshMatchesAndInvites()}
                 onViewAll={goToInvites}
                 pendingInviteCount={pendingInvites.length}
-                unreadUpdateCount={unreadUpdates}
+                unreadUpdateCount={Number(notificationSummary.unread ?? 0)}
               />
-            </div>
-          </section>
 
-          <section
-            id="matches-nearby-section"
-            className="rounded-3xl border border-gray-100 bg-white/95 p-6 shadow-sm sm:p-8 space-y-6"
-          >
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-1">
-                <h3 className="text-xl font-black text-gray-900">Matches Near You</h3>
-                <p className="text-sm font-medium text-gray-600">
-                  Browse open matches, filter by time, and jump in when a spot opens up.
-                </p>
-              </div>
-              <div className="w-full md:w-72">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              {matchesNeedingAttention.length > 0 && (
+                <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-200 text-amber-700">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                        Needs players
+                      </p>
+                      <h3 className="text-lg font-bold text-amber-900">Help fill your matches</h3>
+                    </div>
+                  </div>
+                  <div className="mt-5 space-y-4">
+                    {matchesNeedingAttention.slice(0, 4).map((match) => {
+                      const start = parseDateValue(match.dateTime);
+                      const startLabel = start ? formatDateTime(start) : "Date TBA";
+                      const locationLabel = [
+                        match.location,
+                        match.location_text,
+                        match.locationText,
+                        match.venue,
+                        match.court_name,
+                        match.courtName,
+                      ]
+                        .map((value) => (typeof value === "string" ? value.trim() : ""))
+                        .find((value) => value);
+                      return (
+                        <div key={match.id} className="rounded-2xl border border-amber-200 bg-white/80 p-4">
+                          <p className="text-sm font-semibold text-amber-800">
+                            {match.match_format || match.matchFormat || match.format || "Match"}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-3 text-sm text-amber-700">
+                            {startLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="h-4 w-4" />
+                                {startLabel}
+                              </span>
+                            )}
+                            {locationLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="h-4 w-4" />
+                                {locationLabel}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(match.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
+                            >
+                              View match
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openInviteScreen(match.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+                            >
+                              Manage invites
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </aside>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur">
+            <div className="sticky top-20 z-30 rounded-t-3xl border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {filterDefinitions.map((filter) => {
+                    const isActive = activeFilter === filter.id;
+                    return (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        onClick={() => setActiveFilter(filter.id)}
+                        className={`flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "text-white shadow-lg"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                        style={isActive ? { backgroundImage: filter.gradient } : undefined}
+                      >
+                        <span className="text-base">{filter.icon}</span>
+                        {filter.label}
+                        {getMatchCount(filter.id) > 0 && (
+                          <span
+                            className={`ml-1 rounded-full px-2 py-0.5 text-xs font-black ${
+                              isActive ? "bg-white/20 text-white" : "bg-white text-slate-600"
+                            }`}
+                          >
+                            {getMatchCount(filter.id)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="w-full lg:w-72">
                   <input
                     type="search"
+                    placeholder="Search matches"
                     value={matchSearch}
                     onChange={(event) => setMatchSearch(event.target.value)}
-                    placeholder="Search matches..."
-                    className="w-full rounded-2xl border-2 border-gray-200 bg-white px-10 py-2.5 text-sm font-semibold text-gray-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                   />
                 </div>
               </div>
             </div>
 
-              <div className="flex flex-wrap gap-2 overflow-x-auto pb-1">
-                {filterOptions.map((filter) => (
-                  <button
-                    key={`filter-${filter.id}`}
-                    type="button"
-                    onClick={() => setActiveFilter(filter.id)}
-                    className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold transition ${
-                      activeFilter === filter.id
-                        ? `bg-gradient-to-br ${filter.gradient} text-white shadow-lg`
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <span className="text-sm">{filter.icon}</span>
-                    {filter.label}
-                    {filter.count > 0 && (
-                      <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                        activeFilter === filter.id ? "bg-white/30 text-white" : "bg-white text-gray-600"
-                      }`}
-                    >
-                      {filter.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {hasLocationFilter && displayedMatches.length === 0 && (
-              <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/80 p-6 text-center text-sm font-semibold text-emerald-700">
-                No matches within {distanceFilter} miles yet. Expand your distance filter or check back soon!
-              </div>
-            )}
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
               {displayedMatches.map((match) => (
                 <MatchCard key={match.id} match={match} />
               ))}
             </div>
 
+            {displayedMatches.length === 0 && (
+              <div className="px-6 pb-6">
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-600">
+                  {hasLocationFilter
+                    ? `No matches within ${distanceFilter} miles just yet. Try widening your search radius or check back soon.`
+                    : "No matches match your filters right now. Try a different filter or refresh shortly."}
+                </div>
+              </div>
+            )}
+
             {matchPagination && !hasLocationFilter && (
-              <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 text-sm font-semibold text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 px-6 pb-6 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"
-                  onClick={() => setMatchPage((previous) => Math.max(1, previous - 1))}
+                  onClick={() => setMatchPage((page) => Math.max(1, page - 1))}
                   disabled={matchPage === 1}
-                  className="inline-flex items-center justify-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
-                  <ChevronLeft className="h-4 w-4" /> Previous
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
                 </button>
-                <span>
+                <span className="text-sm font-medium text-slate-600">
                   Page {matchPagination.page} of {Math.max(1, Math.ceil(getMatchCount(activeFilter) / matchPagination.perPage))}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setMatchPage((previous) => previous + 1)}
+                  onClick={() => setMatchPage((page) => page + 1)}
                   disabled={
-                    matchPagination.page >= Math.ceil(getMatchCount(activeFilter) / matchPagination.perPage)
+                    matchPagination.page >=
+                    Math.ceil(getMatchCount(activeFilter) / matchPagination.perPage)
                   }
-                  className="inline-flex items-center justify-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
-                  Next <ChevronRight className="h-4 w-4" />
+                  Next
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             )}
-          </section>
-
-          <section className="rounded-3xl border border-gray-100 bg-white/95 p-6 shadow-sm sm:p-8 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-black text-gray-900">Featured Coaches</h3>
-                <p className="text-sm font-medium text-gray-600">
-                  Sharpen your game with local pros who love Matchplay players.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => displayToast("Coach marketplace coming soon!", "info")}
-                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
-              >
-                View all
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {featuredCoaches.map((coach) => (
-                <div
-                  key={coach.id}
-                  className={`rounded-3xl bg-gradient-to-br ${coach.color} p-4 shadow-sm transition hover:shadow-lg`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="h-12 w-12 rounded-2xl bg-white/90 text-lg font-bold text-gray-800 flex items-center justify-center">
-                      {coach.initials}
-                    </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-gray-700">
-                      <Star className="h-3.5 w-3.5 text-amber-500" />
-                      {coach.rating}
-                    </span>
-                  </div>
-                  <h4 className="mt-4 text-base font-black text-gray-900">{coach.name}</h4>
-                  <p className="text-xs font-semibold text-gray-600">{coach.specialty}</p>
-                  <div className="mt-4 flex items-center justify-between text-xs font-semibold text-gray-700">
-                    <span>{coach.price}</span>
-                    <button
-                      type="button"
-                      onClick={() => displayToast("Message sent to coach!", "success")}
-                      className="inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-[11px] font-bold text-emerald-700 shadow-sm transition hover:bg-white"
-                    >
-                      <MessageCircle className="h-3.5 w-3.5" /> Contact
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          </div>
         </div>
       </div>
     );
   };
+
 
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
