@@ -70,6 +70,8 @@ import {
   MessageCircle,
   Phone,
   AlertCircle,
+  Compass,
+  Navigation,
   ArrowRight,
   Zap,
   Trophy,
@@ -746,6 +748,8 @@ const TennisMatchApp = () => {
   const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
+  const locationToolsRef = useRef(null);
+  const matchListingsRef = useRef(null);
   const hydratedProfileIdsRef = useRef(new Set());
   const notificationSummaryErrorLoggedRef = useRef(false);
   const inviteSummaryErrorLoggedRef = useRef(false);
@@ -3228,390 +3232,1027 @@ const TennisMatchApp = () => {
     [matchCounts],
   );
 
-  const BrowseScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
-      {/* Hero Section with Action Button */}
-      <div className="border-b border-gray-100 bg-white/90 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-xl sm:text-3xl font-black text-gray-900">
-                {currentUser ? "Browse Local Matches" : "Find Your Next Match"}
-              </h2>
-              <p className="mt-1 text-xs font-semibold text-gray-500 sm:text-base sm:font-medium">
-                {currentUser
-                  ? "See what's nearby and jump back in."
-                  : "Discover active players around North County."}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!currentUser) {
-                    setShowSignInModal(true);
-                  } else {
-                    navigate("/create");
-                  }
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-transform hover:-translate-y-0.5 hover:shadow-lg sm:text-base"
-              >
-                <Sparkles className="h-4 w-4" />
-                <span>Create Match</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/courts")}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:text-base"
-              >
-                <MapPin className="h-4 w-4" />
-                <span>Find Courts</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+  const personalScheduleMatches = useMemo(() => {
+    if (!Array.isArray(matches) || matches.length === 0) return [];
 
-      {currentUser ? (
-        <>
-          <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
-            <section className="bg-white/80 border border-gray-100 rounded-3xl shadow-sm p-5 space-y-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-semibold shadow ${
-                      hasLocationFilter
-                        ? "bg-gradient-to-r from-purple-500 to-indigo-500 text-white"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    <MapPin className="w-4 h-4" />
-                    <span className="truncate max-w-[220px] sm:max-w-[320px]">
-                      {hasLocationFilter
-                        ? activeLocationLabel
-                        : "Showing matches from every location"}
-                    </span>
+    const now = Date.now();
+    const normalizeString = (value) => {
+      if (typeof value !== "string") return "";
+      const trimmed = value.trim();
+      return trimmed;
+    };
+
+    const pickString = (...candidates) => {
+      for (const candidate of candidates) {
+        const normalized = normalizeString(candidate);
+        if (normalized) return normalized;
+      }
+      return "";
+    };
+
+    return matches
+      .filter((match) => {
+        if (!match) return false;
+        const membership = normalizeString(match.type).toLowerCase();
+        if (membership !== "hosted" && membership !== "joined") return false;
+        const startTs = getMatchTimestamp(match);
+        if (startTs === null) return false;
+        // Keep matches that are upcoming or started in the last two hours
+        return startTs >= now - 1000 * 60 * 60 * 2;
+      })
+      .map((match) => {
+        const start = parseDateValue(match.dateTime);
+        const locationLabel = pickString(
+          match.location,
+          match.location_text,
+          match.locationText,
+          match.venue,
+          match.court_name,
+          match.courtName,
+        );
+        const formatLabel = pickString(
+          match.match_format,
+          match.matchFormat,
+          match.format,
+          match.title,
+          match.name,
+        );
+        const skillLabel = pickString(match.skill_level, match.skillLevel, match.skill);
+        const startLabel = start ? formatDateTime(start) : "Date TBA";
+        return {
+          id: match.id,
+          match,
+          start,
+          startLabel,
+          relativeTime: formatRelativeTimeFromNow(start),
+          locationLabel,
+          formatLabel,
+          skillLabel,
+          membership: normalizeString(match.type).toLowerCase(),
+          status: normalizeString(match.status).toLowerCase(),
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.start instanceof Date ? a.start.getTime() : Number.POSITIVE_INFINITY;
+        const bTime = b.start instanceof Date ? b.start.getTime() : Number.POSITIVE_INFINITY;
+        return aTime - bTime;
+      })
+      .slice(0, 5);
+  }, [
+    matches,
+    formatDateTime,
+    formatRelativeTimeFromNow,
+    getMatchTimestamp,
+    parseDateValue,
+  ]);
+
+  const nearbyMatchesPreview = useMemo(() => {
+    if (!Array.isArray(displayedMatches) || displayedMatches.length === 0) return [];
+
+    const normalizeString = (value) => {
+      if (typeof value !== "string") return "";
+      const trimmed = value.trim();
+      return trimmed;
+    };
+
+    const pickString = (...candidates) => {
+      for (const candidate of candidates) {
+        const normalized = normalizeString(candidate);
+        if (normalized) return normalized;
+      }
+      return "";
+    };
+
+    return displayedMatches.slice(0, 4).map((match) => {
+      const start = parseDateValue(match.dateTime);
+      const formatLabel = pickString(
+        match.match_format,
+        match.matchFormat,
+        match.format,
+        match.title,
+        match.name,
+      );
+      const locationLabel = pickString(
+        match.location,
+        match.location_text,
+        match.locationText,
+        match.venue,
+        match.court_name,
+        match.courtName,
+      );
+      const distanceLabel = Number.isFinite(match.distanceMiles)
+        ? `${match.distanceMiles.toFixed(match.distanceMiles < 10 ? 1 : 0)} mi`
+        : "";
+      return {
+        id: match.id,
+        match,
+        start,
+        startLabel: start ? formatDateTime(start) : "Date TBA",
+        relativeTime: formatRelativeTimeFromNow(start),
+        locationLabel,
+        formatLabel,
+        distanceLabel,
+      };
+    });
+  }, [
+    displayedMatches,
+    formatDateTime,
+    formatRelativeTimeFromNow,
+    parseDateValue,
+  ]);
+
+  const BrowseScreen = () => {
+    const statCards = [
+      {
+        label: "Upcoming matches",
+        value: personalScheduleMatches.length,
+        icon: Calendar,
+      },
+      {
+        label: "Open nearby",
+        value: getMatchCount("open") || displayedMatches.length,
+        icon: Users,
+      },
+      {
+        label: "Invites waiting",
+        value: pendingInvites.length,
+        icon: Mail,
+      },
+      {
+        label: "Needs players",
+        value: matchesNeedingAttention.length,
+        icon: AlertCircle,
+      },
+    ];
+
+    const handleBrowseMatches = useCallback(() => {
+      setActiveFilter("open");
+      setMatchSearch("");
+      setTimeout(() => {
+        if (matchListingsRef.current) {
+          matchListingsRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }, 0);
+    }, [matchListingsRef, setActiveFilter, setMatchSearch]);
+
+    const handleLocationToolsFocus = useCallback(() => {
+      setShowLocationPicker(true);
+      setGeoError("");
+      setTimeout(() => {
+        if (locationToolsRef.current) {
+          locationToolsRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }, 0);
+    }, [locationToolsRef, setGeoError, setShowLocationPicker]);
+
+    const handleFindCourts = useCallback(() => {
+      handleLocationToolsFocus();
+    }, [handleLocationToolsFocus]);
+
+    const quickActions = [
+      {
+        id: "browse",
+        label: "Browse matches",
+        description: "See what's open nearby and plan ahead.",
+        details: [
+          "Filter by format, day, or skill level.",
+          "Save options to revisit later.",
+        ],
+        icon: Search,
+        onClick: handleBrowseMatches,
+        ctaLabel: "Browse matches",
+      },
+      {
+        id: "players",
+        label: "Find players",
+        description: "Match with partners at your pace.",
+        details: [
+          "Search by level or availability.",
+          "Check shared connections before inviting.",
+        ],
+        icon: Users,
+        onClick: () => goToPlayers(),
+        ctaLabel: "Find players",
+      },
+      {
+        id: "ai-match",
+        label: "AI Match Me",
+        description: "Let the assistant suggest matchups.",
+        details: [
+          "Share your availability and skill level.",
+          "Preview smart recommendations before joining.",
+        ],
+        icon: Sparkles,
+        onClick: () => {
+          displayToast(
+            "AI Match Me is coming soon. We'll surface smart suggestions here shortly.",
+            "info",
+          );
+        },
+        ctaLabel: "Preview AI Match Me",
+      },
+      {
+        id: "create",
+        label: "Create a match",
+        description: "Host a new meetup with your preferred format.",
+        details: [
+          "Pick the format, skill range, and roster size.",
+          "Send invites or open it up to the community.",
+        ],
+        icon: Plus,
+        onClick: () => {
+          if (!currentUser) {
+            setShowSignInModal(true);
+          } else {
+            navigate("/create");
+          }
+        },
+        ctaLabel: "Create a match",
+      },
+      {
+        id: "courts",
+        label: "Find courts",
+        description: "Dial in the best places to play.",
+        details: [
+          "Search clubs, parks, and favorite venues.",
+          "Adjust your radius for the ideal drive time.",
+        ],
+        icon: MapPin,
+        onClick: handleFindCourts,
+        ctaLabel: "Adjust location tools",
+      },
+      {
+        id: "invites",
+        label: "Review invites",
+        description: "Confirm spots and respond to requests.",
+        details: [
+          "See who’s waiting on your reply.",
+          "Accept, decline, or message hosts in one place.",
+        ],
+        icon: Bell,
+        onClick: () => goToInvites(),
+        ctaLabel: "View invites",
+      },
+    ];
+
+    const heroActionIds = new Set(["browse", "players", "ai-match", "courts"]);
+    const heroActions = quickActions.filter((action) => heroActionIds.has(action.id));
+    const secondaryActions = quickActions.filter((action) => !heroActionIds.has(action.id));
+
+    const filterDefinitions = [
+      {
+        id: "my",
+        label: "My Matches",
+        gradient: "linear-gradient(135deg, rgb(16 185 129), rgb(5 150 105))",
+        icon: "⭐",
+      },
+      {
+        id: "open",
+        label: "Open Matches",
+        gradient: "linear-gradient(135deg, rgb(56 189 248), rgb(99 102 241))",
+        icon: "🔥",
+      },
+      {
+        id: "today",
+        label: "Today",
+        gradient: "linear-gradient(135deg, rgb(245 158 11), rgb(234 88 12))",
+        icon: "📅",
+      },
+      {
+        id: "tomorrow",
+        label: "Tomorrow",
+        gradient: "linear-gradient(135deg, rgb(244 114 182), rgb(168 85 247))",
+        icon: "⏰",
+      },
+      {
+        id: "weekend",
+        label: "Weekend",
+        gradient: "linear-gradient(135deg, rgb(59 130 246), rgb(124 58 237))",
+        icon: "🎉",
+      },
+      {
+        id: "draft",
+        label: "Drafts",
+        gradient: "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))",
+        icon: "📝",
+      },
+      {
+        id: "archived",
+        label: "Archived",
+        gradient: "linear-gradient(135deg, rgb(113 113 122), rgb(82 82 91))",
+        icon: "🗂️",
+      },
+    ];
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
+        <div className="border-b border-gray-100 bg-white/95 backdrop-blur-sm">
+          <div className="mx-auto max-w-7xl px-4 py-10 sm:py-12">
+            <div className="grid gap-8 lg:grid-cols-[1.7fr,1fr]">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600">
+                    <span>Welcome</span>
+                    {currentUser?.name && (
+                      <span className="truncate text-emerald-700/80">
+                        {currentUser.name.split(" ")[0]}
+                      </span>
+                    )}
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowLocationPicker((prev) => !prev);
-                      setGeoError("");
-                    }}
-                    className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold shadow hover:bg-gray-700 transition-colors"
-                  >
-                    {showLocationPicker
-                      ? "Hide location tools"
-                      : hasLocationFilter
-                      ? "Change location"
-                      : "Set location"}
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {distanceOptions.map((distance) => (
+                  <h1 className="text-3xl font-black leading-tight text-slate-900 sm:text-4xl">
+                    Rally up for your next play date
+                  </h1>
+                  <p className="max-w-2xl text-base font-medium text-slate-600 sm:text-lg">
+                    Plan matches, find partners, and keep tabs on what's happening in your tennis circle.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
                     <button
-                      key={distance}
-                      onClick={() => setDistanceFilter(distance)}
-                      disabled={!hasLocationFilter && distance !== distanceFilter}
-                      className={`px-3 py-1.5 text-sm font-bold rounded-full border transition-colors ${
-                        distanceFilter === distance
-                          ? "bg-green-500 text-white border-green-500 shadow"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600"
-                      } ${
-                        !hasLocationFilter && distance !== distanceFilter
-                          ? "opacity-50 cursor-not-allowed"
-                          : ""
-                      }`}
                       type="button"
+                      onClick={() => {
+                        if (!currentUser) {
+                          setShowSignInModal(true);
+                        } else {
+                          navigate("/create");
+                        }
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg sm:w-auto sm:text-base"
                     >
-                      {distance} mi
+                      <Sparkles className="h-4 w-4" />
+                      Create match
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => goToInvites()}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-6 py-3 text-sm font-bold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:w-auto sm:text-base"
+                    >
+                      <Bell className="h-4 w-4" />
+                      View invites
+                    </button>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {heroActions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="flex h-full flex-col justify-between gap-4 rounded-3xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                          <action.icon className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-emerald-600">{action.label}</p>
+                          <p className="text-sm text-slate-600">{action.description}</p>
+                        </div>
+                      </div>
+                      {Array.isArray(action.details) && action.details.length > 0 && (
+                        <ul className="space-y-2 text-sm text-slate-600">
+                          {action.details.map((detail) => (
+                            <li key={detail} className="flex items-start gap-2">
+                              <ArrowRight className="mt-1 h-3.5 w-3.5 text-emerald-500" />
+                              <span className="flex-1 leading-relaxed">{detail}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div>
+                        <button
+                          type="button"
+                          onClick={action.onClick}
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800"
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                          {action.ctaLabel}
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-              {hasLocationFilter && (
-                <p className="text-xs font-semibold text-gray-500">
-                  Showing matches within {distanceFilter} miles of your selected location.
-                </p>
-              )}
-              {showLocationPicker && (
-                <div className="pt-4 border-t border-gray-100 space-y-4">
-                  <Autocomplete
-                    apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
-                    placeholder="Search for a city, club, or court"
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm font-semibold text-gray-700"
-                    value={locationSearchTerm}
-                    onChange={(event) => setLocationSearchTerm(event.target.value)}
-                    onPlaceSelected={(place) => {
-                      if (!place) {
-                        setGeoError("Please choose a location from the suggestions.");
-                        return;
-                      }
-                      const lat = place.geometry?.location?.lat?.();
-                      const lng = place.geometry?.location?.lng?.();
-                      const label =
-                        place.formatted_address || place.name || locationSearchTerm || "Custom location";
-                      if (
-                        typeof lat === "number" &&
-                        !Number.isNaN(lat) &&
-                        typeof lng === "number" &&
-                        !Number.isNaN(lng)
-                      ) {
-                        setLocationFilter({ label, lat, lng });
-                        setGeoError("");
-                        setShowLocationPicker(false);
-                      } else {
-                        setGeoError(
-                          "We couldn't read that location's coordinates. Try another search.",
-                        );
-                      }
-                    }}
-                    options={{
-                    types: ["geocode", "establishment"],
-                    fields: [
-                      "formatted_address",
-                      "geometry",
-                      "name",
-                      "address_components",
-                    ],
-                  }}
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={detectCurrentLocation}
-                      disabled={isDetectingLocation}
-                      className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-sm border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {isDetectingLocation ? "Detecting location..." : "Use my current location"}
-                    </button>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {hasLocationFilter && (
+              <div className="space-y-6">
+                <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-start gap-4">
+                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                      <MapPin className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        Location focus
+                      </p>
+                      <p className="text-lg font-bold text-slate-900">
+                        {hasLocationFilter ? activeLocationLabel : "All locations"}
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        {hasLocationFilter
+                          ? `Within ${distanceFilter} miles`
+                          : "Set a home base to personalize recommendations."}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {hasLocationFilter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLocationFilter(null);
+                              setLocationSearchTerm("");
+                              setGeoError("");
+                            }}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            <X className="h-4 w-4" />
+                            Clear
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => {
-                            setLocationFilter(null);
-                            setLocationSearchTerm("");
-                            setShowLocationPicker(false);
-                            setGeoError("");
-                          }}
-                          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm hover:bg-gray-200 transition-colors"
+                          onClick={handleLocationToolsFocus}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600"
                         >
-                          Clear location
+                          <Compass className="h-4 w-4" />
+                          {hasLocationFilter ? "Adjust location" : "Set location"}
                         </button>
-                      )}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {statCards.map((card) => (
+                    <div
+                      key={card.label}
+                      className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                          <card.icon className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-500">
+                            {card.label}
+                          </p>
+                          <p className="text-2xl font-black text-slate-900">{card.value}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10">
+          <div className="grid gap-6 lg:grid-cols-[1.75fr,1fr]">
+            <div className="space-y-6">
+              <section
+                ref={locationToolsRef}
+                className="rounded-3xl border border-emerald-100/60 bg-white p-6 shadow-sm"
+              >
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                      <MapPin className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        Location focus
+                      </p>
+                      <p className="text-lg font-bold text-slate-900">
+                        {hasLocationFilter ? activeLocationLabel : "All locations"}
+                      </p>
+                      <p className="text-sm font-medium text-slate-500">
+                        {hasLocationFilter
+                          ? `Within ${distanceFilter} miles`
+                          : "Set a location to prioritize nearby matches"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasLocationFilter && (
                       <button
                         type="button"
                         onClick={() => {
-                          setShowLocationPicker(false);
+                          setLocationFilter(null);
+                          setLocationSearchTerm("");
                           setGeoError("");
-                          setLocationSearchTerm(locationFilter?.label || "");
                         }}
-                        className="px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-sm hover:bg-gray-700 transition-colors"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                       >
-                        Close
+                        <X className="h-4 w-4" />
+                        Clear
                       </button>
-                    </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLocationPicker((prev) => !prev);
+                        setGeoError("");
+                      }}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                    >
+                      <Compass className="h-4 w-4" />
+                      {showLocationPicker ? "Hide tools" : hasLocationFilter ? "Change" : "Set location"}
+                    </button>
                   </div>
-                  {geoError && (
-                    <p className="text-sm font-semibold text-red-600">{geoError}</p>
-                  )}
-                  {!import.meta.env.VITE_GOOGLE_API_KEY && (
-                    <p className="text-xs text-amber-600 font-semibold">
-                      Tip: Provide a Google Places API key to enable location search suggestions.
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {distanceOptions.map((distance) => {
+                    const isActive = distanceFilter === distance;
+                    return (
+                      <button
+                        key={distance}
+                        type="button"
+                        onClick={() => setDistanceFilter(distance)}
+                        disabled={!hasLocationFilter && !isActive}
+                        className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "border-emerald-500 bg-emerald-500 text-white shadow"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-emerald-400 hover:text-emerald-600"
+                        } ${
+                          !hasLocationFilter && !isActive
+                            ? "cursor-not-allowed opacity-50"
+                            : ""
+                        }`}
+                      >
+                        {distance} mi
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {hasLocationFilter && (
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                    Showing matches within {distanceFilter} miles of {activeLocationLabel}.
+                  </p>
+                )}
+
+                {showLocationPicker && (
+                  <div className="mt-6 space-y-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                    <Autocomplete
+                      apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                      placeholder="Search for a city, club, or court"
+                      className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                      value={locationSearchTerm}
+                      onChange={(event) => setLocationSearchTerm(event.target.value)}
+                      onPlaceSelected={(place) => {
+                        if (!place) {
+                          setGeoError("Please choose a location from the suggestions.");
+                          return;
+                        }
+                        const lat = place.geometry?.location?.lat?.();
+                        const lng = place.geometry?.location?.lng?.();
+                        const label =
+                          place.formatted_address ||
+                          place.name ||
+                          locationSearchTerm ||
+                          "Custom location";
+                        if (
+                          typeof lat === "number" &&
+                          !Number.isNaN(lat) &&
+                          typeof lng === "number" &&
+                          !Number.isNaN(lng)
+                        ) {
+                          setLocationFilter({ label, lat, lng });
+                          setGeoError("");
+                          setShowLocationPicker(false);
+                        } else {
+                          setGeoError(
+                            "We couldn't read that location's coordinates. Try another search.",
+                          );
+                        }
+                      }}
+                      options={{
+                        types: ["geocode", "establishment"],
+                        fields: ["formatted_address", "geometry", "name", "address_components"],
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={detectCurrentLocation}
+                        disabled={isDetectingLocation}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isDetectingLocation ? "Detecting location..." : "Use my current location"}
+                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowLocationPicker(false);
+                            setGeoError("");
+                            setLocationSearchTerm(locationFilter?.label || "");
+                          }}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    {geoError && <p className="text-sm font-semibold text-red-600">{geoError}</p>}
+                    {!import.meta.env.VITE_GOOGLE_API_KEY && (
+                      <p className="text-xs font-semibold text-amber-600">
+                        Tip: Provide a Google Places API key to enable location search suggestions.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Your quick actions
                     </p>
+                    <h3 className="text-lg font-bold text-slate-900">Jump back in</h3>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {secondaryActions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="flex h-full flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                          <action.icon className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-base font-bold text-slate-900">{action.label}</p>
+                          <p className="text-sm font-medium text-slate-500">{action.description}</p>
+                        </div>
+                      </div>
+                      {Array.isArray(action.details) && action.details.length > 0 && (
+                        <ul className="space-y-2 text-sm text-slate-500">
+                          {action.details.map((detail) => (
+                            <li key={detail} className="flex items-start gap-2">
+                              <ArrowRight className="mt-1 h-3.5 w-3.5 text-emerald-500" />
+                              <span className="flex-1 leading-relaxed">{detail}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div>
+                        <button
+                          type="button"
+                          onClick={action.onClick}
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800"
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                          {action.ctaLabel}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Personal schedule
+                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {personalScheduleMatches.length > 0
+                        ? "Coming up for you"
+                        : "Save time slots"
+                      }
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => goToInvites()}
+                    className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                  >
+                    View invites
+                  </button>
+                </div>
+                <div className="mt-5 space-y-4">
+                  {personalScheduleMatches.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm font-semibold text-emerald-700">
+                      No upcoming matches yet. Create one or join an open match to fill your calendar.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {personalScheduleMatches.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                              {entry.membership === "hosted" ? "Hosting" : "Playing"}
+                            </p>
+                            <p className="text-base font-bold text-slate-900">{entry.formatLabel || "Match"}</p>
+                            <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                              {entry.startLabel && (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Calendar className="h-4 w-4 text-emerald-500" />
+                                  {entry.startLabel}
+                                </span>
+                              )}
+                              {entry.locationLabel && (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <MapPin className="h-4 w-4 text-emerald-500" />
+                                  {entry.locationLabel}
+                                </span>
+                              )}
+                              {entry.relativeTime && (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Clock className="h-4 w-4 text-emerald-500" />
+                                  {entry.relativeTime}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(entry.match.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                            >
+                              View details
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                            {entry.membership === "hosted" && (
+                              <button
+                                type="button"
+                                onClick={() => openInviteScreen(entry.match.id)}
+                                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                              >
+                                Manage invites
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-              )}
-            </section>
+              </section>
 
-            <ActivityFeed
-              items={activityFeedItems}
-              loading={homeFeedLoading || invitesLoading}
-              errors={[homeFeedError, invitesError]}
-              onRefresh={() => refreshMatchesAndInvites()}
-              onViewAll={goToInvites}
-              pendingInviteCount={pendingInvites.length}
-              unreadUpdateCount={Number(notificationSummary.unread ?? 0)}
-            />
-          </div>
-
-      {/* Filter Tabs */}
-      <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
-            {[
-              {
-                id: "my",
-                label: "My Matches",
-                count: getMatchCount("my"),
-                color: "violet",
-                icon: "⭐",
-              },
-              {
-                id: "open",
-                label: "Open Matches",
-                count: getMatchCount("open"),
-                color: "green",
-                icon: "🔥",
-              },
-              {
-                id: "today",
-                label: "Today",
-                count: getMatchCount("today"),
-                color: "blue",
-                icon: "📅",
-              },
-              {
-                id: "tomorrow",
-                label: "Tomorrow",
-                count: getMatchCount("tomorrow"),
-                color: "amber",
-                icon: "⏰",
-              },
-              {
-                id: "weekend",
-                label: "Weekend",
-                count: getMatchCount("weekend"),
-                color: "purple",
-                icon: "🎉",
-              },
-              {
-                id: "draft",
-                label: "Drafts",
-                count: getMatchCount("draft"),
-                color: "gray",
-                icon: "📝",
-              },
-              {
-                id: "archived",
-                label: "Archived",
-                count: getMatchCount("archived"),
-                color: "slate",
-                icon: "🗂️",
-              },
-            ].map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
-                className={`px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-                  activeFilter === filter.id
-                    ? "text-white shadow-lg scale-105"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-                style={
-                  activeFilter === filter.id
-                  ? {
-                      background:
-                        filter.color === "violet"
-                          ? "linear-gradient(135deg, rgb(139 92 246), rgb(124 58 237))"
-                          : filter.color === "green"
-                          ? "linear-gradient(135deg, rgb(34 197 94), rgb(16 185 129))"
-                          : filter.color === "blue"
-                          ? "linear-gradient(135deg, rgb(59 130 246), rgb(37 99 235))"
-                          : filter.color === "amber"
-                          ? "linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6))"
-                          : filter.color === "slate"
-                          ? "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))"
-                          : "linear-gradient(135deg, rgb(168 85 247), rgb(147 51 234))",
-                    }
-                  : {}
-              }
-              >
-                <span className="text-base">{filter.icon}</span>
-                {filter.label}
-                {filter.count > 0 && (
-                  <span
-                    className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${
-                      activeFilter === filter.id
-                        ? "bg-white/25 text-white"
-                        : "bg-white text-gray-600"
-                    }`}
+              <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Nearby highlights
+                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">Matches worth a look</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }
+                    }}
+                    className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
                   >
-                    {filter.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+                    Jump to listings
+                  </button>
+                </div>
+                <div className="mt-5 space-y-4">
+                  {nearbyMatchesPreview.length > 0 ? (
+                    nearbyMatchesPreview.map((preview) => (
+                      <div
+                        key={preview.id}
+                        className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="text-base font-bold text-slate-900">{preview.formatLabel || "Match"}</p>
+                          <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                            {preview.startLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="h-4 w-4 text-emerald-500" />
+                                {preview.startLabel}
+                              </span>
+                            )}
+                            {preview.locationLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="h-4 w-4 text-emerald-500" />
+                                {preview.locationLabel}
+                              </span>
+                            )}
+                            {preview.distanceLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <Navigation className="h-4 w-4 text-emerald-500" />
+                                {preview.distanceLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isOpenMatch(preview.match) && (
+                            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
+                              Open match
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleViewDetails(preview.match.id)}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            View details
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-4 text-sm font-semibold text-slate-600">
+                      We’ll highlight nearby matches here once you set a location or new events are posted.
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
 
-      {/* Match Cards */}
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8">
-        <div className="mb-6">
-          <input
-            type="search"
-            placeholder="Search matches..."
-            value={matchSearch}
-            onChange={(e) => setMatchSearch(e.target.value)}
-            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
-          />
-        </div>
+            <aside className="space-y-6">
+              <ActivityFeed
+                items={activityFeedItems}
+                loading={homeFeedLoading || invitesLoading}
+                errors={[homeFeedError, invitesError]}
+                onRefresh={() => refreshMatchesAndInvites()}
+                onViewAll={goToInvites}
+                pendingInviteCount={pendingInvites.length}
+                unreadUpdateCount={Number(notificationSummary.unread ?? 0)}
+              />
 
-        {hasLocationFilter && displayedMatches.length === 0 && (
-          <div className="bg-white border border-dashed border-emerald-200 rounded-2xl p-8 text-center text-sm font-semibold text-emerald-700 mb-6">
-            No matches within {distanceFilter} miles of your location yet. Try expanding the distance filter or check back soon!
-          </div>
-        )}
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {displayedMatches.map((match) => (
-            <MatchCard key={match.id} match={match} />
-          ))}
-        </div>
-
-        {matchPagination && !hasLocationFilter && (
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
-              disabled={matchPage === 1}
-              className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            >
-              Previous
-            </button>
-            <span className="text-sm font-semibold text-gray-600">
-              Page {matchPagination.page} of
-              {" "}
-              {Math.max(
-                1,
-                Math.ceil(
-                  getMatchCount(activeFilter) /
-                    matchPagination.perPage
-                )
+              {matchesNeedingAttention.length > 0 && (
+                <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-200 text-amber-700">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                        Needs players
+                      </p>
+                      <h3 className="text-lg font-bold text-amber-900">Help fill your matches</h3>
+                    </div>
+                  </div>
+                  <div className="mt-5 space-y-4">
+                    {matchesNeedingAttention.slice(0, 4).map((match) => {
+                      const start = parseDateValue(match.dateTime);
+                      const startLabel = start ? formatDateTime(start) : "Date TBA";
+                      const locationLabel = [
+                        match.location,
+                        match.location_text,
+                        match.locationText,
+                        match.venue,
+                        match.court_name,
+                        match.courtName,
+                      ]
+                        .map((value) => (typeof value === "string" ? value.trim() : ""))
+                        .find((value) => value);
+                      return (
+                        <div key={match.id} className="rounded-2xl border border-amber-200 bg-white/80 p-4">
+                          <p className="text-sm font-semibold text-amber-800">
+                            {match.match_format || match.matchFormat || match.format || "Match"}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-3 text-sm text-amber-700">
+                            {startLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="h-4 w-4" />
+                                {startLabel}
+                              </span>
+                            )}
+                            {locationLabel && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="h-4 w-4" />
+                                {locationLabel}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(match.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
+                            >
+                              View match
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openInviteScreen(match.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+                            >
+                              Manage invites
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
               )}
-            </span>
-            <button
-              onClick={() => setMatchPage((p) => p + 1)}
-              disabled={
-                matchPagination.page >=
-                Math.ceil(
-                  getMatchCount(activeFilter) /
-                    matchPagination.perPage
-                )
-              }
-              className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            >
-              Next
-            </button>
+            </aside>
           </div>
-        )}
-      </div>
-        </>
-      ) : (
-        <div className="max-w-7xl mx-auto px-4 py-10 text-center">
-          <p className="text-gray-600 font-semibold mb-6">
-            Sign up or log in to view available matches.
-          </p>
-          <button
-            onClick={() => setShowSignInModal(true)}
-            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+
+          <div
+            ref={matchListingsRef}
+            className="rounded-3xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur"
           >
-            Sign Up / Log In
-          </button>
+            <div className="sticky top-20 z-30 rounded-t-3xl border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {filterDefinitions.map((filter) => {
+                    const isActive = activeFilter === filter.id;
+                    return (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        onClick={() => setActiveFilter(filter.id)}
+                        className={`flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "text-white shadow-lg"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                        style={isActive ? { backgroundImage: filter.gradient } : undefined}
+                      >
+                        <span className="text-base">{filter.icon}</span>
+                        {filter.label}
+                        {getMatchCount(filter.id) > 0 && (
+                          <span
+                            className={`ml-1 rounded-full px-2 py-0.5 text-xs font-black ${
+                              isActive ? "bg-white/20 text-white" : "bg-white text-slate-600"
+                            }`}
+                          >
+                            {getMatchCount(filter.id)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="w-full lg:w-72">
+                  <input
+                    type="search"
+                    placeholder="Search matches"
+                    value={matchSearch}
+                    onChange={(event) => setMatchSearch(event.target.value)}
+                    className="w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
+              {displayedMatches.map((match) => (
+                <MatchCard key={match.id} match={match} />
+              ))}
+            </div>
+
+            {displayedMatches.length === 0 && (
+              <div className="px-6 pb-6">
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-600">
+                  {hasLocationFilter
+                    ? `No matches within ${distanceFilter} miles just yet. Try widening your search radius or check back soon.`
+                    : "No matches match your filters right now. Try a different filter or refresh shortly."}
+                </div>
+              </div>
+            )}
+
+            {matchPagination && !hasLocationFilter && (
+              <div className="flex flex-col gap-3 px-6 pb-6 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => setMatchPage((page) => Math.max(1, page - 1))}
+                  disabled={matchPage === 1}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </button>
+                <span className="text-sm font-medium text-slate-600">
+                  Page {matchPagination.page} of {Math.max(1, Math.ceil(getMatchCount(activeFilter) / matchPagination.perPage))}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMatchPage((page) => page + 1)}
+                  disabled={
+                    matchPagination.page >=
+                    Math.ceil(getMatchCount(activeFilter) / matchPagination.perPage)
+                  }
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
+
 
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
