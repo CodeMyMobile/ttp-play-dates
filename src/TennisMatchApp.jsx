@@ -3362,9 +3362,6 @@ const TennisMatchApp = () => {
   ]);
 
   const BrowseScreen = () => {
-    const nextMatch = personalScheduleMatches[0];
-    const remainingSchedule = personalScheduleMatches.slice(1);
-
     const statCards = [
       {
         label: "Upcoming matches",
@@ -3429,6 +3426,7 @@ const TennisMatchApp = () => {
         ],
         icon: Search,
         onClick: handleBrowseMatches,
+        ctaLabel: "Browse matches",
       },
       {
         id: "players",
@@ -3440,6 +3438,7 @@ const TennisMatchApp = () => {
         ],
         icon: Users,
         onClick: () => goToPlayers(),
+        ctaLabel: "Find players",
       },
       {
         id: "ai-match",
@@ -3456,6 +3455,7 @@ const TennisMatchApp = () => {
             "info",
           );
         },
+        ctaLabel: "Preview AI Match Me",
       },
       {
         id: "create",
@@ -3473,6 +3473,7 @@ const TennisMatchApp = () => {
             navigate("/create");
           }
         },
+        ctaLabel: "Create a match",
       },
       {
         id: "courts",
@@ -3484,6 +3485,7 @@ const TennisMatchApp = () => {
         ],
         icon: MapPin,
         onClick: handleFindCourts,
+        ctaLabel: "Adjust location tools",
       },
       {
         id: "invites",
@@ -3495,37 +3497,13 @@ const TennisMatchApp = () => {
         ],
         icon: Bell,
         onClick: () => goToInvites(),
+        ctaLabel: "View invites",
       },
     ];
 
-    const highlightTitle = (() => {
-      if (!nextMatch) return "No upcoming matches";
-      const source = nextMatch.match || {};
-      const pickString = (...candidates) => {
-        for (const candidate of candidates) {
-          if (typeof candidate === "string" && candidate.trim()) {
-            return candidate.trim();
-          }
-        }
-        return "Match";
-      };
-      return (
-        pickString(
-          source.title,
-          source.name,
-          source.match_format,
-          source.matchFormat,
-          source.format,
-        ) || "Match"
-      );
-    })();
-
-    const highlightMeta = [
-      nextMatch?.startLabel && { icon: Calendar, label: nextMatch.startLabel },
-      nextMatch?.relativeTime && { icon: Clock, label: nextMatch.relativeTime },
-      nextMatch?.locationLabel && { icon: MapPin, label: nextMatch.locationLabel },
-      nextMatch?.skillLabel && { icon: Star, label: nextMatch.skillLabel },
-    ].filter(Boolean);
+    const heroActionIds = new Set(["browse", "players", "ai-match", "courts"]);
+    const heroActions = quickActions.filter((action) => heroActionIds.has(action.id));
+    const secondaryActions = quickActions.filter((action) => !heroActionIds.has(action.id));
 
     const filterDefinitions = [
       {
@@ -3573,176 +3551,161 @@ const TennisMatchApp = () => {
     ];
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-white">
-        <div className="relative overflow-hidden bg-slate-900 text-white">
-          <div className="absolute inset-0 opacity-60" aria-hidden="true">
-            <div className="absolute -top-24 right-12 h-56 w-56 rounded-full bg-emerald-500 blur-3xl" />
-            <div className="absolute bottom-0 left-12 h-64 w-64 rounded-full bg-sky-500/60 blur-3xl" />
-          </div>
-          <div className="relative mx-auto max-w-7xl px-4 py-12 sm:py-16">
-            <div className="grid gap-8 lg:grid-cols-[1.65fr,1fr] lg:items-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
+        <div className="border-b border-gray-100 bg-white/95 backdrop-blur-sm">
+          <div className="mx-auto max-w-7xl px-4 py-10 sm:py-12">
+            <div className="grid gap-8 lg:grid-cols-[1.7fr,1fr]">
               <div className="space-y-6">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
-                  <span>Welcome</span>
-                  {currentUser?.name && (
-                    <span className="truncate text-emerald-100/90">
-                      {currentUser.name.split(" ")[0]}
-                    </span>
-                  )}
-                </div>
-                <h1 className="text-3xl font-black leading-tight sm:text-5xl">
-                  Rally up for your next play date
-                </h1>
-                <p className="max-w-xl text-base font-medium text-emerald-100/80 sm:text-lg">
-                  Plan matches, find partners, and keep tabs on what's happening in your tennis circle.
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!currentUser) {
-                        setShowSignInModal(true);
-                      } else {
-                        navigate("/create");
-                      }
-                    }}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl sm:w-auto sm:text-base"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Create match
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => goToInvites()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur transition hover:border-white/50 hover:bg-white/20 sm:w-auto sm:text-base"
-                  >
-                    <Bell className="h-4 w-4" />
-                    View invites
-                  </button>
-                </div>
-                <div className="rounded-3xl border border-white/20 bg-white/10 p-5 shadow-lg backdrop-blur">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
-                        <MapPin className="h-5 w-5" />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600">
+                    <span>Welcome</span>
+                    {currentUser?.name && (
+                      <span className="truncate text-emerald-700/80">
+                        {currentUser.name.split(" ")[0]}
                       </span>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                          Location focus
-                        </p>
-                        <p className="text-lg font-bold text-white">
-                          {hasLocationFilter ? activeLocationLabel : "All locations"}
-                        </p>
-                        <p className="text-sm font-medium text-emerald-100/80">
-                          {hasLocationFilter
-                            ? `Within ${distanceFilter} miles`
-                            : "Set a home base to personalize recommendations."}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {hasLocationFilter && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLocationFilter(null);
-                            setLocationSearchTerm("");
-                            setGeoError("");
-                          }}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 hover:bg-white/10"
-                        >
-                          <X className="h-4 w-4" />
-                          Clear
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleLocationToolsFocus}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
-                      >
-                        <Compass className="h-4 w-4" />
-                        {hasLocationFilter ? "Update location" : "Set location"}
-                      </button>
-                    </div>
+                    )}
                   </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
-                      <Target className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
-                        Personalize your feed
-                      </p>
-                      <h2 className="text-2xl font-bold text-white">Find the perfect play date</h2>
-                      <p className="mt-1 text-sm font-medium text-emerald-100/80">
-                        Explore upcoming matches, coordinate with teammates, and let AI matchmaking help when you need a hand.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
+                  <h1 className="text-3xl font-black leading-tight text-slate-900 sm:text-4xl">
+                    Rally up for your next play date
+                  </h1>
+                  <p className="max-w-2xl text-base font-medium text-slate-600 sm:text-lg">
+                    Plan matches, find partners, and keep tabs on what's happening in your tennis circle.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
-                      onClick={handleBrowseMatches}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                      Browse matches
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => goToPlayers()}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 hover:bg-white/10"
-                    >
-                      <Users className="h-4 w-4" />
-                      Find players
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        displayToast(
-                          "AI Match Me is coming soon. We'll surface smart suggestions here shortly.",
-                          "info",
-                        )
-                      }
-                      className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 hover:bg-white/10"
+                      onClick={() => {
+                        if (!currentUser) {
+                          setShowSignInModal(true);
+                        } else {
+                          navigate("/create");
+                        }
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg sm:w-auto sm:text-base"
                     >
                       <Sparkles className="h-4 w-4" />
-                      AI Match Me
+                      Create match
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToInvites()}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-6 py-3 text-sm font-bold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:w-auto sm:text-base"
+                    >
+                      <Bell className="h-4 w-4" />
+                      View invites
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {statCards.map((card) => (
-                <div
-                  key={card.label}
-                  className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 text-white">
-                      <card.icon className="h-5 w-5" />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {heroActions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="flex h-full flex-col justify-between gap-4 rounded-3xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                          <action.icon className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-emerald-600">{action.label}</p>
+                          <p className="text-sm text-slate-600">{action.description}</p>
+                        </div>
+                      </div>
+                      {Array.isArray(action.details) && action.details.length > 0 && (
+                        <ul className="space-y-2 text-sm text-slate-600">
+                          {action.details.map((detail) => (
+                            <li key={detail} className="flex items-start gap-2">
+                              <ArrowRight className="mt-1 h-3.5 w-3.5 text-emerald-500" />
+                              <span className="flex-1 leading-relaxed">{detail}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div>
+                        <button
+                          type="button"
+                          onClick={action.onClick}
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800"
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                          {action.ctaLabel}
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-emerald-100/80">
-                        {card.label}
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-6">
+                <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-start gap-4">
+                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                      <MapPin className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        Location focus
                       </p>
-                      <p className="text-2xl font-black text-white">{card.value}</p>
+                      <p className="text-lg font-bold text-slate-900">
+                        {hasLocationFilter ? activeLocationLabel : "All locations"}
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        {hasLocationFilter
+                          ? `Within ${distanceFilter} miles`
+                          : "Set a home base to personalize recommendations."}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {hasLocationFilter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLocationFilter(null);
+                              setLocationSearchTerm("");
+                              setGeoError("");
+                            }}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            <X className="h-4 w-4" />
+                            Clear
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleLocationToolsFocus}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600"
+                        >
+                          <Compass className="h-4 w-4" />
+                          {hasLocationFilter ? "Adjust location" : "Set location"}
+                        </button>
+                      </div>
                     </div>
                   </div>
+                </section>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {statCards.map((card) => (
+                    <div
+                      key={card.label}
+                      className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                          <card.icon className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-500">
+                            {card.label}
+                          </p>
+                          <p className="text-2xl font-black text-slate-900">{card.value}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="mx-auto -mt-8 max-w-7xl space-y-10 px-4 pb-16">
+        <div className="mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10">
           <div className="grid gap-6 lg:grid-cols-[1.75fr,1fr]">
             <div className="space-y-6">
               <section
@@ -3911,20 +3874,20 @@ const TennisMatchApp = () => {
                   </div>
                 </div>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  {quickActions.map((action) => (
-                    <button
+                  {secondaryActions.map((action) => (
+                    <div
                       key={action.id}
-                      type="button"
-                      onClick={action.onClick}
-                      className="group flex h-full flex-col gap-3 rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                      className="flex h-full flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 transition group-hover:bg-emerald-500 group-hover:text-white">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
                           <action.icon className="h-5 w-5" />
                         </span>
-                        <p className="text-base font-bold text-slate-900">{action.label}</p>
+                        <div className="min-w-0">
+                          <p className="text-base font-bold text-slate-900">{action.label}</p>
+                          <p className="text-sm font-medium text-slate-500">{action.description}</p>
+                        </div>
                       </div>
-                      <p className="text-sm font-medium text-slate-500">{action.description}</p>
                       {Array.isArray(action.details) && action.details.length > 0 && (
                         <ul className="space-y-2 text-sm text-slate-500">
                           {action.details.map((detail) => (
@@ -3935,7 +3898,17 @@ const TennisMatchApp = () => {
                           ))}
                         </ul>
                       )}
-                    </button>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={action.onClick}
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800"
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                          {action.ctaLabel}
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -3962,30 +3935,13 @@ const TennisMatchApp = () => {
                   </button>
                 </div>
                 <div className="mt-5 space-y-4">
-                  {nextMatch ? (
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                        Next match
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-emerald-900">{highlightTitle}</p>
-                      <ul className="mt-3 space-y-2 text-sm text-emerald-800">
-                        {highlightMeta.map((meta) => (
-                          <li key={`next-${meta.label}`} className="flex items-center gap-2">
-                            {meta.icon && <meta.icon className="h-4 w-4 text-emerald-600" />}
-                            <span>{meta.label}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
+                  {personalScheduleMatches.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm font-semibold text-emerald-700">
                       No upcoming matches yet. Create one or join an open match to fill your calendar.
                     </div>
-                  )}
-
-                  {remainingSchedule.length > 0 && (
+                  ) : (
                     <div className="space-y-3">
-                      {remainingSchedule.map((entry) => (
+                      {personalScheduleMatches.map((entry) => (
                         <div
                           key={entry.id}
                           className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between"
