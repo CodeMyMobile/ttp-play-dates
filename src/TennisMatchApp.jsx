@@ -748,6 +748,8 @@ const TennisMatchApp = () => {
   const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
+  const locationToolsRef = useRef(null);
+  const matchListingsRef = useRef(null);
   const hydratedProfileIdsRef = useRef(new Set());
   const notificationSummaryErrorLoggedRef = useRef(false);
   const inviteSummaryErrorLoggedRef = useRef(false);
@@ -3386,12 +3388,84 @@ const TennisMatchApp = () => {
       },
     ];
 
+    const handleBrowseMatches = useCallback(() => {
+      setActiveFilter("open");
+      setMatchSearch("");
+      setTimeout(() => {
+        if (matchListingsRef.current) {
+          matchListingsRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }, 0);
+    }, [matchListingsRef, setActiveFilter, setMatchSearch]);
+
+    const handleLocationToolsFocus = useCallback(() => {
+      setShowLocationPicker(true);
+      setGeoError("");
+      setTimeout(() => {
+        if (locationToolsRef.current) {
+          locationToolsRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }, 0);
+    }, [locationToolsRef, setGeoError, setShowLocationPicker]);
+
+    const handleFindCourts = useCallback(() => {
+      handleLocationToolsFocus();
+    }, [handleLocationToolsFocus]);
+
     const quickActions = [
+      {
+        id: "browse",
+        label: "Browse matches",
+        description: "See what's open nearby and plan ahead.",
+        details: [
+          "Filter by format, day, or skill level.",
+          "Save options to revisit later.",
+        ],
+        icon: Search,
+        onClick: handleBrowseMatches,
+      },
+      {
+        id: "players",
+        label: "Find players",
+        description: "Match with partners at your pace.",
+        details: [
+          "Search by level or availability.",
+          "Check shared connections before inviting.",
+        ],
+        icon: Users,
+        onClick: () => goToPlayers(),
+      },
+      {
+        id: "ai-match",
+        label: "AI Match Me",
+        description: "Let the assistant suggest matchups.",
+        details: [
+          "Share your availability and skill level.",
+          "Preview smart recommendations before joining.",
+        ],
+        icon: Sparkles,
+        onClick: () => {
+          displayToast(
+            "AI Match Me is coming soon. We'll surface smart suggestions here shortly.",
+            "info",
+          );
+        },
+      },
       {
         id: "create",
         label: "Create a match",
         description: "Host a new meetup with your preferred format.",
-        icon: Sparkles,
+        details: [
+          "Pick the format, skill range, and roster size.",
+          "Send invites or open it up to the community.",
+        ],
+        icon: Plus,
         onClick: () => {
           if (!currentUser) {
             setShowSignInModal(true);
@@ -3401,28 +3475,26 @@ const TennisMatchApp = () => {
         },
       },
       {
+        id: "courts",
+        label: "Find courts",
+        description: "Dial in the best places to play.",
+        details: [
+          "Search clubs, parks, and favorite venues.",
+          "Adjust your radius for the ideal drive time.",
+        ],
+        icon: MapPin,
+        onClick: handleFindCourts,
+      },
+      {
         id: "invites",
         label: "Review invites",
         description: "Confirm spots and respond to requests.",
+        details: [
+          "See who’s waiting on your reply.",
+          "Accept, decline, or message hosts in one place.",
+        ],
         icon: Bell,
         onClick: () => goToInvites(),
-      },
-      {
-        id: "players",
-        label: "Discover players",
-        description: "Find partners that match your level.",
-        icon: Users,
-        onClick: () => goToPlayers(),
-      },
-      {
-        id: "location",
-        label: hasLocationFilter ? "Adjust location" : "Set location",
-        description: "Tune the feed to courts near you.",
-        icon: MapPin,
-        onClick: () => {
-          setShowLocationPicker(true);
-          setGeoError("");
-        },
       },
     ];
 
@@ -3521,10 +3593,10 @@ const TennisMatchApp = () => {
                 <h1 className="text-3xl font-black leading-tight sm:text-5xl">
                   Rally up for your next play date
                 </h1>
-                <p className="max-w-xl text-sm text-emerald-100/90 sm:text-lg">
-                  Discover nearby games, keep an eye on your schedule, and jump back into the action with a couple of taps.
+                <p className="max-w-xl text-base font-medium text-emerald-100/80 sm:text-lg">
+                  Plan matches, find partners, and keep tabs on what's happening in your tennis circle.
                 </p>
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => {
@@ -3548,59 +3620,100 @@ const TennisMatchApp = () => {
                     View invites
                   </button>
                 </div>
+                <div className="rounded-3xl border border-white/20 bg-white/10 p-5 shadow-lg backdrop-blur">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
+                        <MapPin className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                          Location focus
+                        </p>
+                        <p className="text-lg font-bold text-white">
+                          {hasLocationFilter ? activeLocationLabel : "All locations"}
+                        </p>
+                        <p className="text-sm font-medium text-emerald-100/80">
+                          {hasLocationFilter
+                            ? `Within ${distanceFilter} miles`
+                            : "Set a home base to personalize recommendations."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {hasLocationFilter && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationFilter(null);
+                            setLocationSearchTerm("");
+                            setGeoError("");
+                          }}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 hover:bg-white/10"
+                        >
+                          <X className="h-4 w-4" />
+                          Clear
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleLocationToolsFocus}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
+                      >
+                        <Compass className="h-4 w-4" />
+                        {hasLocationFilter ? "Update location" : "Set location"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-3xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-emerald-100/80">
-                  <span>Next on your schedule</span>
-                  {nextMatch?.membership && (
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-[0.7rem]">
-                      {nextMatch.membership === "hosted" ? "Hosting" : "Playing"}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <h3 className="text-2xl font-bold text-white">{highlightTitle}</h3>
-                    {nextMatch?.skillLabel && (
-                      <p className="mt-1 text-sm font-semibold text-emerald-100/80">
-                        {nextMatch.skillLabel}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
+                      <Target className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/70">
+                        Personalize your feed
                       </p>
-                    )}
+                      <h2 className="text-2xl font-bold text-white">Find the perfect play date</h2>
+                      <p className="mt-1 text-sm font-medium text-emerald-100/80">
+                        Explore upcoming matches, coordinate with teammates, and let AI matchmaking help when you need a hand.
+                      </p>
+                    </div>
                   </div>
-                  {nextMatch ? (
-                    <ul className="space-y-2 text-sm text-emerald-100/90">
-                      {highlightMeta.map((meta) => (
-                        <li key={`${meta.icon?.name}-${meta.label}`} className="flex items-center gap-2">
-                          {meta.icon && <meta.icon className="h-4 w-4 text-emerald-200" />}
-                          <span>{meta.label}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-emerald-100/90">
-                      Add or join a match to see it spotlighted here.
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2 pt-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => (nextMatch ? handleViewDetails(nextMatch.match.id) : navigate("/create"))}
-                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-emerald-600 shadow-sm transition hover:bg-emerald-50 sm:flex-none"
+                      onClick={handleBrowseMatches}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
                     >
-                      <ChevronRight className="h-4 w-4" />
-                      {nextMatch ? "View match" : "Plan one"}
+                      <ArrowRight className="h-4 w-4" />
+                      Browse matches
                     </button>
-                    {nextMatch?.membership === "hosted" && (
-                      <button
-                        type="button"
-                        onClick={() => openInviteScreen(nextMatch.match.id)}
-                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/60 hover:bg-white/10 sm:flex-none"
-                      >
-                        <Users className="h-4 w-4" />
-                        Manage roster
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => goToPlayers()}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 hover:bg-white/10"
+                    >
+                      <Users className="h-4 w-4" />
+                      Find players
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        displayToast(
+                          "AI Match Me is coming soon. We'll surface smart suggestions here shortly.",
+                          "info",
+                        )
+                      }
+                      className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 hover:bg-white/10"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      AI Match Me
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3632,7 +3745,10 @@ const TennisMatchApp = () => {
         <div className="mx-auto -mt-8 max-w-7xl space-y-10 px-4 pb-16">
           <div className="grid gap-6 lg:grid-cols-[1.75fr,1fr]">
             <div className="space-y-6">
-              <section className="rounded-3xl border border-emerald-100/60 bg-white p-6 shadow-sm">
+              <section
+                ref={locationToolsRef}
+                className="rounded-3xl border border-emerald-100/60 bg-white p-6 shadow-sm"
+              >
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
@@ -3800,7 +3916,7 @@ const TennisMatchApp = () => {
                       key={action.id}
                       type="button"
                       onClick={action.onClick}
-                      className="group flex h-full flex-col justify-between rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                      className="group flex h-full flex-col gap-3 rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
                     >
                       <div className="flex items-center gap-3">
                         <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 transition group-hover:bg-emerald-500 group-hover:text-white">
@@ -3808,9 +3924,17 @@ const TennisMatchApp = () => {
                         </span>
                         <p className="text-base font-bold text-slate-900">{action.label}</p>
                       </div>
-                      <p className="mt-3 text-sm font-medium text-slate-500">
-                        {action.description}
-                      </p>
+                      <p className="text-sm font-medium text-slate-500">{action.description}</p>
+                      {Array.isArray(action.details) && action.details.length > 0 && (
+                        <ul className="space-y-2 text-sm text-slate-500">
+                          {action.details.map((detail) => (
+                            <li key={detail} className="flex items-start gap-2">
+                              <ArrowRight className="mt-1 h-3.5 w-3.5 text-emerald-500" />
+                              <span className="flex-1 leading-relaxed">{detail}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -4075,7 +4199,10 @@ const TennisMatchApp = () => {
             </aside>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur">
+          <div
+            ref={matchListingsRef}
+            className="rounded-3xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur"
+          >
             <div className="sticky top-20 z-30 rounded-t-3xl border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex gap-2 overflow-x-auto pb-1">
