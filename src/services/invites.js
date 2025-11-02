@@ -76,6 +76,14 @@ export const rejectInvite = (token) =>
     })
   );
 
+export const rejectInviteByToken = (token) =>
+  unwrap(
+    api(`/invites/${token}/reject`, {
+      method: "POST",
+      json: {},
+    })
+  );
+
 export const getInviteByToken = (token, { filter } = {}) => {
   const query = buildQuery({ filter });
   return unwrap(api(`/invites/${token}${query}`));
