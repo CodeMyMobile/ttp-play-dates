@@ -1399,20 +1399,30 @@ export default function InvitationPage() {
           I accept the match invite and agree to Matchplay's terms.
         </span>
       </label>
-      <PrimaryButton
-        type="submit"
-        disabled={claiming || isArchivedMatch}
-        className="w-full"
-      >
-        {claiming ? (
-          "Completing signup..."
-        ) : (
-          <>
-            Join Match
-            <ArrowRight className="h-4 w-4" />
-          </>
-        )}
-      </PrimaryButton>
+      <div className="space-y-3">
+        <PrimaryButton
+          type="submit"
+          disabled={claiming || isArchivedMatch}
+          className="w-full"
+        >
+          {claiming ? (
+            "Completing signup..."
+          ) : (
+            <>
+              Join Match
+              <ArrowRight className="h-4 w-4" />
+            </>
+          )}
+        </PrimaryButton>
+        <SecondaryButton
+          type="button"
+          onClick={handleDeclineClick}
+          disabled={declining || claiming || isArchivedMatch}
+          className="border-transparent bg-white/80 text-slate-600 hover:border-slate-200 hover:bg-white"
+        >
+          {declining ? "Declining..." : "Decline invite"}
+        </SecondaryButton>
+      </div>
       {error && <ErrorText>{error}</ErrorText>}
     </form>
   );
@@ -1641,6 +1651,13 @@ export default function InvitationPage() {
         </form>
       )}
       {error && <ErrorText>{error}</ErrorText>}
+      <SecondaryButton
+        onClick={handleDeclineClick}
+        disabled={declining || authSubmitting || isArchivedMatch}
+        className="w-full border-transparent bg-white/80 text-slate-600 hover:border-slate-200 hover:bg-white"
+      >
+        {declining ? "Declining..." : "Decline invite"}
+      </SecondaryButton>
     </div>
   );
 
