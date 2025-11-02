@@ -39,6 +39,7 @@ import {
   pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
   uniqueActiveParticipants,
+  uniqueMatchOccupants,
   uniqueParticipants,
   uniqueInvitees,
 } from "../utils/participants";
@@ -938,6 +939,11 @@ const MatchDetailsModal = ({
     });
   }, [committedParticipants, normalizedInvitees]);
 
+  const rosterParticipants = useMemo(
+    () => uniqueMatchOccupants(participants, invitees),
+    [invitees, participants],
+  );
+
   const capacityInfo = useMemo(() => {
     if (!match?.capacity || typeof match.capacity !== "object") return null;
     return match.capacity;
@@ -1622,7 +1628,7 @@ const MatchDetailsModal = ({
   );
 
   const playersList = useMemo(() => {
-    return committedParticipants.map((participant, index) => {
+    return rosterParticipants.map((participant, index) => {
       const profile = participant.profile || {};
       const playerId = getParticipantPlayerId(participant);
       const id = getParticipantIdentity(participant, `participant-${index}`);
@@ -1637,6 +1643,8 @@ const MatchDetailsModal = ({
         ? normalizePhoneValue(phoneRaw) || phoneDigits
         : "";
       const phoneHref = phoneValue ? `tel:${phoneValue}` : "";
+      const isViewer = participantMatchesMember(participant, memberIdentities);
+
       return {
         id,
         playerId,
@@ -1652,6 +1660,7 @@ const MatchDetailsModal = ({
           (playerId ? `Player ${playerId}` : `Player ${index + 1}`),
         avatar,
         isHost: match?.host_id ? idsMatch(playerId, match.host_id) : false,
+        isViewer,
         rating:
           profile.usta_rating ||
           profile.rating ||
@@ -1665,7 +1674,12 @@ const MatchDetailsModal = ({
         participant,
       };
     });
-  }, [committedParticipants, match?.host_id]);
+  }, [memberIdentities, match?.host_id, rosterParticipants]);
+
+  const otherPlayers = useMemo(
+    () => playersList.filter((player) => !player.isViewer),
+    [playersList],
+  );
 
   const openSpotCount = useMemo(() => {
     if (typeof remainingSpots !== "number") return 0;
@@ -2061,7 +2075,7 @@ const MatchDetailsModal = ({
                 name={player.name}
                 imageUrl={player.avatar}
                 fallback={getAvatarInitials(player.name)}
-                variant={player.isHost ? "emerald" : "indigo"}
+                variant={player.isHost ? "emerald" : player.isViewer ? "sky" : "indigo"}
               />
               <div className="flex-1">
                 <p className="text-sm font-black text-gray-900">
@@ -2069,6 +2083,11 @@ const MatchDetailsModal = ({
                   {player.isHost && (
                     <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
                       Host
+                    </span>
+                  )}
+                  {player.isViewer && (
+                    <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-700">
+                      You
                     </span>
                   )}
                 </p>
@@ -2132,6 +2151,39 @@ const MatchDetailsModal = ({
       )}
     </div>
   );
+
+  const renderOtherPlayersPreview = () => {
+    if (otherPlayers.length === 0) {
+      return (
+        <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs font-semibold text-emerald-700">
+          You're the first to grab a spot. We'll list the other players here as they join.
+        </div>
+      );
+    }
+
+    const names = otherPlayers
+      .map((player) => {
+        if (!player?.name) return "";
+        return player.isHost ? `${player.name} (host)` : player.name;
+      })
+      .filter(Boolean);
+
+    if (names.length === 0) {
+      return null;
+    }
+
+    const summary = (() => {
+      if (names.length === 1) return names[0];
+      if (names.length === 2) return `${names[0]} and ${names[1]}`;
+      return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+    })();
+
+    return (
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800">
+        You'll share this class with {summary}.
+      </div>
+    );
+  };
 
   const renderPendingInvites = () => (
     <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
@@ -2821,6 +2873,7 @@ const MatchDetailsModal = ({
           </p>
         </div>
         {renderPlayers()}
+        {renderOtherPlayersPreview()}
       </section>
 
       {isOpenMatch && !isHost && (
