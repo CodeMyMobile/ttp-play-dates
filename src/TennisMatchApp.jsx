@@ -58,6 +58,7 @@ import {
   Settings,
   LogOut,
   User,
+  UserCircle,
   UserCheck,
   UserMinus,
   UserPlus,
@@ -3266,6 +3267,14 @@ const TennisMatchApp = () => {
               >
                 <MapPin className="h-4 w-4" />
                 <span>Find Courts</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/coaches")}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:text-base"
+              >
+                <UserCircle className="h-4 w-4" />
+                <span>Find Coach</span>
               </button>
             </div>
           </div>
