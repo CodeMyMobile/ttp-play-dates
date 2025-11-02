@@ -882,6 +882,56 @@ export default function InvitationPage() {
     );
   }, [handleToast]);
 
+  const establishSessionForDecline = useCallback(async () => {
+    const attemptLogin = async (emailValue, passwordValue, fallback = {}) => {
+      const trimmedEmail = (emailValue || "").trim();
+      if (!trimmedEmail || !passwordValue) return false;
+      try {
+        const data = await login(trimmedEmail, passwordValue);
+        persistSession(data, { email: trimmedEmail, ...fallback });
+        return true;
+      } catch (error) {
+        const statusCode = Number(error?.status ?? error?.response?.status);
+        if (statusCode === 401 || statusCode === 403) {
+          return false;
+        }
+        throw error;
+      }
+    };
+
+    const sessionReady = await ensureSession();
+    if (sessionReady) return true;
+
+    if (
+      (await attemptLogin(signInEmail, signInPassword, { email: signInEmail?.trim() })) ||
+      (await attemptLogin(signUpEmail, signUpPassword, {
+        email: signUpEmail?.trim(),
+        name: signUpName?.trim(),
+        phone: signUpPhone?.trim(),
+      })) ||
+      (await attemptLogin(email, password, {
+        email: email?.trim(),
+        name: fullName?.trim(),
+      }))
+    ) {
+      return true;
+    }
+
+    return false;
+  }, [
+    email,
+    ensureSession,
+    fullName,
+    password,
+    persistSession,
+    signInEmail,
+    signInPassword,
+    signUpEmail,
+    signUpName,
+    signUpPassword,
+    signUpPhone,
+  ]);
+
   const handleDeclineClick = useCallback(async () => {
     if (declining) return;
     setError("");
@@ -891,46 +941,50 @@ export default function InvitationPage() {
     }
     setDeclining(true);
     try {
-      await rejectInvite(token);
+      const sessionReady = await establishSessionForDecline();
+
+      if (sessionReady) {
+        try {
+          await rejectInvite(token);
+          handleDeclineSuccess();
+          return;
+        } catch (sessionError) {
+          const sessionStatus = Number(
+            sessionError?.status ?? sessionError?.response?.status,
+          );
+          if (sessionStatus !== 401 && sessionStatus !== 403) {
+            throw sessionError;
+          }
+        }
+      }
+
+      await rejectInviteByToken(token);
       handleDeclineSuccess();
-      return;
     } catch (err) {
       const statusCode = Number(err?.status ?? err?.response?.status);
       if (statusCode === 401 || statusCode === 403) {
-        try {
-          await rejectInviteByToken(token);
-          handleDeclineSuccess();
-          return;
-        } catch (fallbackError) {
-          const fallbackStatus = Number(
-            fallbackError?.status ?? fallbackError?.response?.status,
-          );
-          if (fallbackStatus !== 401 && fallbackStatus !== 403) {
-            setError(
-              fallbackError?.message ||
-                "We couldn't decline the invite. Please try again.",
-            );
-            return;
-          }
-        }
         clearStoredSession();
         setPhase("auth");
         setAuthMode("signIn");
         setShowForgotPassword(false);
         setError("Sign in to decline this invite.");
-        return;
+      } else {
+        setError(
+          err?.message || "We couldn't decline the invite. Please try again.",
+        );
       }
-      setError(
-        err?.message || "We couldn't decline the invite. Please try again.",
-      );
     } finally {
       setDeclining(false);
     }
   }, [
     clearStoredSession,
     declining,
+    establishSessionForDecline,
     handleDeclineSuccess,
     isArchivedMatch,
+    setAuthMode,
+    setPhase,
+    setShowForgotPassword,
     token,
   ]);
 
