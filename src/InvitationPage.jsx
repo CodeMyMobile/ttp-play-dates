@@ -18,6 +18,7 @@ import {
   claimInvite,
   acceptInvite,
   rejectInvite,
+  rejectInviteByToken,
 } from "./services/invites";
 import { forgotPassword, login, refreshSession, signup } from "./services/auth";
 import { getMatch } from "./services/matches";
@@ -872,6 +873,15 @@ export default function InvitationPage() {
     attemptSessionRecovery,
   ]);
 
+  const handleDeclineSuccess = useCallback(() => {
+    setPreview((prev) => (prev ? { ...prev, status: "declined" } : prev));
+    setDeclined(true);
+    handleToast(
+      "Invite declined. You won't receive reminders for this match.",
+      "info",
+    );
+  }, [handleToast]);
+
   const handleDeclineClick = useCallback(async () => {
     if (declining) return;
     setError("");
@@ -882,29 +892,47 @@ export default function InvitationPage() {
     setDeclining(true);
     try {
       await rejectInvite(token);
-      setPreview((prev) => (prev ? { ...prev, status: "declined" } : prev));
-      setDeclined(true);
-      handleToast(
-        "Invite declined. You won't receive reminders for this match.",
-        "info",
-      );
+      handleDeclineSuccess();
+      return;
     } catch (err) {
       const statusCode = Number(err?.status ?? err?.response?.status);
       if (statusCode === 401 || statusCode === 403) {
+        try {
+          await rejectInviteByToken(token);
+          handleDeclineSuccess();
+          return;
+        } catch (fallbackError) {
+          const fallbackStatus = Number(
+            fallbackError?.status ?? fallbackError?.response?.status,
+          );
+          if (fallbackStatus !== 401 && fallbackStatus !== 403) {
+            setError(
+              fallbackError?.message ||
+                "We couldn't decline the invite. Please try again.",
+            );
+            return;
+          }
+        }
         clearStoredSession();
         setPhase("auth");
         setAuthMode("signIn");
         setShowForgotPassword(false);
         setError("Sign in to decline this invite.");
-      } else {
-        setError(
-          err?.message || "We couldn't decline the invite. Please try again.",
-        );
+        return;
       }
+      setError(
+        err?.message || "We couldn't decline the invite. Please try again.",
+      );
     } finally {
       setDeclining(false);
     }
-  }, [clearStoredSession, declining, handleToast, isArchivedMatch, token]);
+  }, [
+    clearStoredSession,
+    declining,
+    handleDeclineSuccess,
+    isArchivedMatch,
+    token,
+  ]);
 
   const handleSignInSubmit = async (event) => {
     event.preventDefault();
