@@ -21,6 +21,19 @@ const LISTED_VALUES = new Set([
   "public listed",
 ]);
 
+const HIDDEN_KEYS = [
+  "hidden",
+  "is_hidden",
+  "isHidden",
+  "linkOnly",
+  "link_only",
+  "linkOnlyMatch",
+  "link_only_match",
+  "linkonly",
+  "visibilityHidden",
+  "visibility_hidden",
+];
+
 const normalizeListingVisibility = (value) => {
   if (value === undefined || value === null) return "";
   if (typeof value === "boolean") {
@@ -69,8 +82,35 @@ const NESTED_KEYS = [
   "payload",
 ];
 
+const interpretHiddenValue = (value) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (value === 0) return false;
+    if (value === 1) return true;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === "0") return false;
+    if (normalized === "1") return true;
+    if (normalized === "false" || normalized === "no") return false;
+    if (normalized === "true" || normalized === "yes") return true;
+    if (LISTED_VALUES.has(normalized)) return false;
+    if (LINK_ONLY_VALUES.has(normalized)) return true;
+  }
+  return null;
+};
+
 const deriveListingVisibilityFromObject = (object) => {
   if (!object || typeof object !== "object") return "";
+  for (const key of HIDDEN_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(object, key)) {
+      const interpreted = interpretHiddenValue(object[key]);
+      if (interpreted === true) return "link_only";
+      if (interpreted === false) return "listed";
+    }
+  }
   for (const key of LISTING_KEYS) {
     if (Object.prototype.hasOwnProperty.call(object, key)) {
       const normalized = normalizeListingVisibility(object[key]);

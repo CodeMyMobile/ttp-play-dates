@@ -10,8 +10,22 @@ const qs = (params) => {
   return str ? `?${str}` : "";
 };
 
-export const getMatch = async (id, { filter } = {}) => {
-  const query = qs({ filter });
+export const getMatch = async (
+  id,
+  { filter, includeHidden = false, include_hidden } = {},
+) => {
+  const queryParams = {};
+  if (filter) queryParams.filter = filter;
+  const includeHiddenFlag =
+    includeHidden ||
+    include_hidden === true ||
+    include_hidden === "true" ||
+    include_hidden === 1;
+  if (includeHiddenFlag) {
+    queryParams.includeHidden = true;
+    queryParams.include_hidden = true;
+  }
+  const query = qs(queryParams);
   return unwrap(api(`/matches/${id}${query}`));
 };
 
@@ -163,12 +177,60 @@ export const listMatches = (
     longitude,
     distance,
     radius,
+    includeHidden = false,
+    include_hidden,
+    hidden: hiddenOption,
+    hiddenOnly = false,
+    visibility,
   } = {},
 ) => {
   const params = { page, perPage };
   if (filter) params.filter = filter;
   if (status) params.status = status;
   if (search) params.search = search;
+  const includeHiddenFlag =
+    includeHidden ||
+    include_hidden === true ||
+    include_hidden === "true" ||
+    include_hidden === 1;
+  if (includeHiddenFlag) {
+    params.includeHidden = true;
+    params.include_hidden = true;
+  } else if (include_hidden === false || include_hidden === "false" || include_hidden === 0) {
+    params.include_hidden = false;
+  }
+  const normalizedVisibility = typeof visibility === "string" ? visibility.trim() : "";
+  const visibilityLower = normalizedVisibility
+    ? normalizedVisibility.toLowerCase()
+    : "";
+  const visibilityIndicatesHidden = Boolean(
+    visibilityLower &&
+      (visibilityLower === "hidden" ||
+        visibilityLower === "link_only" ||
+        visibilityLower === "link-only" ||
+        visibilityLower === "link only" ||
+        visibilityLower === "unlisted"),
+  );
+  const wantsHiddenOnly =
+    hiddenOnly ||
+    hiddenOption === true ||
+    hiddenOption === "true" ||
+    hiddenOption === 1 ||
+    visibilityIndicatesHidden;
+  if (wantsHiddenOnly) {
+    params.hidden = true;
+    params.visibility = visibilityIndicatesHidden
+      ? normalizedVisibility || "hidden"
+      : "hidden";
+  } else if (
+    hiddenOption === false ||
+    hiddenOption === "false" ||
+    hiddenOption === 0
+  ) {
+    params.hidden = false;
+  } else if (visibilityLower) {
+    params.visibility = normalizedVisibility;
+  }
   const addNumericParam = (key, value) => {
     if (value === undefined || value === null) return;
     const numeric =

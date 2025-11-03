@@ -86,7 +86,7 @@ const InviteScreen = ({
       setSuggestionsError("");
 
       try {
-        const data = await listMatches("my", { perPage: 25 });
+        const data = await listMatches("my", { perPage: 25, includeHidden: true });
         if (!aliveCheck()) return;
         const matches = Array.isArray(data?.matches) ? data.matches : [];
         const suggestions = buildRecentPartnerSuggestions({

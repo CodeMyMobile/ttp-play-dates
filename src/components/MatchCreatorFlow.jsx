@@ -537,8 +537,14 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     }
 
     if (matchData.type === "open") {
-      payload.listing_visibility =
-        matchData.listingVisibility === "link_only" ? "link_only" : "listed";
+      const isHiddenMatch = matchData.listingVisibility === "link_only";
+      payload.hidden = isHiddenMatch;
+      payload.is_hidden = isHiddenMatch;
+      payload.listing_visibility = isHiddenMatch ? "link_only" : "listed";
+      if (isHiddenMatch) {
+        payload.visibility = "hidden";
+        payload.match_visibility = "hidden";
+      }
     }
 
     setCreating(true);
@@ -1167,10 +1173,10 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h3 className="text-base font-semibold text-gray-900">
-                      Hide from public listings
+                      Share by link only
                     </h3>
                     <p className="text-xs font-semibold text-emerald-600">
-                      {isLinkOnlyListing ? "Link-only access enabled" : "Currently visible in browse"}
+                      {isLinkOnlyListing ? "Hidden from the public feed" : "Visible in the public feed"}
                     </p>
                   </div>
                   <button
@@ -1195,7 +1201,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   </button>
                 </div>
                 <p className="text-sm text-gray-600">
-                  Keep this match out of the public browse feed. Players will need the share link or an invite to join.
+                  Anyone with the link can join, but this match will not appear in the public browse feed or search results.
                 </p>
               </div>
             </div>
@@ -1595,7 +1601,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               {matchData.type === "open" && isLinkOnlyListing && (
                 <div className="flex items-center gap-3">
                   <EyeOff size={16} className="text-gray-500" />
-                  <span className="text-gray-700">Hidden from public listings (link required)</span>
+                  <span className="text-gray-700">Link-only match — share the URL to invite players</span>
                 </div>
               )}
               {matchData.type === "private" && (
