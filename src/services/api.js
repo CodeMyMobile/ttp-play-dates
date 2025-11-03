@@ -16,7 +16,11 @@ const api = (path, options = {}) => {
     ...rest
   } = options;
 
-  const token = authToken
+  const hasAuthTokenOption = Object.prototype.hasOwnProperty.call(
+    options,
+    "authToken",
+  );
+  const token = hasAuthTokenOption
     ? normalizeAuthToken(authToken, { preferScheme: authSchemePreference })
     : getStoredAuthToken({ preferScheme: authSchemePreference });
 
