@@ -562,7 +562,13 @@ const PlayerConnectionsPage = ({
 
       while (keepFetching) {
         // eslint-disable-next-line no-await-in-loop
-        const response = await listMatches(filterValue, { page, perPage });
+        const includeHidden =
+          filterValue === "my" || filterValue === ARCHIVE_FILTER_VALUE;
+        const response = await listMatches(filterValue, {
+          page,
+          perPage,
+          includeHidden,
+        });
         const batch = Array.isArray(response?.matches)
           ? response.matches
           : Array.isArray(response)

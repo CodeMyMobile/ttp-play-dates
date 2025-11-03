@@ -70,6 +70,7 @@ import {
   MessageCircle,
   Phone,
   AlertCircle,
+  EyeOff,
   ArrowRight,
   Zap,
   Trophy,
@@ -1407,11 +1408,14 @@ const TennisMatchApp = () => {
               distance: distanceFilter,
             }
           : {};
+      const includeHidden =
+        apiFilter === "my" || activeFilter === "archived" || activeFilter === "draft";
       const data = await listMatches(apiFilter, {
         status,
         search: matchSearch,
         page: matchPage,
         perPage: 10,
+        includeHidden,
         ...locationParams,
       });
       const rawMatches = data.matches || [];
@@ -1752,6 +1756,13 @@ const TennisMatchApp = () => {
           notes: m.notes,
           listingVisibility,
           isLinkOnly,
+          isHidden: Boolean(
+            m?.is_hidden ??
+              m?.isHidden ??
+              m?.hidden ??
+              m?.hidden_status ??
+              isLinkOnly,
+          ),
           invitees: m.invitees || [],
           participants: m.participants || [],
           playerLimit: normalizedPlayerLimit,
@@ -3616,6 +3627,13 @@ const TennisMatchApp = () => {
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
     const isJoined = match.type === "joined";
+    const isLinkOnly =
+      match.listingVisibility === "link_only" ||
+      match.isLinkOnly === true ||
+      match.isHidden === true ||
+      match.is_hidden === true ||
+      match.hidden === true;
+    const isHiddenListing = isLinkOnly && match.privacy === "open";
     const statusValue = typeof match.status === "string" ? match.status.toLowerCase() : match.status;
     const isArchived = statusValue === "archived";
     const isUpcoming = statusValue === "upcoming";
@@ -3841,7 +3859,7 @@ const TennisMatchApp = () => {
       let suggestedIds = [];
 
       try {
-        const history = await listMatches("my", { perPage: 25 });
+        const history = await listMatches("my", { perPage: 25, includeHidden: true });
         const matches = Array.isArray(history?.matches) ? history.matches : [];
         const suggestions = buildRecentPartnerSuggestions({
           matches,
@@ -4054,6 +4072,12 @@ const TennisMatchApp = () => {
             {match.privacy === "private" && (
               <span className="px-3 py-1.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-full text-xs font-black">
                 PRIVATE
+              </span>
+            )}
+            {isHiddenListing && (
+              <span className="px-3 py-1.5 bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-xs font-black flex items-center gap-1.5">
+                <EyeOff className="h-3.5 w-3.5" />
+                LINK-ONLY
               </span>
             )}
             {statusValue === "draft" && (
@@ -5595,7 +5619,7 @@ const TennisMatchApp = () => {
         setSuggestionsError("");
 
         try {
-          const data = await listMatches("my", { perPage: 25 });
+          const data = await listMatches("my", { perPage: 25, includeHidden: true });
           if (!aliveCheck()) return;
           const matches = Array.isArray(data?.matches) ? data.matches : [];
           const suggestions = buildRecentPartnerSuggestions({

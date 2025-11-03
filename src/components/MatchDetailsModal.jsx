@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Copy,
+  EyeOff,
   FileText,
   Mail,
   MapPin,
@@ -67,6 +68,11 @@ import {
   getMatchPrivacy,
   isPrivateMatch as isMatchPrivate,
 } from "../utils/matchPrivacy";
+import {
+  deriveListingVisibility,
+  isLinkOnlyVisibility,
+  normalizeListingVisibility,
+} from "../utils/listingVisibility";
 import { combineDateAndTimeToIso } from "../utils/datetime";
 import {
   getAvatarInitials,
@@ -791,6 +797,16 @@ const MatchDetailsModal = ({
   const match = matchData?.match || null;
   const viewerInvite = matchData?.viewerInvite || null;
   const matchPrivacy = useMemo(() => getMatchPrivacy(match), [match]);
+  const listingVisibility = useMemo(
+    () => normalizeListingVisibility(deriveListingVisibility(match)),
+    [match],
+  );
+  const isHiddenMatch = useMemo(() => {
+    if (listingVisibility) {
+      return listingVisibility === "link_only";
+    }
+    return isLinkOnlyVisibility(match);
+  }, [listingVisibility, match]);
   const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
   const participants = useMemo(() => {
     if (Array.isArray(matchData?.participants)) {
@@ -2186,9 +2202,17 @@ const MatchDetailsModal = ({
           Private Match
         </span>
       ) : (
-        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-600">
-          Open Match
-        </span>
+        <>
+          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-600">
+            Open Match
+          </span>
+          {isHiddenMatch && (
+            <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-700">
+              <EyeOff className="h-3.5 w-3.5" />
+              Link-only match
+            </span>
+          )}
+        </>
       )}
       {isOpenMatch && suggestedSkillLevel && (
         <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">
@@ -2424,6 +2448,23 @@ const MatchDetailsModal = ({
 
   const renderDefaultView = () => {
     const disabledReason = joinDisabledReason();
+    const shareContainerTone = isHiddenMatch
+      ? "border-amber-200 bg-amber-50"
+      : "border-emerald-100 bg-emerald-50";
+    const shareHeadingTone = isHiddenMatch ? "text-amber-900" : "text-emerald-900";
+    const shareBodyTone = isHiddenMatch ? "text-amber-700" : "text-emerald-700";
+    const shareLinkBorderTone = isHiddenMatch ? "border-amber-200" : "border-emerald-100";
+    const shareCopyButtonTone = isHiddenMatch
+      ? "bg-amber-500 hover:bg-amber-600"
+      : "bg-emerald-500 hover:bg-emerald-600";
+    const shareActionButtonTone = isHiddenMatch
+      ? "text-amber-700 hover:bg-amber-100"
+      : "text-emerald-700 hover:bg-emerald-50";
+    const ShareIcon = isHiddenMatch ? EyeOff : Share2;
+    const shareHeaderLabel = isHiddenMatch ? "Link-only match" : "Invite other players";
+    const shareBodyCopy = isHiddenMatch
+      ? "This match stays off the public feed. Share the invite link directly with players you trust."
+      : "Share this match link with tennis friends so they can grab a spot before it fills up.";
     return (
       <div className="flex flex-col">
         <div className="flex flex-col gap-4 border-b border-gray-100 pb-5">
@@ -2447,6 +2488,14 @@ const MatchDetailsModal = ({
 
         <div className="space-y-6 py-5">
           {renderEditControls()}
+          {isOpenMatch && isHiddenMatch && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <EyeOff className="h-5 w-5 flex-shrink-0 text-amber-600" />
+              <p className="text-sm font-semibold text-amber-700">
+                This match stays off the public feed. Share the invite link directly with players you trust.
+              </p>
+            </div>
+          )}
           <section className="rounded-2xl bg-gray-50 p-4">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
@@ -2537,16 +2586,16 @@ const MatchDetailsModal = ({
 
           {!isArchived && !isCancelled && (
             isOpenMatch ? (
-              <section className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                <div className="flex items-center gap-2 text-sm font-black text-emerald-900">
-                  <Share2 className="h-4 w-4" />
-                  Invite other players
+              <section className={`space-y-3 rounded-2xl border ${shareContainerTone} p-4`}>
+                <div className={`flex items-center gap-2 text-sm font-black ${shareHeadingTone}`}>
+                  <ShareIcon className="h-4 w-4" />
+                  {shareHeaderLabel}
                 </div>
-                <p className="text-xs font-semibold text-emerald-700">
-                  Share this match link with tennis friends so they can grab a spot before it fills up.
+                <p className={`text-xs font-semibold ${shareBodyTone}`}>
+                  {shareBodyCopy}
                 </p>
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-gray-600">
+                  <div className={`flex items-center gap-2 rounded-xl border ${shareLinkBorderTone} bg-white px-3 py-2 text-xs font-semibold text-gray-600`}>
                     <span className="flex-1 truncate font-mono text-gray-700">
                       {shareLoading
                         ? "Generating share link..."
@@ -2558,7 +2607,7 @@ const MatchDetailsModal = ({
                       type="button"
                       onClick={shareLinkReady ? handleCopyShareLink : handleRefreshShareLink}
                       disabled={shareLoading || (!shareLinkReady && !shareError)}
-                      className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+                      className={`flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow disabled:cursor-not-allowed disabled:opacity-60 ${shareCopyButtonTone}`}
                     >
                       <Copy className="h-3.5 w-3.5" />
                       {shareCopied ? "Copied!" : shareLinkReady ? "Copy" : "Retry"}
@@ -2582,7 +2631,7 @@ const MatchDetailsModal = ({
                     type="button"
                     onClick={handleShareSms}
                     disabled={!shareLinkReady}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={`flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60 ${shareActionButtonTone}`}
                   >
                     <MessageCircle className="h-4 w-4" />
                     Text link
@@ -2591,7 +2640,7 @@ const MatchDetailsModal = ({
                     type="button"
                     onClick={handleShareWhatsApp}
                     disabled={!shareLinkReady}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={`flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60 ${shareActionButtonTone}`}
                   >
                     <Send className="h-4 w-4" />
                     WhatsApp
@@ -2600,7 +2649,7 @@ const MatchDetailsModal = ({
                     type="button"
                     onClick={handleShareEmail}
                     disabled={!shareLinkReady}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={`flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60 ${shareActionButtonTone}`}
                   >
                     <Mail className="h-4 w-4" />
                     Email invite
