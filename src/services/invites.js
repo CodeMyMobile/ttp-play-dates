@@ -81,6 +81,7 @@ export const rejectInviteByToken = (token) =>
     api(`/invites/${token}/reject`, {
       method: "POST",
       json: {},
+      authToken: null,
     })
   );
 
