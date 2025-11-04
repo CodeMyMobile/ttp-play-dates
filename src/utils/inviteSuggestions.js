@@ -142,10 +142,82 @@ const extractMatchMoment = (match) => {
 const toArrayOrNull = (value) => {
   if (!value) return null;
   if (Array.isArray(value)) return value;
-  if (typeof value[Symbol.iterator] === "function") {
-    return Array.from(value);
+  if (typeof value === "object") {
+    const iterable = value[Symbol.iterator];
+    if (typeof iterable === "function") {
+      return Array.from(value);
+    }
+    const arrayLikeKeys = ["data", "items", "results", "values", "participants"];
+    for (const key of arrayLikeKeys) {
+      if (Array.isArray(value[key])) {
+        return value[key];
+      }
+    }
   }
   return null;
+};
+
+const collectMatchParticipants = (match) => {
+  if (!match || typeof match !== "object") {
+    return [];
+  }
+
+  const candidates = [
+    match.participants,
+    match.match,
+    match.players,
+    match.teammates,
+    match.members,
+  ];
+
+  const aggregated = [];
+
+  const enqueue = (value) => {
+    const arr = toArrayOrNull(value);
+    if (!arr || arr.length === 0) return;
+    arr.forEach((participant) => {
+      if (!participant || typeof participant !== "object") return;
+      aggregated.push(participant);
+    });
+  };
+
+  const inspectCandidate = (value) => {
+    if (!value || typeof value !== "object") return;
+    enqueue(value);
+    const nestedKeys = [
+      "participants",
+      "players",
+      "teammates",
+      "members",
+      "participant_list",
+      "participantList",
+      "player_list",
+      "playerList",
+    ];
+    nestedKeys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        enqueue(value[key]);
+      }
+    });
+  };
+
+  candidates.forEach((candidate) => {
+    if (!candidate) return;
+    if (candidate === match.match) {
+      inspectCandidate(candidate);
+    } else {
+      enqueue(candidate);
+      if (typeof candidate === "object") {
+        inspectCandidate(candidate);
+      }
+    }
+  });
+
+  if (match.match && typeof match.match === "object" && match.match !== match) {
+    inspectCandidate(match.match);
+  }
+
+  return aggregated;
 };
 
 export const buildRecentPartnerSuggestions = ({
@@ -166,7 +238,7 @@ export const buildRecentPartnerSuggestions = ({
 
   matches.forEach((match) => {
     const { timestamp, iso } = extractMatchMoment(match);
-    const participants = uniqueActiveParticipants(match?.participants);
+    const participants = uniqueActiveParticipants(collectMatchParticipants(match));
     if (participants.length === 0) return;
 
     const userIsInMatch =
