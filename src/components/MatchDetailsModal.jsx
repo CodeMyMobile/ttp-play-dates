@@ -582,8 +582,15 @@ const PENDING_INVITE_STATUS_TOKENS = [
   "wait",
   "request",
   "sent",
-  "open",
 ];
+
+const PLACEHOLDER_INVITE_STATUS_TOKENS = new Set([
+  "open",
+  "available",
+  "placeholder",
+  "empty",
+  "unused",
+]);
 
 const isInviteAwaitingResponse = (status) => {
   if (!status) return false;
@@ -602,7 +609,26 @@ const isPlaceholderInviteName = (value) => {
   const normalized = value.toString().trim().toLowerCase();
   if (!normalized) return true;
   if (normalized === "invited player") return true;
+  if (normalized === "invited players") return true;
+  if (normalized.includes("placeholder")) return true;
+  if (normalized.includes("phantom")) return true;
+  if (/^invited players?\b/.test(normalized)) return true;
+  if (/^invite(?:d)? slot\b/.test(normalized)) return true;
   return /^invited player\b/.test(normalized);
+};
+
+const isPlaceholderInviteStatus = (status) => {
+  if (!status) return false;
+  const normalized = status.toString().trim().toLowerCase();
+  if (!normalized) return false;
+  if (PLACEHOLDER_INVITE_STATUS_TOKENS.has(normalized)) {
+    return true;
+  }
+  const tokens = normalized.split(/[^a-z0-9]+/i).filter(Boolean);
+  if (tokens.some((token) => PLACEHOLDER_INVITE_STATUS_TOKENS.has(token))) {
+    return true;
+  }
+  return false;
 };
 
 const getInviteEmail = (invite) => {
@@ -964,6 +990,9 @@ const MatchDetailsModal = ({
       if (!invite || typeof invite !== "object") return false;
       const status = getInviteStatus(invite);
       if (!isInviteAwaitingResponse(status)) {
+        return false;
+      }
+      if (isPlaceholderInviteStatus(status)) {
         return false;
       }
       if (
@@ -1743,6 +1772,17 @@ const MatchDetailsModal = ({
     const seen = new Set();
     return pendingInvitees.reduce((list, invite, index) => {
       if (!invite || typeof invite !== "object") {
+        return list;
+      }
+      if (
+        invite.placeholder === true ||
+        invite.is_placeholder === true ||
+        invite.isPlaceholder === true ||
+        invite.placeholder_invite === true ||
+        invite.placeholderInvite === true ||
+        invite.is_open === true ||
+        invite.isOpen === true
+      ) {
         return list;
       }
       const explicitName = getInviteDisplayName(invite, null);
