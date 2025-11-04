@@ -314,6 +314,57 @@ const collectHostContactDetails = (match) => {
   return { emails, normalizedPhones, phoneDigits };
 };
 
+const toPositiveNumber = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+};
+
+const extractInvitePlayerId = (invite) => {
+  if (!invite || typeof invite !== "object") return null;
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const invitee = invite.invitee || {};
+  const candidates = [
+    invite.match_participant_id,
+    invite.matchParticipantId,
+    invite.participant_id,
+    invite.participantId,
+    invite.invitee_id,
+    invite.inviteeId,
+    invite.player_id,
+    invite.playerId,
+    invite.user_id,
+    invite.userId,
+    invite.id,
+    profile.id,
+    profile.player_id,
+    profile.playerId,
+    player.id,
+    player.player_id,
+    player.playerId,
+    invitee.id,
+    invitee.player_id,
+    invitee.playerId,
+  ];
+  for (const candidate of candidates) {
+    const numeric = toPositiveNumber(candidate);
+    if (numeric !== null) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
 const toPlainObject = (value) =>
   value && typeof value === "object" ? { ...value } : null;
 
@@ -2304,7 +2355,7 @@ const TennisMatchApp = () => {
           .map((p) => Number(p.player_id))
           .filter((id) => Number.isFinite(id) && id > 0);
         const inviteeIds = inviteesSource
-          .map((i) => Number(i.invitee_id))
+          .map((invite) => extractInvitePlayerId(invite))
           .filter((id) => Number.isFinite(id) && id > 0);
 
         const initial = new Map();
@@ -2348,14 +2399,33 @@ const TennisMatchApp = () => {
           });
         });
 
-        inviteesSource.forEach((i) => {
-          const id = Number(i.invitee_id);
+        inviteesSource.forEach((invite) => {
+          const id = extractInvitePlayerId(invite);
           if (!Number.isFinite(id) || id <= 0) return;
-          const profile = i.profile || {};
+          const profile =
+            invite.profile || invite.player || invite.invitee || {};
+          const fullName =
+            profile.full_name ||
+            profile.fullName ||
+            profile.name ||
+            invite.full_name ||
+            invite.fullName ||
+            invite.invitee_name ||
+            invite.inviteeName ||
+            invite.player_name ||
+            invite.playerName ||
+            `Player ${id}`;
+          const email =
+            profile.email ||
+            invite.email ||
+            invite.invitee_email ||
+            invite.inviteeEmail ||
+            invite.player_email ||
+            invite.playerEmail;
           initial.set(id, {
             user_id: id,
-            full_name: profile.full_name || `Player ${id}`,
-            email: profile.email,
+            full_name: fullName,
+            email,
             hosting: false,
           });
         });
