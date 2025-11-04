@@ -26,6 +26,7 @@ import {
   getParticipantPhone,
   idsMatch,
   uniqueActiveParticipants,
+  uniqueInvitees,
 } from "../utils/participants";
 import {
   collectMemberIds,
@@ -68,6 +69,301 @@ const DEFAULT_FORM = {
   level: "",
   notes: "",
   playerLimit: "",
+};
+
+const INVITE_STATUS_FIELDS = [
+  "status",
+  "invite_status",
+  "inviteStatus",
+  "invitation_status",
+  "invitationStatus",
+  "state",
+  "participant_status",
+  "participantStatus",
+  "status_reason",
+  "statusReason",
+];
+
+const INVITE_DEPARTURE_FIELDS = [
+  "left_at",
+  "leftAt",
+  "removed_at",
+  "removedAt",
+  "cancelled_at",
+  "cancelledAt",
+  "canceled_at",
+  "canceledAt",
+  "declined_at",
+  "declinedAt",
+  "withdrawn_at",
+  "withdrawnAt",
+  "expired_at",
+  "expiredAt",
+];
+
+const ACCEPTED_INVITE_STATUSES = new Set([
+  "accepted",
+  "confirmed",
+  "joined",
+  "attending",
+  "yes",
+]);
+
+const DECLINED_INVITE_STATUSES = new Set([
+  "declined",
+  "rejected",
+  "withdrawn",
+  "canceled",
+  "cancelled",
+  "expired",
+  "inactive",
+  "no",
+]);
+
+const toTrimmedString = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : "";
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  try {
+    return value.toString().trim();
+  } catch {
+    return "";
+  }
+};
+
+const firstNonEmptyValue = (candidates = []) => {
+  for (const candidate of candidates) {
+    const str = toTrimmedString(candidate);
+    if (str) return str;
+  }
+  return "";
+};
+
+const getInviteStatus = (invite) => {
+  if (!invite || typeof invite !== "object") return "";
+  for (const field of INVITE_STATUS_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(invite, field)) continue;
+    const value = invite[field];
+    if (value === undefined || value === null) continue;
+    const normalized = toTrimmedString(value).toLowerCase();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+
+const hasAnyValue = (subject, fields = []) => {
+  if (!subject || typeof subject !== "object") return false;
+  return fields.some((field) => {
+    if (!Object.prototype.hasOwnProperty.call(subject, field)) return false;
+    const value = subject[field];
+    if (value === undefined || value === null) return false;
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    if (value instanceof Date) {
+      return !Number.isNaN(value.getTime());
+    }
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return true;
+  });
+};
+
+const inviteIsDeclined = (invite, status) => {
+  if (!invite || typeof invite !== "object") return false;
+  const normalizedStatus = status || getInviteStatus(invite);
+  if (normalizedStatus && DECLINED_INVITE_STATUSES.has(normalizedStatus)) {
+    return true;
+  }
+  const declineFlags = [
+    invite.declined,
+    invite.is_declined,
+    invite.isDeclined,
+    invite.has_declined,
+    invite.hasDeclined,
+  ];
+  if (declineFlags.some((value) => value === true)) {
+    return true;
+  }
+  if (hasAnyValue(invite, INVITE_DEPARTURE_FIELDS)) {
+    return true;
+  }
+  return false;
+};
+
+const inviteIsAccepted = (invite, status) => {
+  if (!invite || typeof invite !== "object") return false;
+  const normalizedStatus = status || getInviteStatus(invite);
+  if (normalizedStatus && ACCEPTED_INVITE_STATUSES.has(normalizedStatus)) {
+    return true;
+  }
+  const acceptedFlags = [
+    invite.accepted,
+    invite.is_accepted,
+    invite.isAccepted,
+    invite.confirmed,
+    invite.is_confirmed,
+    invite.isConfirmed,
+    invite.has_confirmed,
+    invite.hasConfirmed,
+  ];
+  if (acceptedFlags.some((value) => value === true)) {
+    return true;
+  }
+  if (
+    hasAnyValue(invite, [
+      "confirmed_at",
+      "confirmedAt",
+      "confirmed_on",
+      "confirmedOn",
+      "accepted_at",
+      "acceptedAt",
+    ])
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const formatInviteStatus = (status) => {
+  if (!status) return "";
+  const tokens = status
+    .toString()
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return "";
+  return tokens
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+};
+
+const getInviteEmail = (invite) => {
+  if (!invite || typeof invite !== "object") return "";
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const contact = invite.contact || {};
+  return (
+    firstNonEmptyValue([
+      invite.email,
+      invite.invitee_email,
+      invite.inviteeEmail,
+      invite.contact_email,
+      invite.contactEmail,
+      invitee.email,
+      profile.email,
+      player.email,
+      contact.email,
+    ]) || ""
+  );
+};
+
+const getInvitePhone = (invite) => {
+  if (!invite || typeof invite !== "object") return "";
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const contact = invite.contact || {};
+  return (
+    firstNonEmptyValue([
+      invite.phone,
+      invite.invitee_phone,
+      invite.inviteePhone,
+      invite.contact_phone,
+      invite.contactPhone,
+      invitee.phone,
+      profile.phone,
+      player.phone,
+      contact.phone,
+    ]) || ""
+  );
+};
+
+const getInviteDisplayName = (invite, fallback = "Invited player") => {
+  if (!invite || typeof invite !== "object") return fallback;
+  const invitee = invite.invitee || {};
+  const profile = invite.profile || {};
+  const player = invite.player || {};
+  const candidates = [
+    invite.full_name,
+    invite.fullName,
+    invite.name,
+    invite.display_name,
+    invite.displayName,
+    invite.invitee_full_name,
+    invite.inviteeFullName,
+    invite.invitee_name,
+    invite.inviteeName,
+    invitee.full_name,
+    invitee.fullName,
+    invitee.preferred_name,
+    invitee.preferredName,
+    invitee.name,
+    profile.full_name,
+    profile.fullName,
+    profile.preferred_name,
+    profile.preferredName,
+    profile.name,
+    profile.display_name,
+    profile.displayName,
+    player.full_name,
+    player.fullName,
+    player.name,
+    player.display_name,
+    player.displayName,
+  ];
+  const resolved = firstNonEmptyValue(candidates);
+  if (resolved) return resolved;
+  const email = getInviteEmail(invite);
+  if (email) return email;
+  const phone = getInvitePhone(invite);
+  if (phone) return phone;
+  return fallback;
+};
+
+const getInviteKey = (invite, index) => {
+  if (!invite || typeof invite !== "object") return `invite-${index}`;
+  const candidates = [
+    invite.match_participant_id,
+    invite.matchParticipantId,
+    invite.participant_id,
+    invite.participantId,
+    invite.invitee_id,
+    invite.inviteeId,
+    invite.player_id,
+    invite.playerId,
+    invite.id,
+    invite.token,
+    invite.invite_token,
+    invite.inviteToken,
+    invite.invitation_token,
+    invite.invitationToken,
+  ];
+  for (const candidate of candidates) {
+    const value = toTrimmedString(candidate);
+    if (value) return `invite-${value}`;
+  }
+  const email = getInviteEmail(invite);
+  if (email) return `invite-email-${email.toLowerCase()}`;
+  const phone = getInvitePhone(invite);
+  if (phone) return `invite-phone-${phone}`;
+  return `invite-${index}`;
 };
 
 const parseCoordinate = (value) => {
@@ -186,6 +482,21 @@ export default function MatchPage() {
     return { ...match, participants };
   }, [match, participants]);
 
+  const inviteSource = useMemo(() => {
+    if (Array.isArray(data?.invitees)) {
+      return data.invitees;
+    }
+    if (Array.isArray(match?.invitees)) {
+      return match.invitees;
+    }
+    return [];
+  }, [data?.invitees, match?.invitees]);
+
+  const invitees = useMemo(
+    () => uniqueInvitees(inviteSource),
+    [inviteSource],
+  );
+
   const originalForm = useMemo(() => buildInitialForm(match), [match]);
 
   const availableMatchFormats = useMemo(
@@ -220,6 +531,26 @@ export default function MatchPage() {
     matchWithParticipants || match,
     memberIdentities,
   );
+  const showInviteStatus = isHost && isPrivate;
+
+  const pendingInvites = useMemo(() => {
+    if (!showInviteStatus || invitees.length === 0) return [];
+    return invitees.filter((invite) => {
+      const status = getInviteStatus(invite);
+      if (inviteIsDeclined(invite, status)) {
+        return false;
+      }
+      if (inviteIsAccepted(invite, status)) {
+        return false;
+      }
+      return true;
+    });
+  }, [invitees, showInviteStatus]);
+
+  const declinedInvites = useMemo(() => {
+    if (!showInviteStatus || invitees.length === 0) return [];
+    return invitees.filter((invite) => inviteIsDeclined(invite));
+  }, [invitees, showInviteStatus]);
   const canEdit = isHost && !archived && !cancelled;
 
   const hasChanges = useMemo(() => {
@@ -483,6 +814,159 @@ export default function MatchPage() {
       });
     }
   };
+
+  const participantList = participants.length ? (
+    <ul className="divide-y divide-gray-100">
+      {participants.map((participant) => {
+        const name =
+          participant.profile?.full_name ||
+          participant.profile?.name ||
+          `Player ${participant.player_id}`;
+        const isHostParticipant = idsMatch(
+          participant.player_id,
+          match?.host_id,
+        );
+        const phoneRaw = getParticipantPhone(participant);
+        const phoneDigits = getPhoneDigits(phoneRaw);
+        const phoneDisplay = phoneDigits
+          ? formatPhoneDisplay(phoneRaw) || phoneDigits
+          : "";
+        const phoneValue = phoneDigits
+          ? normalizePhoneValue(phoneRaw) || phoneDigits
+          : "";
+        const phoneHref = phoneValue ? `tel:${phoneValue}` : "";
+        return (
+          <li
+            key={participant.id || participant.player_id}
+            className="flex items-center justify-between py-3 text-sm text-gray-700"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="font-semibold text-gray-900">{name}</span>
+              {phoneDisplay && phoneHref && (
+                <a
+                  href={phoneHref}
+                  aria-label={`Call ${name}`}
+                  className="text-xs font-medium text-emerald-600 transition hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                >
+                  {phoneDisplay}
+                </a>
+              )}
+              {isHostParticipant && (
+                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                  Host
+                </span>
+              )}
+            </div>
+            {canEdit && !isHostParticipant ? (
+              <button
+                type="button"
+                onClick={() => handleRemoveParticipant(participant.player_id)}
+                disabled={
+                  removingId === participant.player_id ||
+                  removeParticipantMutation.isPending
+                }
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X className="h-4 w-4" />
+                {removingId === participant.player_id ? "Removing…" : "Remove"}
+              </button>
+            ) : (
+              <span className="text-xs text-gray-400">
+                {isHostParticipant ? "Organizer" : ""}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-gray-500">No participants yet.</p>
+  );
+
+  const pendingInviteList = pendingInvites.length ? (
+    <ul className="divide-y divide-gray-100">
+      {pendingInvites.map((invite, index) => {
+        const name = getInviteDisplayName(invite);
+        const status = getInviteStatus(invite);
+        const statusLabel = formatInviteStatus(status) || "Pending";
+        const email = getInviteEmail(invite);
+        const phoneRaw = getInvitePhone(invite);
+        const phoneDigits = getPhoneDigits(phoneRaw);
+        const phoneDisplay = phoneDigits
+          ? formatPhoneDisplay(phoneRaw) || phoneDigits
+          : "";
+        const phoneValue = phoneDigits
+          ? normalizePhoneValue(phoneRaw) || phoneDigits
+          : "";
+        const contactLabel = email || phoneDisplay;
+        const contactHref = email
+          ? `mailto:${email}`
+          : phoneValue
+          ? `tel:${phoneValue}`
+          : "";
+        return (
+          <li
+            key={getInviteKey(invite, index)}
+            className="flex items-center justify-between py-3 text-sm text-gray-700"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-gray-900">{name}</span>
+              {contactLabel && contactHref ? (
+                <a
+                  href={contactHref}
+                  className="text-xs font-medium text-emerald-600 transition hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                >
+                  {contactLabel}
+                </a>
+              ) : contactLabel ? (
+                <span className="text-xs text-gray-500">{contactLabel}</span>
+              ) : null}
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+              {statusLabel}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-gray-500">No pending invites.</p>
+  );
+
+  const declinedInviteList = declinedInvites.length ? (
+    <ul className="divide-y divide-gray-100">
+      {declinedInvites.map((invite, index) => {
+        const name = getInviteDisplayName(invite);
+        const status = getInviteStatus(invite);
+        const statusLabel = formatInviteStatus(status) || "Declined";
+        const email = getInviteEmail(invite);
+        const phoneRaw = getInvitePhone(invite);
+        const phoneDigits = getPhoneDigits(phoneRaw);
+        const phoneDisplay = phoneDigits
+          ? formatPhoneDisplay(phoneRaw) || phoneDigits
+          : "";
+        const contactLabel = email || phoneDisplay;
+        return (
+          <li
+            key={getInviteKey(invite, index)}
+            className="flex items-center justify-between py-3 text-sm text-gray-700"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-gray-900">{name}</span>
+              {contactLabel && (
+                <span className="text-xs text-gray-500">{contactLabel}</span>
+              )}
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-red-600">
+              {statusLabel}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-gray-500">No declined invites.</p>
+  );
 
   if (isLoading)
     return (
@@ -752,69 +1236,40 @@ export default function MatchPage() {
               {participants.length} player{participants.length === 1 ? "" : "s"}
             </span>
           </header>
-          {participants.length ? (
-            <ul className="divide-y divide-gray-100">
-              {participants.map((participant) => {
-                const name =
-                  participant.profile?.full_name ||
-                  participant.profile?.name ||
-                  `Player ${participant.player_id}`;
-                const isHostParticipant = idsMatch(
-                  participant.player_id,
-                  match.host_id,
-                );
-                const phoneRaw = getParticipantPhone(participant);
-                const phoneDigits = getPhoneDigits(phoneRaw);
-                const phoneDisplay = phoneDigits
-                  ? formatPhoneDisplay(phoneRaw) || phoneDigits
-                  : "";
-                const phoneValue = phoneDigits
-                  ? normalizePhoneValue(phoneRaw) || phoneDigits
-                  : "";
-                const phoneHref = phoneValue ? `tel:${phoneValue}` : "";
-                return (
-                  <li
-                    key={participant.id || participant.player_id}
-                    className="flex items-center justify-between py-3 text-sm text-gray-700"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-gray-900">{name}</span>
-                      {phoneDisplay && phoneHref && (
-                        <a
-                          href={phoneHref}
-                          aria-label={`Call ${name}`}
-                          className="text-xs font-medium text-emerald-600 transition hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
-                        >
-                          {phoneDisplay}
-                        </a>
-                      )}
-                      {isHostParticipant && (
-                        <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-                          Host
-                        </span>
-                      )}
-                    </div>
-                    {canEdit && !isHostParticipant ? (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveParticipant(participant.player_id)}
-                        disabled={removingId === participant.player_id || removeParticipantMutation.isPending}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <X className="h-4 w-4" />
-                        {removingId === participant.player_id
-                          ? "Removing…"
-                          : "Remove"}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-gray-400">{isHostParticipant ? "Organizer" : ""}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+          {showInviteStatus ? (
+            <div className="space-y-6">
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">Accepted</h3>
+                  <span className="text-xs font-medium text-gray-500">
+                    {participants.length}
+                  </span>
+                </div>
+                {participantList}
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Waiting on responses
+                  </h3>
+                  <span className="text-xs font-medium text-gray-500">
+                    {pendingInvites.length}
+                  </span>
+                </div>
+                {pendingInviteList}
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">Declined</h3>
+                  <span className="text-xs font-medium text-gray-500">
+                    {declinedInvites.length}
+                  </span>
+                </div>
+                {declinedInviteList}
+              </div>
+            </div>
           ) : (
-            <p className="text-sm text-gray-500">No participants yet.</p>
+            participantList
           )}
         </section>
 
