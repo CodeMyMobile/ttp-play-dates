@@ -76,66 +76,44 @@ const extractSuggestedPlayerId = (player) => {
   return null;
 };
 
-const buildSuggestedPlayerName = (player, fallbackId) => {
-  if (!player || typeof player !== "object") {
-    return fallbackId ? `Player ${fallbackId}` : "Unknown player";
-  }
-  const candidates = [
-    player.full_name,
-    player.fullName,
-    player.name,
-    player.profile?.full_name,
-    player.profile?.fullName,
-    player.profile?.name,
-    player.email,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue;
-    const trimmed = candidate.trim();
-    if (trimmed) return trimmed;
-  }
-  return fallbackId ? `Player ${fallbackId}` : "Unknown player";
-};
+const MATCH_START_KEYS = [
+  "start_date_time",
+  "startDateTime",
+  "start_time",
+  "startTime",
+  "start_at",
+  "startAt",
+];
 
-const coerceIsoString = (value) => {
-  if (!value) return null;
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+const extractMatchTimestamp = (match) => {
+  if (!match || typeof match !== "object") {
+    return -Infinity;
   }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return null;
-    const numericValue = value > 1e12 ? value : value * 1000;
-    const date = new Date(numericValue);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const parsed = new Date(trimmed);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString();
+
+  const candidates = [];
+  MATCH_START_KEYS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(match, key)) {
+      candidates.push(match[key]);
     }
-    return null;
-  }
-  return null;
-};
+  });
 
-const normalizeSuggestedPlayer = (player) => {
-  const playerId = extractSuggestedPlayerId(player);
-  if (!playerId) return null;
-  const lastPlayedSource =
-    player?.lastPlayedAt ??
-    player?.last_played_at ??
-    player?.last_match_at ??
-    player?.last_active_at ??
-    player?.last_played ??
-    null;
-  return {
-    ...player,
-    user_id: playerId,
-    full_name: buildSuggestedPlayerName(player, playerId),
-    lastPlayedAt: coerceIsoString(lastPlayedSource),
-  };
+  if (match.match && typeof match.match === "object") {
+    MATCH_START_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(match.match, key)) {
+        candidates.push(match.match[key]);
+      }
+    });
+  }
+
+  for (const value of candidates) {
+    if (!value) continue;
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.getTime();
+    }
+  }
+
+  return -Infinity;
 };
 
 const InviteScreen = ({
@@ -178,23 +156,6 @@ const InviteScreen = ({
     [currentUser],
   );
 
-  const fallbackSuggestionQuery = useMemo(() => {
-    const rawSkill =
-      typeof matchData?.skillLevel === "string"
-        ? matchData.skillLevel.trim()
-        : "";
-    if (rawSkill && rawSkill !== "Any Level") {
-      const [primary] = rawSkill.split(" - ");
-      return primary || rawSkill;
-    }
-    const rawFormat =
-      typeof matchData?.format === "string" ? matchData.format.trim() : "";
-    if (rawFormat) {
-      return rawFormat;
-    }
-    return "tennis";
-  }, [matchData?.skillLevel, matchData?.format]);
-
   const fetchSuggestedPlayers = useCallback(
     async (aliveCheck = () => true) => {
       if (!aliveCheck()) return;
@@ -211,65 +172,28 @@ const InviteScreen = ({
       setSuggestionsError("");
 
       try {
-        let normalizedSuggestions = [];
-        let historyError = null;
+        const data = await listMatches("my", {
+          perPage: 10,
+          includeHidden: true,
+        });
+        if (!aliveCheck()) return;
 
-        try {
-          const data = await listMatches("my", {
-            perPage: 25,
-            includeHidden: true,
-          });
-          if (!aliveCheck()) return;
-          const matches = Array.isArray(data?.matches) ? data.matches : [];
-          const suggestions = buildRecentPartnerSuggestions({
-            matches,
-            currentUser,
-            memberIdentities,
-          });
-          if (!aliveCheck()) return;
-          normalizedSuggestions = suggestions
-            .map(normalizeSuggestedPlayer)
-            .filter(Boolean);
-        } catch (historyFetchError) {
-          console.error("Failed to load match history for suggestions", historyFetchError);
-          historyError = historyFetchError;
-        }
+        const matches = Array.isArray(data?.matches) ? data.matches : [];
+        const sortedMatches = matches
+          .map((match) => ({ match, ts: extractMatchTimestamp(match) }))
+          .sort((a, b) => (b.ts ?? -Infinity) - (a.ts ?? -Infinity))
+          .map(({ match }) => match);
+        const recentMatches = sortedMatches.slice(0, 3);
+
+        const suggestions = buildRecentPartnerSuggestions({
+          matches: recentMatches,
+          currentUser,
+          memberIdentities,
+        });
 
         if (!aliveCheck()) return;
 
-        if (normalizedSuggestions.length === 0) {
-          try {
-            const fallbackResponse = await searchPlayers({
-              search: fallbackSuggestionQuery,
-              perPage: 12,
-            });
-            if (!aliveCheck()) return;
-            const fallbackPlayers = Array.isArray(fallbackResponse?.players)
-              ? fallbackResponse.players
-              : [];
-            const normalizedFallback = fallbackPlayers
-              .map(normalizeSuggestedPlayer)
-              .filter(Boolean);
-            if (normalizedFallback.length > 0) {
-              normalizedSuggestions = normalizedFallback;
-              historyError = null;
-            }
-          } catch (fallbackError) {
-            console.error("Failed to load fallback suggested players", fallbackError);
-            if (historyError) {
-              throw fallbackError;
-            }
-          }
-        }
-
-        if (!aliveCheck()) return;
-
-        setSuggestedPlayers(normalizedSuggestions);
-        if (normalizedSuggestions.length === 0 && historyError) {
-          setSuggestionsError(
-            "We couldn't load suggestions right now. Try refreshing.",
-          );
-        }
+        setSuggestedPlayers(suggestions);
       } catch (error) {
         console.error("Failed to load suggested players", error);
         if (!aliveCheck()) return;
@@ -287,7 +211,6 @@ const InviteScreen = ({
       isPrivateMatch,
       currentUser,
       memberIdentities,
-      fallbackSuggestionQuery,
     ],
   );
 
