@@ -60,11 +60,20 @@ export const listInvites = ({ status, page, perPage, filter } = {}) => {
   return unwrap(api(`/invites${query}`));
 };
 
+const buildTokenPayload = (token) => {
+  if (!token) return {};
+  if (typeof token === "object") return token;
+  return {
+    token,
+    invite_token: token,
+  };
+};
+
 export const acceptInvite = (token) =>
   unwrap(
     api(`/invites/accept`, {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify(buildTokenPayload(token)),
     })
   );
 
@@ -72,7 +81,7 @@ export const rejectInvite = (token) =>
   unwrap(
     api(`/invites/reject`, {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify(buildTokenPayload(token)),
     })
   );
 
