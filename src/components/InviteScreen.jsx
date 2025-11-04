@@ -864,13 +864,7 @@ const InviteScreen = ({
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-          <div className="max-w-2xl mx-auto flex gap-3">
-            <button
-              onClick={() => onDone?.("cancel")}
-              className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
-            >
-              SAVE FOR LATER
-            </button>
+          <div className="max-w-2xl mx-auto">
             <button
               onClick={async () => {
                 if (selectedPlayers.size === 0) {
@@ -929,7 +923,7 @@ const InviteScreen = ({
                 }
               }}
               disabled={isArchived}
-              className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+              className="w-full px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               <Send className="w-5 h-5" />
               SEND INVITES

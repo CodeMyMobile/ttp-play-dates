@@ -365,6 +365,36 @@ const extractInvitePlayerId = (invite) => {
   return null;
 };
 
+const trimString = (value) =>
+  typeof value === "string" ? value.trim() : "";
+
+const combineNameParts = (...parts) => {
+  const trimmed = parts.map(trimString).filter(Boolean);
+  return trimmed.length > 0 ? trimmed.join(" ") : "";
+};
+
+const isGeneratedPlayerLabel = (value) => {
+  const trimmed = trimString(value);
+  if (!trimmed) return false;
+  return /^player\s+\d+$/i.test(trimmed);
+};
+
+const firstMeaningfulName = (...values) => {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      const nested = firstMeaningfulName(...value);
+      if (nested) return nested;
+      continue;
+    }
+    const trimmed = trimString(value);
+    if (!trimmed) continue;
+    if (isGeneratedPlayerLabel(trimmed)) continue;
+    return trimmed;
+  }
+  return "";
+};
+
 const toPlainObject = (value) =>
   value && typeof value === "object" ? { ...value } : null;
 
@@ -2352,12 +2382,8 @@ const TennisMatchApp = () => {
           : match.invitees || [];
 
         const validParticipants = uniqueActiveParticipants(participantsSource);
-        const participantIds = validParticipants
-          .map((p) => Number(p.player_id))
-          .filter((id) => Number.isFinite(id) && id > 0);
-        const inviteeIds = inviteesSource
-          .map((invite) => extractInvitePlayerId(invite))
-          .filter((id) => Number.isFinite(id) && id > 0);
+        const participantIdSet = new Set();
+        const inviteeIdSet = new Set();
 
         const initial = new Map();
         const hostParticipant = validParticipants.find(
@@ -2392,12 +2418,34 @@ const TennisMatchApp = () => {
           const pid = Number(p.player_id);
           if (!Number.isFinite(pid) || pid <= 0) return;
           const profile = p.profile || {};
+          const playerRecord = p.player || {};
+          const hosting =
+            p.status === "hosting" || idsMatch(pid, match.host_id);
+          const participantName = firstMeaningfulName(
+            profile.full_name,
+            profile.fullName,
+            profile.name,
+            combineNameParts(profile.first_name, profile.last_name),
+            playerRecord.full_name,
+            playerRecord.fullName,
+            playerRecord.name,
+            combineNameParts(
+              playerRecord.first_name,
+              playerRecord.last_name,
+            ),
+          );
+          if (!participantName && !hosting) {
+            return;
+          }
+          const displayName = participantName || `Player ${pid}`;
+          const email = profile.email || playerRecord.email;
           initial.set(pid, {
             user_id: pid,
-            full_name: profile.full_name || `Player ${pid}`,
-            email: profile.email,
-            hosting: p.status === "hosting" || idsMatch(pid, match.host_id),
+            full_name: displayName,
+            email,
+            hosting,
           });
+          participantIdSet.add(pid);
         });
 
         inviteesSource.forEach((invite) => {
@@ -2405,17 +2453,24 @@ const TennisMatchApp = () => {
           if (!Number.isFinite(id) || id <= 0) return;
           const profile =
             invite.profile || invite.player || invite.invitee || {};
-          const fullName =
-            profile.full_name ||
-            profile.fullName ||
-            profile.name ||
-            invite.full_name ||
-            invite.fullName ||
-            invite.invitee_name ||
-            invite.inviteeName ||
-            invite.player_name ||
-            invite.playerName ||
-            `Player ${id}`;
+          const inviteName = firstMeaningfulName(
+            profile.full_name,
+            profile.fullName,
+            profile.name,
+            combineNameParts(profile.first_name, profile.last_name),
+            invite.full_name,
+            invite.fullName,
+            invite.invitee_full_name,
+            invite.inviteeFullName,
+            invite.invitee_name,
+            invite.inviteeName,
+            invite.player_name,
+            invite.playerName,
+            invite.name,
+          );
+          if (!inviteName) {
+            return;
+          }
           const email =
             profile.email ||
             invite.email ||
@@ -2423,17 +2478,19 @@ const TennisMatchApp = () => {
             invite.inviteeEmail ||
             invite.player_email ||
             invite.playerEmail;
+          const previous = initial.get(id);
           initial.set(id, {
             user_id: id,
-            full_name: fullName,
-            email,
-            hosting: false,
+            full_name: inviteName,
+            email: email || previous?.email,
+            hosting: previous?.hosting || false,
           });
+          inviteeIdSet.add(id);
         });
 
         setSelectedPlayers(initial);
         setManualContacts(new Map());
-        setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
+        setExistingPlayerIds(new Set([...participantIdSet, ...inviteeIdSet]));
         setInviteMatchStatus(match.status || null);
         lastInviteLoadRef.current = numericMatchId;
         setMatchData((prev) => {
