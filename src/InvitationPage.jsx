@@ -1124,7 +1124,16 @@ export default function InvitationPage() {
       } else if (isAcceptError(err)) {
         setError(mapAcceptError(err));
       } else {
-        setError(mapSignUpError(err));
+        const message = mapSignUpError(err);
+        const shouldSuggestSignIn = message
+          .toLowerCase()
+          .includes("sign in");
+        setError(message);
+        if (shouldSuggestSignIn) {
+          setAuthMode("signIn");
+          setSignInEmail(trimmedEmail);
+          setShowForgotPassword(false);
+        }
       }
     } finally {
       setAuthSubmitting(false);
@@ -2038,7 +2047,7 @@ function mapSignUpError(error) {
   );
 
   if (status === 409 || normalized.includes("email_in_use") || hasDuplicateEmailHint) {
-    return "Looks like you already have an account with that email. Try signing in instead.";
+    return "Looks like you already have an account with that email. Switch to Sign in to join this match.";
   }
   if (status === 422 || normalized.includes("validation")) {
     return (
