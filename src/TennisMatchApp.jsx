@@ -826,7 +826,22 @@ const TennisMatchApp = () => {
     () => locationFilter?.label || "",
   );
 
-  const totalSelectedInvitees = selectedPlayers.size + manualContacts.size;
+  const totalSelectedInvitees = useMemo(() => {
+    const normalizedExistingIds =
+      existingPlayerIds instanceof Set
+        ? existingPlayerIds
+        : new Set(existingPlayerIds || []);
+
+    let pendingPlayers = 0;
+    selectedPlayers.forEach((_, key) => {
+      const numericId = Number(key);
+      if (!Number.isFinite(numericId)) return;
+      if (normalizedExistingIds.has(numericId)) return;
+      pendingPlayers += 1;
+    });
+
+    return pendingPlayers + manualContacts.size;
+  }, [selectedPlayers, manualContacts, existingPlayerIds]);
   const lastInviteLoadRef = useRef(null);
   const autoDetectAttemptedRef = useRef(false);
   const hydratedProfileIdsRef = useRef(new Set());
@@ -5962,6 +5977,24 @@ const TennisMatchApp = () => {
       }
     };
 
+    const normalizedExistingIds =
+      existingPlayerIds instanceof Set
+        ? existingPlayerIds
+        : new Set(existingPlayerIds || []);
+    const selectedPlayerList = Array.from(selectedPlayers.values());
+    const pendingPlayerInvites = selectedPlayerList.filter((player) => {
+      const pid = Number(player.user_id);
+      return Number.isFinite(pid) && !normalizedExistingIds.has(pid);
+    });
+    const alreadyInvitedSelections = selectedPlayerList.filter((player) => {
+      const pid = Number(player.user_id);
+      return Number.isFinite(pid) && normalizedExistingIds.has(pid);
+    });
+    const manualInviteContacts = Array.from(manualContacts.values());
+    const hasPendingInvites =
+      pendingPlayerInvites.length + manualInviteContacts.length > 0;
+    const hasExistingSelections = alreadyInvitedSelections.length > 0;
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 pb-20">
         <div className="max-w-2xl mx-auto p-6">
@@ -6436,11 +6469,12 @@ const TennisMatchApp = () => {
             </div>
           </form>
 
-          {totalSelectedInvitees > 0 && (
+          {(hasPendingInvites || hasExistingSelections) && (
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
-                    Selected ({totalSelectedInvitees})
+                    New invites
+                    {totalSelectedInvitees > 0 && ` (${totalSelectedInvitees})`}
                   </h3>
                   <button
                     type="button"
@@ -6456,83 +6490,94 @@ const TennisMatchApp = () => {
                     Clear all
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {[...selectedPlayers.values()]
-                    .filter((p) => Number.isFinite(p.user_id) && p.user_id > 0)
-                    .map((player) => (
-                    <span
-                      key={player.user_id}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
-                    >
-                      {player.full_name}
-                      {player.hosting && (
-                        <span className="ml-1 text-blue-700 text-xs">Host</span>
-                      )}
-                      {existingPlayerIds.has(player.user_id) && (
-                        <span className="ml-1 text-green-700 text-xs">Added</span>
-                      )}
-                      {!existingPlayerIds.has(player.user_id) && (
+                {hasPendingInvites ? (
+                  <div className="flex flex-wrap gap-2">
+                    {pendingPlayerInvites.map((player) => {
+                      const name =
+                        player.full_name || player.name || "Pending player";
+                      return (
+                        <span
+                          key={player.user_id}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-full text-sm font-bold text-gray-700"
+                        >
+                          {name}
+                          {player.hosting && (
+                            <span className="ml-1 text-blue-700 text-xs">Host</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedPlayers((prev) => {
+                                const next = new Map(prev);
+                                const normalizedId = Number(player.user_id);
+                                if (Number.isFinite(normalizedId)) {
+                                  next.delete(normalizedId);
+                                }
+                                return next;
+                              })
+                            }
+                            className="ml-1 text-green-700 hover:text-green-900"
+                            aria-label={`Remove ${name}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {manualInviteContacts.map((contact) => (
+                      <span
+                        key={contact.key}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-sm font-bold text-blue-700"
+                      >
+                        {contact.name || formatPhoneDisplay(contact.phone)}
+                        <span className="ml-1 text-xs text-blue-500">SMS</span>
                         <button
                           type="button"
-                          onClick={() =>
-                            setSelectedPlayers((prev) => {
-                              const m = new Map(prev);
-                              m.delete(player.user_id);
-                              return m;
-                            })
-                          }
-                          className="ml-1 text-green-700 hover:text-green-900"
-                          aria-label={`Remove ${player.full_name}`}
+                          onClick={() => handleRemoveManualContact(contact.key)}
+                          className="ml-1 text-blue-600 hover:text-blue-800"
+                          aria-label={`Remove ${contact.name || contact.phone}`}
                         >
                           <X className="w-3 h-3" />
                         </button>
-                      )}
-                    </span>
+                      </span>
                     ))}
-                  {Array.from(manualContacts.values()).map((contact) => (
-                    <span
-                      key={contact.key}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full text-sm font-bold text-blue-700"
-                    >
-                      {contact.name || formatPhoneDisplay(contact.phone)}
-                      <span className="ml-1 text-xs text-blue-500">SMS</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveManualContact(contact.key)}
-                        className="ml-1 text-blue-600 hover:text-blue-800"
-                        aria-label={`Remove ${contact.name || contact.phone}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <p className="text-sm font-semibold text-gray-500">
+                    Select players to send new invites. Already invited players are listed below.
+                  </p>
+                )}
+                {hasExistingSelections && (
+                  <div className="mt-5 border-t border-dashed border-gray-200 pt-5">
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-3">
+                      Already invited ({alreadyInvitedSelections.length})
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {alreadyInvitedSelections.map((player) => {
+                        const name =
+                          player.full_name || player.name || "Invited player";
+                        return (
+                          <span
+                            key={`existing-${player.user_id}`}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm font-bold text-gray-600"
+                          >
+                            {name}
+                            {player.hosting && (
+                              <span className="ml-1 text-blue-700 text-xs">Host</span>
+                            )}
+                            <span className="ml-1 text-xs text-gray-500">Already invited</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-              <div className="max-w-2xl mx-auto flex gap-3">
-                <button
-                  onClick={async () => {
-                    onToast("Match saved as draft!");
-                    goToBrowse();
-                    setShowPreview(false);
-                    setCreateStep(1);
-                    setSelectedPlayers(new Map());
-                    setManualContacts(new Map());
-                    setLocalContactName("");
-                    setLocalContactPhone("");
-                    setLocalContactError("");
-                    setExistingPlayerIds(new Set());
-                    setInviteMatchStatus(null);
-                    setInviteMatchId(null);
-                    fetchMatches();
-                  }}
-                  className="flex-1 px-6 py-3.5 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
-                >
-                  SAVE FOR LATER
-                </button>
+              <div className="max-w-2xl mx-auto flex">
                 <button
                   onClick={async () => {
                     if (totalSelectedInvitees === 0) {
@@ -6622,7 +6667,8 @@ const TennisMatchApp = () => {
                       }
                     }
                 }}
-                className="flex-1 px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg"
+                className="w-full px-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-black hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={totalSelectedInvitees === 0}
               >
                 <Send className="w-5 h-5" />
                 SEND INVITES
