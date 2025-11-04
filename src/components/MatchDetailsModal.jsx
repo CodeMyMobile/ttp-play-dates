@@ -13,6 +13,7 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  Phone,
   Pencil,
   Send,
   Share2,
@@ -573,13 +574,35 @@ const DECLINED_INVITE_STATUSES = new Set([
   "inactive",
 ]);
 
+const PENDING_INVITE_STATUS_TOKENS = [
+  "pending",
+  "invited",
+  "invite",
+  "waiting",
+  "wait",
+  "request",
+  "sent",
+  "open",
+];
+
 const isInviteAwaitingResponse = (status) => {
-  if (!status) return true;
+  if (!status) return false;
   const normalized = status.toString().trim().toLowerCase();
-  if (!normalized) return true;
+  if (!normalized) return false;
   if (ACCEPTED_INVITE_STATUSES.has(normalized)) return false;
   if (DECLINED_INVITE_STATUSES.has(normalized)) return false;
-  return true;
+  if (PENDING_INVITE_STATUS_TOKENS.some((token) => normalized === token)) {
+    return true;
+  }
+  return PENDING_INVITE_STATUS_TOKENS.some((token) => normalized.includes(token));
+};
+
+const isPlaceholderInviteName = (value) => {
+  if (!value) return true;
+  const normalized = value.toString().trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized === "invited player") return true;
+  return /^invited player\b/.test(normalized);
 };
 
 const getInviteEmail = (invite) => {
@@ -1724,21 +1747,29 @@ const MatchDetailsModal = ({
       }
       const explicitName = getInviteDisplayName(invite, null);
       const name = explicitName ? explicitName.trim() : "";
-      if (!name) {
-        return list;
-      }
-      const normalizedName = name.replace(/\s+/g, " ").toLowerCase();
-      if (normalizedName === "invited player") {
+      if (!name || isPlaceholderInviteName(name)) {
         return list;
       }
       const phoneRaw = getInvitePhone(invite);
       const phoneDigits = getPhoneDigits(phoneRaw);
-      if (!phoneDigits) {
+      const email = getInviteEmail(invite);
+      if (!phoneDigits && !email) {
         return list;
       }
-      const phoneDisplay = formatPhoneDisplay(phoneDigits) || phoneDigits;
+      const phoneDisplay = phoneDigits
+        ? formatPhoneDisplay(phoneDigits) || phoneDigits
+        : "";
       const phone = phoneDisplay || null;
-      const email = getInviteEmail(invite);
+      const contactHref = phoneDigits
+        ? `tel:${normalizePhoneValue(phoneRaw) || phoneDigits}`
+        : email
+          ? `mailto:${email}`
+          : null;
+      const contactDisplay = (() => {
+        if (phone) return { label: phone, type: "phone" };
+        if (email) return { label: email, type: "email" };
+        return null;
+      })();
       const identity = getInviteIdentity(invite);
       const normalizedExplicitName = explicitName
         ? (() => {
@@ -1772,6 +1803,8 @@ const MatchDetailsModal = ({
         key,
         name,
         phone,
+        contactDisplay,
+        contactHref,
         avatar: getInviteAvatar(invite),
       });
       return list;
@@ -2169,14 +2202,33 @@ const MatchDetailsModal = ({
               fallback={getAvatarInitials(invite.name)}
               variant="indigo"
             />
-            <div>
+            <div className="flex-1">
               <p className="text-sm font-black text-gray-900">{invite.name}</p>
-              {invite.phone && (
+              {invite.contactDisplay && (
                 <p className="text-xs font-semibold text-gray-500">
-                  Cell {invite.phone}
+                  {invite.contactDisplay.type === "phone"
+                    ? `Cell ${invite.contactDisplay.label}`
+                    : invite.contactDisplay.label}
                 </p>
               )}
             </div>
+            {invite.contactHref && (
+              <a
+                href={invite.contactHref}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600 transition hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                aria-label={
+                  invite.contactDisplay?.type === "phone"
+                    ? `Call ${invite.name}`
+                    : `Email ${invite.name}`
+                }
+              >
+                {invite.contactDisplay?.type === "phone" ? (
+                  <Phone className="h-4 w-4" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
+              </a>
+            )}
           </div>
         ))}
       </div>
