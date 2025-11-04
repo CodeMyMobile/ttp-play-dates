@@ -120,6 +120,41 @@ const DECLINED_INVITE_STATUSES = new Set([
   "no",
 ]);
 
+const PLACEHOLDER_INVITE_STATUS_TOKENS = new Set([
+  "open",
+  "available",
+  "placeholder",
+  "empty",
+  "unused",
+]);
+
+const isPlaceholderInviteName = (value) => {
+  if (!value) return true;
+  const normalized = value.toString().trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized === "invited player") return true;
+  if (normalized === "invited players") return true;
+  if (normalized.includes("placeholder")) return true;
+  if (normalized.includes("phantom")) return true;
+  if (/^invited players?\b/.test(normalized)) return true;
+  if (/^invite(?:d)? slot\b/.test(normalized)) return true;
+  return /^invited player\b/.test(normalized);
+};
+
+const isPlaceholderInviteStatus = (status) => {
+  if (!status) return false;
+  const normalized = status.toString().trim().toLowerCase();
+  if (!normalized) return false;
+  if (PLACEHOLDER_INVITE_STATUS_TOKENS.has(normalized)) {
+    return true;
+  }
+  const tokens = normalized.split(/[^a-z0-9]+/i).filter(Boolean);
+  if (tokens.some((token) => PLACEHOLDER_INVITE_STATUS_TOKENS.has(token))) {
+    return true;
+  }
+  return false;
+};
+
 const toTrimmedString = (value) => {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") {
@@ -337,6 +372,55 @@ const getInviteDisplayName = (invite, fallback = "Invited player") => {
   return fallback;
 };
 
+const valueIsAffirmative = (value) => {
+  if (value === true) return true;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+    return ["true", "yes", "y", "1"].includes(normalized);
+  }
+  if (typeof value === "number") {
+    return value === 1;
+  }
+  return false;
+};
+
+const inviteHasPlaceholderFlag = (invite) => {
+  if (!invite || typeof invite !== "object") return true;
+  const flags = [
+    invite.placeholder,
+    invite.is_placeholder,
+    invite.isPlaceholder,
+    invite.placeholder_invite,
+    invite.placeholderInvite,
+    invite.is_open,
+    invite.isOpen,
+  ];
+  return flags.some((value) => valueIsAffirmative(value));
+};
+
+const inviteIsPlaceholder = (invite, status) => {
+  if (!invite || typeof invite !== "object") return true;
+  if (inviteHasPlaceholderFlag(invite)) {
+    return true;
+  }
+  const normalizedStatus = status || getInviteStatus(invite);
+  if (isPlaceholderInviteStatus(normalizedStatus)) {
+    return true;
+  }
+  const explicitName = getInviteDisplayName(invite, null);
+  const name = explicitName ? explicitName.trim() : "";
+  if (!name || isPlaceholderInviteName(name)) {
+    return true;
+  }
+  const email = toTrimmedString(getInviteEmail(invite));
+  const phoneDigits = getPhoneDigits(getInvitePhone(invite));
+  if (!email && !phoneDigits) {
+    return true;
+  }
+  return false;
+};
+
 const getInviteKey = (invite, index) => {
   if (!invite || typeof invite !== "object") return `invite-${index}`;
   const candidates = [
@@ -543,13 +627,21 @@ export default function MatchPage() {
       if (inviteIsAccepted(invite, status)) {
         return false;
       }
+      if (inviteIsPlaceholder(invite, status)) {
+        return false;
+      }
       return true;
     });
   }, [invitees, showInviteStatus]);
 
   const declinedInvites = useMemo(() => {
     if (!showInviteStatus || invitees.length === 0) return [];
-    return invitees.filter((invite) => inviteIsDeclined(invite));
+    return invitees.filter((invite) => {
+      if (!inviteIsDeclined(invite)) {
+        return false;
+      }
+      return !inviteIsPlaceholder(invite);
+    });
   }, [invitees, showInviteStatus]);
   const canEdit = isHost && !archived && !cancelled;
 
