@@ -691,6 +691,7 @@ const TennisMatchApp = () => {
   const [inviteMatchId, setInviteMatchId] = useState(() =>
     deriveInviteMatchId(initialPath),
   );
+  const [inviteMatchStatus, setInviteMatchStatus] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [participantsMatchId, setParticipantsMatchId] = useState(null);
@@ -2433,6 +2434,7 @@ const TennisMatchApp = () => {
         setSelectedPlayers(initial);
         setManualContacts(new Map());
         setExistingPlayerIds(new Set([...participantIds, ...inviteeIds]));
+        setInviteMatchStatus(match.status || null);
         lastInviteLoadRef.current = numericMatchId;
         setMatchData((prev) => {
           const fallbackPlayerLimit = (() => {
@@ -2498,6 +2500,7 @@ const TennisMatchApp = () => {
           );
         }
         lastInviteLoadRef.current = null;
+        setInviteMatchStatus(null);
         setInviteMatchId((prev) => (prev === numericMatchId ? null : prev));
         goToBrowse({ replace: true });
       }
@@ -6465,6 +6468,7 @@ const TennisMatchApp = () => {
                     setLocalContactPhone("");
                     setLocalContactError("");
                     setExistingPlayerIds(new Set());
+                    setInviteMatchStatus(null);
                     setInviteMatchId(null);
                     fetchMatches();
                   }}
@@ -6498,7 +6502,20 @@ const TennisMatchApp = () => {
                         onToast("Everyone you picked is already invited", "error");
                         return;
                       }
-                      await updateMatch(matchId, { status: "upcoming" });
+                      const resolvedStatus = (() => {
+                        if (inviteMatchStatus) return inviteMatchStatus;
+                        const matchRecord = matches.find((m) =>
+                          matchIdsEqual(m.id, matchId),
+                        );
+                        return matchRecord?.status || null;
+                      })();
+                      const shouldPublishMatch =
+                        typeof resolvedStatus === "string" &&
+                        resolvedStatus.toLowerCase() === "draft";
+                      if (shouldPublishMatch) {
+                        await updateMatch(matchId, { status: "upcoming" });
+                        setInviteMatchStatus("upcoming");
+                      }
                       const response = await sendInvites(matchId, {
                         playerIds: newIds,
                         phoneNumbers,
@@ -6522,6 +6539,7 @@ const TennisMatchApp = () => {
 
                       setShowPreview(false);
                       setCreateStep(1);
+                      setInviteMatchStatus(null);
                       setInviteMatchId(null);
                       fetchMatches();
                     } catch (err) {
@@ -7764,6 +7782,7 @@ const TennisMatchApp = () => {
               onDone={() => {
                 setCurrentScreen("browse");
                 setInviteMatchId(null);
+                setInviteMatchStatus(null);
                 fetchMatches();
               }}
               formatDateTime={formatDateTime}

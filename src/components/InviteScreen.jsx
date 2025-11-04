@@ -57,6 +57,7 @@ const InviteScreen = ({
   const [participantsError, setParticipantsError] = useState("");
   const [hostId, setHostId] = useState(null);
   const [isArchived, setIsArchived] = useState(false);
+  const [matchStatus, setMatchStatus] = useState(null);
   const [suggestedPlayers, setSuggestedPlayers] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsError, setSuggestionsError] = useState("");
@@ -126,7 +127,10 @@ const InviteScreen = ({
   };
 
   useEffect(() => {
-    if (!matchId) return;
+    if (!matchId) {
+      setMatchStatus(null);
+      return;
+    }
     getShareLink(matchId)
       .then(({ shareUrl }) => setShareLink(shareUrl))
       .catch((error) =>
@@ -139,7 +143,10 @@ const InviteScreen = ({
 
   // Load current participants for the match being invited
   useEffect(() => {
-    if (!matchId) return;
+    if (!matchId) {
+      setMatchStatus(null);
+      return;
+    }
     let alive = true;
     (async () => {
       try {
@@ -153,9 +160,9 @@ const InviteScreen = ({
             return await getMatch(matchId, { filter: ARCHIVE_FILTER_VALUE });
           }
         };
-
         const data = await loadMatch();
         if (!alive) return;
+        setMatchStatus(data.match?.status || null);
         const archived = data.match?.status === "archived";
         setIsArchived(archived);
         if (archived) {
@@ -169,6 +176,7 @@ const InviteScreen = ({
       } catch (error) {
         console.error(error);
         if (!alive) return;
+        setMatchStatus(null);
         setParticipants([]);
         if (isMatchArchivedError(error)) {
           setIsArchived(true);
@@ -887,7 +895,13 @@ const InviteScreen = ({
                     onToast("No new players selected", "error");
                     return;
                   }
-                  await updateMatch(matchId, { status: "upcoming" });
+                  const shouldPublishMatch =
+                    typeof matchStatus === "string" &&
+                    matchStatus.toLowerCase() === "draft";
+                  if (shouldPublishMatch) {
+                    await updateMatch(matchId, { status: "upcoming" });
+                    setMatchStatus("upcoming");
+                  }
                   const response = await sendInvites(matchId, {
                     playerIds: newIds,
                     phoneNumbers: [],
