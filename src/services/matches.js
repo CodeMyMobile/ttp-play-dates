@@ -256,12 +256,27 @@ export const updateMatch = (id, updates) =>
     })
   );
 
-export const cancelMatch = (id) =>
-  unwrap(
+export const cancelMatch = async (id) => {
+  try {
+    return await unwrap(
+      api(`/matches/${id}/cancel`, {
+        method: "POST",
+        json: { match_id: id },
+      }),
+    );
+  } catch (error) {
+    const status = Number(error?.status ?? error?.response?.status);
+    if (status && ![404, 405].includes(status)) {
+      throw error;
+    }
+  }
+
+  return unwrap(
     api(`/matches/${id}`, {
       method: "DELETE",
     })
   );
+};
 
 export const joinMatch = (id) =>
   unwrap(
