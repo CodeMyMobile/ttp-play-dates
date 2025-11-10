@@ -31,22 +31,6 @@ export const getInvitePreview = async (token, { filter } = {}) => {
   return data.invite || data;
 };
 
-export const beginInviteVerification = (token, payload) =>
-  unwrap(
-    api(`/invites/${token}/begin`, {
-      method: "POST",
-      body: JSON.stringify(payload || {}),
-    })
-  );
-
-export const verifyInviteCode = (token, code) =>
-  unwrap(
-    api(`/invites/${token}/verify`, {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    })
-  );
-
 export const claimInvite = (token, payload) =>
   unwrap(
     api(`/invites/${token}/claim`, {
