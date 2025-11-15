@@ -162,6 +162,38 @@ const buildIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
   return null;
 };
 
+const normalizeStatusValue = (value) => {
+  if (!value) return "";
+  return value.toString().trim().toLowerCase();
+};
+
+const INACTIVE_STATUS_VALUES = new Set([
+  "left",
+  "removed",
+  "cancelled",
+  "canceled",
+  "declined",
+  "rejected",
+  "withdrawn",
+  "expired",
+  "pending",
+  "invited",
+]);
+
+const PENDING_STATUS_VALUES = new Set(["pending", "invited"]);
+
+const JOIN_STATUS_VALUES = new Set([
+  "joined",
+  "accepted",
+  "confirmed",
+  "on_roster",
+  "on-roster",
+  "on roster",
+  "active",
+]);
+
+const BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "1"]);
+
 const hasIdentity = (item, keys = DEFAULT_IDENTITY_KEYS) => {
   if (!item || typeof item !== "object") return false;
   return buildIdentity(item, keys) !== null;
@@ -214,7 +246,23 @@ const isParticipantActive = (participant) => {
     participant.status_reason,
     participant.statusReason,
   ];
-  if (statusCandidates.some((value) => isInactiveStatus(value))) {
+  const normalizedStatuses = statusCandidates
+    .map((value) => normalizeStatusValue(value))
+    .filter((value) => value);
+
+  const hasJoinSignal = participantHasJoinSignal(
+    participant,
+    normalizedStatuses,
+  );
+
+  if (
+    normalizedStatuses.some((status) => {
+      if (PENDING_STATUS_VALUES.has(status)) {
+        return !hasJoinSignal;
+      }
+      return INACTIVE_STATUS_VALUES.has(status);
+    })
+  ) {
     return false;
   }
 
@@ -299,20 +347,54 @@ const hasAnyValue = (item, keys = []) => {
 };
 
 const isInactiveStatus = (value) => {
-  if (!value) return false;
-  const normalized = value.toString().trim().toLowerCase();
-  return [
-    "left",
-    "removed",
-    "cancelled",
-    "canceled",
-    "declined",
-    "rejected",
-    "withdrawn",
-    "expired",
-    "pending",
-    "invited",
-  ].includes(normalized);
+  const normalized = normalizeStatusValue(value);
+  if (!normalized) return false;
+  return INACTIVE_STATUS_VALUES.has(normalized);
+};
+
+const participantHasJoinSignal = (participant, normalizedStatuses = []) => {
+  if (!participant || typeof participant !== "object") return false;
+
+  if (
+    normalizedStatuses.some((status) =>
+      JOIN_STATUS_VALUES.has(status),
+    )
+  ) {
+    return true;
+  }
+
+  if (hasAnyValue(participant, JOIN_METADATA_KEYS)) {
+    return true;
+  }
+
+  const joinIndicators = [
+    participant.joined,
+    participant.is_joined,
+    participant.isJoined,
+    participant.joined_status,
+    participant.joinedStatus,
+  ];
+
+  return joinIndicators.some((value) => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) && value !== 0;
+    }
+    if (typeof value === "string") {
+      const normalized = normalizeStatusValue(value);
+      if (!normalized) return false;
+      return (
+        JOIN_STATUS_VALUES.has(normalized) ||
+        BOOLEAN_TRUE_VALUES.has(normalized)
+      );
+    }
+    return true;
+  });
 };
 
 const CONFIRMED_STATUS_TOKENS = new Set(["confirm", "confirmed"]);
