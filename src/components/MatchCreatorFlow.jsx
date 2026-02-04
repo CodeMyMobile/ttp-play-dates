@@ -86,6 +86,7 @@ const initialMatchData = () => {
     skillLevel: "4.0",
     format: "Doubles",
     notes: "",
+    alternateTimes: [],
     invitedPlayers: [],
     manualInvitees: [],
     listingVisibility: "listed",
@@ -149,6 +150,22 @@ const formatDateDisplay = (dateStr) => {
     month: "short",
     day: "numeric",
   });
+};
+
+const formatAlternateSlotDisplay = (slot) => {
+  if (!slot?.date || !slot?.startTime) return "";
+  return `${formatDateDisplay(slot.date)} at ${formatTimeDisplay(slot.startTime)}`;
+};
+
+const formatAlternateSlots = (slots) =>
+  (Array.isArray(slots) ? slots : [])
+    .map((slot) => formatAlternateSlotDisplay(slot))
+    .filter(Boolean);
+
+const buildAlternateTimesNote = (slots) => {
+  const formatted = formatAlternateSlots(slots);
+  if (formatted.length === 0) return "";
+  return `Alternate options:\n- ${formatted.join("\n- ")}`;
 };
 
 const formatRelativeDate = (isoValue) => {
@@ -265,6 +282,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
+  const [alternateDate, setAlternateDate] = useState("");
+  const [alternateTime, setAlternateTime] = useState("");
+  const [alternateError, setAlternateError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
   const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
   const [recentPlayers, setRecentPlayers] = useState(() => loadStoredRecentPlayers());
@@ -337,6 +357,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setContactName("");
     setContactPhone("");
     setContactError("");
+    setAlternateDate("");
+    setAlternateTime("");
+    setAlternateError("");
     setIsFormatManuallySelected(false);
   }, []);
 
@@ -415,6 +438,50 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     },
     [setMatchData],
   );
+
+  const handleAlternateTimeChange = useCallback((value) => {
+    setAlternateTime(value ? clampTimeToRange(value) : "");
+  }, []);
+
+  const handleAddAlternateSlot = useCallback(() => {
+    setAlternateError("");
+    if (!alternateDate || !alternateTime) {
+      setAlternateError("Add a date and time for this option.");
+      return;
+    }
+    const normalizedTime = clampTimeToRange(alternateTime);
+    const optionIso = combineDateAndTimeToIso(alternateDate, normalizedTime);
+    if (!optionIso) {
+      setAlternateError("That option time isn't valid.");
+      return;
+    }
+    const mainIso = combineDateAndTimeToIso(matchData.date, matchData.startTime);
+    if (mainIso && optionIso === mainIso) {
+      setAlternateError("That matches your main date/time.");
+      return;
+    }
+    const existingIso = (matchData.alternateTimes || []).some((slot) => {
+      const slotIso = combineDateAndTimeToIso(slot.date, slot.startTime);
+      return slotIso && slotIso === optionIso;
+    });
+    if (existingIso) {
+      setAlternateError("That option is already added.");
+      return;
+    }
+    if ((matchData.alternateTimes || []).length >= 5) {
+      setAlternateError("You can add up to 5 alternate options.");
+      return;
+    }
+    setMatchData((prev) => ({
+      ...prev,
+      alternateTimes: [
+        ...(prev.alternateTimes || []),
+        { date: alternateDate, startTime: normalizedTime },
+      ],
+    }));
+    setAlternateDate("");
+    setAlternateTime("");
+  }, [alternateDate, alternateTime, matchData, setMatchData]);
 
   const recordRecentLocation = useCallback(
     (locationLabel, latitude, longitude) => {
@@ -520,6 +587,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       return;
     }
 
+    const alternateTimesNote =
+      matchData.type === "private"
+        ? buildAlternateTimesNote(matchData.alternateTimes)
+        : "";
+    const combinedNotes = [matchData.notes, alternateTimesNote]
+      .map((entry) => entry?.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
     const payload = {
       status: "upcoming",
       match_type: matchData.type === "private" ? "private" : "open",
@@ -529,7 +605,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       longitude: matchData.longitude ?? undefined,
       player_limit: matchData.totalPlayers,
       match_format: matchData.format,
-      notes: matchData.notes || undefined,
+      notes: combinedNotes || undefined,
     };
 
     if (matchData.type === "open" && matchData.skillLevel) {
@@ -664,11 +740,21 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   };
 
   const buildShareMessage = useCallback(
-    () =>
-      `Join my ${matchData.format} match on ${formatDateDisplay(matchData.date)} at ${formatTimeDisplay(
-        matchData.startTime,
-      )} at ${matchData.location}.`,
-    [matchData.format, matchData.date, matchData.startTime, matchData.location]
+    () => {
+      const primary = `Join my ${matchData.format} match on ${formatDateDisplay(
+        matchData.date,
+      )} at ${formatTimeDisplay(matchData.startTime)} at ${matchData.location}.`;
+      const alternateOptions = formatAlternateSlots(matchData.alternateTimes);
+      if (alternateOptions.length === 0) return primary;
+      return `${primary} Other options: ${alternateOptions.join("; ")}.`;
+    },
+    [
+      matchData.format,
+      matchData.date,
+      matchData.startTime,
+      matchData.location,
+      matchData.alternateTimes,
+    ]
   );
 
   const handleShare = (method) => {
@@ -719,7 +805,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     if (matchData.type === "open" && matchData.skillLevel) {
       description += ` Skill level: NTRP ${matchData.skillLevel}.`;
     }
-    if (matchData.notes) description += ` ${matchData.notes}`;
+    const alternateTimesNote = buildAlternateTimesNote(matchData.alternateTimes);
+    const combinedNotes = [matchData.notes, alternateTimesNote]
+      .map((entry) => entry?.trim())
+      .filter(Boolean)
+      .join("\n\n");
+    if (combinedNotes) description += ` ${combinedNotes}`;
 
     const details = {
       title,
@@ -827,7 +918,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 onClick={() =>
-                  setMatchData((prev) => ({ ...prev, type: "open", invitedPlayers: [] }))
+                  setMatchData((prev) => ({
+                    ...prev,
+                    type: "open",
+                    invitedPlayers: [],
+                    manualInvitees: [],
+                    alternateTimes: [],
+                  }))
                 }
                 className={`p-6 rounded-2xl border-2 transition-all ${
                   matchData.type === "open"
@@ -948,6 +1045,96 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 </div>
               </div>
             </div>
+            {matchData.type === "private" && (
+              <div className="mt-4 border border-gray-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700">
+                      Alternate Options
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      Add up to 5 backup dates/times for invitees.
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-gray-400">Optional</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">
+                      DATE
+                    </label>
+                    <input
+                      type="date"
+                      value={alternateDate}
+                      onChange={(e) => {
+                        setAlternateDate(e.target.value);
+                        if (alternateError) setAlternateError("");
+                      }}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">
+                      TIME
+                    </label>
+                    <input
+                      type="time"
+                      min={MIN_START_TIME}
+                      max={MAX_START_TIME}
+                      value={alternateTime}
+                      onChange={(e) => {
+                        handleAlternateTimeChange(e.target.value);
+                        if (alternateError) setAlternateError("");
+                      }}
+                      onBlur={(e) => handleAlternateTimeChange(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleAddAlternateSlot}
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      Add option
+                    </button>
+                  </div>
+                </div>
+                {alternateError && (
+                  <p className="text-xs font-semibold text-red-600">{alternateError}</p>
+                )}
+                {matchData.alternateTimes?.length > 0 && (
+                  <div className="space-y-2">
+                    {matchData.alternateTimes.map((slot, index) => {
+                      const formatted = formatAlternateSlotDisplay(slot);
+                      if (!formatted) return null;
+                      return (
+                        <div
+                          key={`${slot.date}-${slot.startTime}-${index}`}
+                          className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700"
+                        >
+                          <span>{formatted}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setMatchData((prev) => ({
+                                ...prev,
+                                alternateTimes: (prev.alternateTimes || []).filter(
+                                  (_, idx) => idx !== index
+                                ),
+                              }))
+                            }
+                            className="text-xs font-semibold text-gray-500 hover:text-red-500 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-4">
@@ -1579,6 +1766,21 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   {formatDateDisplay(matchData.date)}, {formatTimeDisplay(matchData.startTime)}
                 </span>
               </div>
+              {matchData.alternateTimes?.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <Clock size={16} className="text-gray-500 mt-1" />
+                  <div className="text-gray-700">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Alternate Options
+                    </div>
+                    <ul className="list-disc list-inside text-sm">
+                      {formatAlternateSlots(matchData.alternateTimes).map((option, index) => (
+                        <li key={`${option}-${index}`}>{option}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-3">
                 <MapPin size={16} className="text-gray-500" />
                 <span className="text-gray-700">{matchData.location}</span>

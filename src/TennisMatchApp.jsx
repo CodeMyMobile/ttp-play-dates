@@ -745,6 +745,7 @@ const TennisMatchApp = () => {
     skillLevel: null,
     format: "Doubles",
     dateTime: "",
+    availabilityOptions: [],
     location: "",
     latitude: null,
     longitude: null,
@@ -2722,6 +2723,24 @@ const TennisMatchApp = () => {
       hour: "numeric",
       minute: "2-digit",
     });
+  };
+
+  const formatAlternateTimes = (options) => {
+    if (!Array.isArray(options)) return [];
+    const formatted = [];
+    options.forEach((option) => {
+      if (!option) return;
+      const parsed = new Date(option);
+      if (Number.isNaN(parsed.getTime())) return;
+      formatted.push(formatDateTime(parsed));
+    });
+    return formatted;
+  };
+
+  const buildAlternateTimesNote = (options) => {
+    const formatted = formatAlternateTimes(options);
+    if (formatted.length === 0) return "";
+    return `Alternate options:\n- ${formatted.join("\n- ")}`;
   };
 
   const formatHoursUntilStart = useCallback((hours) => {
@@ -4811,6 +4830,8 @@ const TennisMatchApp = () => {
 
   const CreateMatchScreen = () => {
     const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
+    const [alternateDateTime, setAlternateDateTime] = useState("");
+    const [alternateError, setAlternateError] = useState("");
 
     useEffect(() => {
       const syncRecentLocations = () => {
@@ -4896,6 +4917,15 @@ const TennisMatchApp = () => {
         }
       }
 
+      const alternateTimesNote =
+        matchData.type === "closed"
+          ? buildAlternateTimesNote(matchData.availabilityOptions)
+          : "";
+      const combinedNotes = [matchData.notes, alternateTimesNote]
+        .map((entry) => entry?.trim())
+        .filter(Boolean)
+        .join("\n\n");
+
       const privacy = matchData.type === "closed" ? "private" : "open";
       const skillLevelValue =
         matchData.type === "closed"
@@ -4917,7 +4947,7 @@ const TennisMatchApp = () => {
         skillLevel: skillLevelValue,
         match_format: matchData.format || undefined,
         format: matchData.format || undefined,
-        notes: matchData.notes || undefined,
+        notes: combinedNotes || undefined,
       };
 
       return Object.fromEntries(
@@ -4996,6 +5026,20 @@ const TennisMatchApp = () => {
                     <p className="font-black text-gray-900 text-lg">
                       {formatDateTime(matchData.dateTime)}
                     </p>
+                    {matchData.availabilityOptions.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs font-black text-gray-500 uppercase tracking-wider">
+                          Alternate Options
+                        </p>
+                        <ul className="list-disc list-inside text-sm font-semibold text-gray-600">
+                          {formatAlternateTimes(
+                            matchData.availabilityOptions
+                          ).map((option, index) => (
+                            <li key={`${option}-${index}`}>{option}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -5168,6 +5212,8 @@ const TennisMatchApp = () => {
                         setMatchData((prev) => ({
                           ...prev,
                           type: type.id,
+                          availabilityOptions:
+                            type.id === "closed" ? prev.availabilityOptions : [],
                           skillLevel:
                             type.id === "closed" ? DEFAULT_SKILL_LEVEL : null,
                         }))
@@ -5205,6 +5251,105 @@ const TennisMatchApp = () => {
                   }
                   className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-bold text-gray-800"
                 />
+                {matchData.type === "closed" && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
+                        Alternate Options (up to 5)
+                      </label>
+                      <span className="text-xs font-semibold text-gray-400">
+                        Optional
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="datetime-local"
+                        value={alternateDateTime}
+                        onChange={(e) => {
+                          setAlternateDateTime(e.target.value);
+                          if (alternateError) setAlternateError("");
+                        }}
+                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors font-semibold text-gray-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAlternateError("");
+                          if (!alternateDateTime) {
+                            setAlternateError("Pick a date/time to add.");
+                            return;
+                          }
+                          if (alternateDateTime === matchData.dateTime) {
+                            setAlternateError(
+                              "That matches your main date/time."
+                            );
+                            return;
+                          }
+                          if (
+                            matchData.availabilityOptions.includes(
+                              alternateDateTime
+                            )
+                          ) {
+                            setAlternateError("That option is already added.");
+                            return;
+                          }
+                          if (matchData.availabilityOptions.length >= 5) {
+                            setAlternateError(
+                              "You can add up to 5 alternate options."
+                            );
+                            return;
+                          }
+                          setMatchData((prev) => ({
+                            ...prev,
+                            availabilityOptions: [
+                              ...prev.availabilityOptions,
+                              alternateDateTime,
+                            ],
+                          }));
+                          setAlternateDateTime("");
+                        }}
+                        className="px-5 py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-black hover:bg-gray-50 transition-colors"
+                      >
+                        Add Option
+                      </button>
+                    </div>
+                    {alternateError && (
+                      <p className="text-xs font-semibold text-red-500 mt-2">
+                        {alternateError}
+                      </p>
+                    )}
+                    {matchData.availabilityOptions.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {matchData.availabilityOptions.map((option, index) => {
+                          const formatted = formatAlternateTimes([option])[0];
+                          if (!formatted) return null;
+                          return (
+                            <div
+                              key={`${option}-${index}`}
+                              className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700"
+                            >
+                              <span>{formatted}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMatchData((prev) => ({
+                                    ...prev,
+                                    availabilityOptions: prev.availabilityOptions.filter(
+                                      (_, idx) => idx !== index
+                                    ),
+                                  }))
+                                }
+                                className="text-xs font-black text-gray-500 hover:text-red-500 transition-colors"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -5700,6 +5845,10 @@ const TennisMatchApp = () => {
       parts.push("You're invited to a tennis match!");
       if (host) parts.push(`Host: ${host}`);
       if (matchData.dateTime) parts.push(`When: ${formatDateTime(matchData.dateTime)}`);
+      const alternateTimes = formatAlternateTimes(matchData.availabilityOptions);
+      if (alternateTimes.length > 0) {
+        parts.push(`Other options: ${alternateTimes.join("; ")}`);
+      }
       if (matchData.location) parts.push(`Where: ${matchData.location}`);
       if (matchData.format) parts.push(`Format: ${matchData.format}`);
       if (matchData.skillLevel && matchData.skillLevel !== "Any Level") {
