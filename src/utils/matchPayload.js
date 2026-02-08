@@ -2,7 +2,7 @@ const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
 
 const PLAYER_LIMIT_MIN = 2;
-const PLAYER_LIMIT_MAX = 12;
+const PLAYER_LIMIT_MAX = 30;
 
 const parsePlayerLimit = (value) => {
   if (value === undefined || value === null) return null;

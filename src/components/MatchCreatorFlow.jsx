@@ -53,7 +53,7 @@ import {
 } from "../utils/recentPlayers";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
-const MAX_PRIVATE_INVITES = 12;
+const MAX_PRIVATE_INVITES = 30;
 
 const pad = (value) => String(value).padStart(2, "0");
 
@@ -1060,10 +1060,10 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 onClick={() =>
                   setMatchData((prev) => ({
                     ...prev,
-                    totalPlayers: Math.min(12, prev.totalPlayers + 1),
+                    totalPlayers: Math.min(30, prev.totalPlayers + 1),
                   }))
                 }
-                disabled={matchData.totalPlayers >= 12}
+                disabled={matchData.totalPlayers >= 30}
                 className="w-14 h-14 rounded-full border-2 border-gray-300 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-xl font-semibold text-gray-600 transition-colors"
               >
                 +
