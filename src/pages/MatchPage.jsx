@@ -47,6 +47,13 @@ import {
 import { combineDateAndTimeToIso } from "../utils/datetime";
 import { isPrivateMatch } from "../utils/matchPrivacy";
 import {
+  DEFAULT_EVENT_DURATION_MINUTES,
+  downloadICSFile,
+  ensureEventEnd,
+  openGoogleCalendar,
+  openOutlookCalendar,
+} from "../utils/calendar";
+import {
   buildMatchUpdatePayload,
   getMatchPlayerLimit,
   parsePlayerLimit,
@@ -482,6 +489,33 @@ const toTimeInput = (value) => {
 
 const combineDateTime = (date, time) => combineDateAndTimeToIso(date, time);
 
+const toSafeDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const deriveDurationMinutes = (match) => {
+  const candidates = [
+    match?.duration_minutes,
+    match?.durationMinutes,
+    match?.duration,
+  ];
+  if (match?.duration_hours !== undefined && match?.duration_hours !== null) {
+    const hours = Number(match.duration_hours);
+    if (Number.isFinite(hours)) {
+      candidates.push(hours * 60);
+    }
+  }
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+  return DEFAULT_EVENT_DURATION_MINUTES;
+};
+
 const buildInitialForm = (match) => {
   if (!match) return { ...DEFAULT_FORM };
   const latitude =
@@ -653,6 +687,26 @@ export default function MatchPage() {
     originalForm.date !== formState.date ||
     originalForm.time !== formState.time ||
     originalForm.location.trim() !== formState.location.trim();
+  const startDate = useMemo(
+    () => toSafeDate(match?.start_date_time || match?.startDateTime),
+    [match?.startDateTime, match?.start_date_time],
+  );
+  const eventDetails = useMemo(() => {
+    if (!startDate) return null;
+    const durationMinutes = deriveDurationMinutes(match);
+    const endDate = ensureEventEnd(
+      startDate,
+      toSafeDate(match?.end_date_time || match?.endDateTime),
+      durationMinutes,
+    );
+    return {
+      title: match?.title || match?.name || `Tennis Match - ${match?.match_format || match?.format || "Play"}`,
+      description: match?.notes || "",
+      location: match?.location_text || match?.location || "",
+      start: startDate,
+      end: endDate || startDate,
+    };
+  }, [match, startDate]);
 
   const updateMatchMutation = useMutation({
     mutationFn: async (updates) => {
@@ -726,6 +780,25 @@ export default function MatchPage() {
     setFeedback(null);
     setFormError("");
     setIsEditing((prev) => !prev);
+  };
+
+  const handleCalendarAction = (type) => {
+    if (!eventDetails) {
+      setFeedback({ type: "error", message: "Match start time not available yet." });
+      return;
+    }
+    try {
+      if (type === "google") {
+        openGoogleCalendar(eventDetails);
+      } else if (type === "outlook") {
+        openOutlookCalendar(eventDetails);
+      } else {
+        downloadICSFile(eventDetails);
+      }
+    } catch (error) {
+      console.error(error);
+      setFeedback({ type: "error", message: "Unable to open calendar. Please try again." });
+    }
   };
 
   const handleLocationInputChange = useCallback((value) => {
@@ -1315,6 +1388,47 @@ export default function MatchPage() {
                   <DetailRow icon={FileText}>{match.notes}</DetailRow>
                 )}
               </div>
+              {isHost && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Add to calendar
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {eventDetails
+                      ? "Share this match with your calendar."
+                      : "Set a match date and time to enable calendar links."}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-sm font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => handleCalendarAction("google")}
+                      disabled={!eventDetails}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <Calendar className="h-4 w-4" />
+                      Google
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCalendarAction("outlook")}
+                      disabled={!eventDetails}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <Calendar className="h-4 w-4" />
+                      Outlook
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCalendarAction("ics")}
+                      disabled={!eventDetails}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      .ics file
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
