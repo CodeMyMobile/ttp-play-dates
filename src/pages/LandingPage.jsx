@@ -4,6 +4,7 @@ import { formatPhoneNumber } from "../services/phone";
 
 const skillLevels = [
   { value: "beginner", label: "Beginner (1.0 - 2.5)" },
+  { value: "advanced-beginner", label: "Advanced Beginner (2.5 - 3.0)" },
   { value: "intermediate", label: "Intermediate (3.0 - 3.5)" },
   { value: "advanced", label: "Advanced (4.0 - 4.5)" },
   { value: "expert", label: "Expert (5.0+)" },
