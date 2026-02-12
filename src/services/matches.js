@@ -319,3 +319,22 @@ export const searchPlayers = ({ search = "", page = 1, perPage = 12, ids } = {})
   if (ids && ids.length) params.ids = ids.join(",");
   return unwrap(api(`/matches/players${qs(params)}`));
 };
+
+// Playdates API functions (for EditMatchModal)
+export const getPlayDate = async (id) => unwrap(api(`/playdates/${id}`));
+
+export const updatePlayDate = (id, updates) =>
+  unwrap(
+    api(`/playdates/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(updates),
+    })
+  );
+
+export const notifyPlayDateChange = (id, data) =>
+  unwrap(
+    api(`/playdates/${id}/notify`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  );
