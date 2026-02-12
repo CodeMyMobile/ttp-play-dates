@@ -60,6 +60,8 @@ const buildQuery = (params = {}) => {
   return str ? `?${str}` : "";
 };
 
+const notificationsEndpoint = "/notifications/";
+
 export const listNotifications = ({ page, perPage, unread, type, types } = {}) => {
   const query = buildQuery({
     page,
@@ -68,12 +70,12 @@ export const listNotifications = ({ page, perPage, unread, type, types } = {}) =
     type,
     types,
   });
-  return unwrap(api(`/notifications${query}`));
+  return unwrap(api(`${notificationsEndpoint}${query}`));
 };
 
 export const markNotificationsRead = ({ ids } = {}) =>
   unwrap(
-    api(`/notifications/read`, {
+    api(`${notificationsEndpoint}read/`, {
       method: "POST",
       body: JSON.stringify({ ids: Array.isArray(ids) ? ids : ids ? [ids] : [] }),
     }),
