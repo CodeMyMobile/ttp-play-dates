@@ -1965,7 +1965,12 @@ function isAcceptError(error) {
     .toString()
     .toLowerCase();
   if (!code) return false;
-  return code.includes("invite") || code.includes("match");
+  return (
+    code.includes("invite") ||
+    code.includes("match") ||
+    code.includes("token") ||
+    code.includes("participant")
+  );
 }
 
 function mapSignInError(error) {
