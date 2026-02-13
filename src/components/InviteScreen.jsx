@@ -31,6 +31,127 @@ import { buildRecentPartnerSuggestions } from "../utils/inviteSuggestions";
 import PlayerAvatar from "./PlayerAvatar";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "../utils/avatar";
 
+const SUGGESTED_PLAYER_ID_KEYS = [
+  "user_id",
+  "id",
+  "player_id",
+  "playerId",
+  "member_id",
+  "memberId",
+  "membership_id",
+  "membershipId",
+  "participant_id",
+  "participantId",
+  "match_participant_id",
+  "matchParticipantId",
+];
+
+const nestedPlayerIdKeys = [
+  ["profile", "user_id"],
+  ["profile", "id"],
+  ["profile", "player_id"],
+  ["profile", "playerId"],
+  ["profile", "member_id"],
+  ["profile", "memberId"],
+  ["profile", "membership_id"],
+  ["profile", "membershipId"],
+  ["profile", "participant_id"],
+  ["profile", "participantId"],
+  ["profile", "match_participant_id"],
+  ["profile", "matchParticipantId"],
+  ["player", "id"],
+  ["player", "user_id"],
+  ["player", "player_id"],
+  ["player", "playerId"],
+  ["player", "member_id"],
+  ["player", "memberId"],
+  ["player", "membership_id"],
+  ["player", "membershipId"],
+  ["player", "participant_id"],
+  ["player", "participantId"],
+  ["player", "match_participant_id"],
+  ["player", "matchParticipantId"],
+  ["member", "id"],
+  ["member", "user_id"],
+  ["member", "player_id"],
+  ["member", "playerId"],
+  ["member", "member_id"],
+  ["member", "memberId"],
+  ["member", "membership_id"],
+  ["member", "membershipId"],
+  ["member", "participant_id"],
+  ["member", "participantId"],
+  ["member", "match_participant_id"],
+  ["member", "matchParticipantId"],
+];
+
+const readNestedValue = (subject, path) => {
+  if (!subject || typeof subject !== "object") return undefined;
+  if (!Array.isArray(path)) {
+    return subject[path];
+  }
+  return path.reduce((acc, key) => {
+    if (!acc || typeof acc !== "object") return undefined;
+    return acc[key];
+  }, subject);
+};
+
+const extractSuggestedPlayerId = (player) => {
+  if (!player || typeof player !== "object") return null;
+  const candidates = [
+    ...SUGGESTED_PLAYER_ID_KEYS.map((key) => player[key]),
+    ...nestedPlayerIdKeys.map((path) => readNestedValue(player, path)),
+  ];
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
+const MATCH_START_KEYS = [
+  "start_date_time",
+  "startDateTime",
+  "start_time",
+  "startTime",
+  "start_at",
+  "startAt",
+];
+
+const extractMatchTimestamp = (match) => {
+  if (!match || typeof match !== "object") {
+    return -Infinity;
+  }
+
+  const candidates = [];
+  MATCH_START_KEYS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(match, key)) {
+      candidates.push(match[key]);
+    }
+  });
+
+  if (match.match && typeof match.match === "object") {
+    MATCH_START_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(match.match, key)) {
+        candidates.push(match.match[key]);
+      }
+    });
+  }
+
+  for (const value of candidates) {
+    if (!value) continue;
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.getTime();
+    }
+  }
+
+  return -Infinity;
+};
+
 const InviteScreen = ({
   matchId,
   currentUser,
@@ -87,15 +208,27 @@ const InviteScreen = ({
       setSuggestionsError("");
 
       try {
-        const data = await listMatches("my", { perPage: 25, includeHidden: true });
+        const data = await listMatches("my", {
+          perPage: 10,
+          includeHidden: true,
+        });
         if (!aliveCheck()) return;
+
         const matches = Array.isArray(data?.matches) ? data.matches : [];
+        const sortedMatches = matches
+          .map((match) => ({ match, ts: extractMatchTimestamp(match) }))
+          .sort((a, b) => (b.ts ?? -Infinity) - (a.ts ?? -Infinity))
+          .map(({ match }) => match);
+        const recentMatches = sortedMatches.slice(0, 3);
+
         const suggestions = buildRecentPartnerSuggestions({
-          matches,
+          matches: recentMatches,
           currentUser,
           memberIdentities,
         });
+
         if (!aliveCheck()) return;
+
         setSuggestedPlayers(suggestions);
       } catch (error) {
         console.error("Failed to load suggested players", error);
@@ -110,7 +243,11 @@ const InviteScreen = ({
         }
       }
     },
-    [isPrivateMatch, currentUser, memberIdentities],
+    [
+      isPrivateMatch,
+      currentUser,
+      memberIdentities,
+    ],
   );
 
   // Local state for manual phone invites (isolated from search input)
@@ -251,8 +388,8 @@ const InviteScreen = ({
         ? existingPlayerIds
         : new Set(existingPlayerIds || []);
     return suggestedPlayers.filter((player) => {
-      const pid = Number(player.user_id);
-      if (!Number.isFinite(pid) || pid <= 0) return false;
+      const pid = extractSuggestedPlayerId(player);
+      if (!pid) return false;
       if (blockedIds.has(pid)) return false;
       if (selectedPlayers.has(pid)) return false;
       return true;
@@ -266,8 +403,8 @@ const InviteScreen = ({
 
   const handleAddSuggestedPlayer = useCallback(
     (player) => {
-      const pid = Number(player.user_id);
-      if (!Number.isFinite(pid) || pid <= 0) return;
+      const pid = extractSuggestedPlayerId(player);
+      if (!pid) return;
       setSelectedPlayers((prev) => {
         if (prev.has(pid)) return prev;
         const next = new Map(prev);
@@ -705,8 +842,8 @@ const InviteScreen = ({
                 <ul className="space-y-3">
                   {topSuggestions.map((player) => {
                     const name = player.full_name || "Unknown player";
-                    const pid = Number(player.user_id);
-                    const selected = Number.isFinite(pid) && selectedPlayers.has(pid);
+                    const pid = extractSuggestedPlayerId(player);
+                    const selected = Boolean(pid && selectedPlayers.has(pid));
                     return (
                       <li
                         key={pid}
