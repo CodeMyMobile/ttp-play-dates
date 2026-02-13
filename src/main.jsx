@@ -22,7 +22,7 @@ const routes = [
   // Match details (direct link)
   { path: "/matches/:id", element: <MatchPage /> },
 
-  // Private invite OTP flow
+  // Private invite claim flow
   { path: "/invites/:token", element: <InvitationPage /> },
   // Backward-compatible aliases
   { path: "/i/:token", element: <InvitationPage /> },
