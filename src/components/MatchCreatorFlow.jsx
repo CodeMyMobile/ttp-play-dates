@@ -550,6 +550,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       status: "upcoming",
       match_type: matchData.type === "private" ? "private" : "open",
       start_date_time: isoStart,
+      durationMinutes: Math.round(parseFloat(matchData.duration || "2") * 60),
+      duration_minutes: Math.round(parseFloat(matchData.duration || "2") * 60),
       location_text: matchData.location,
       latitude: matchData.latitude ?? undefined,
       longitude: matchData.longitude ?? undefined,

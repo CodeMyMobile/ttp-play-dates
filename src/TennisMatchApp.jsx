@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   listMatches,
+  listAttentionMatches,
   createMatch,
   updateMatch,
   cancelMatch,
@@ -2078,10 +2079,22 @@ const TennisMatchApp = () => {
     }
 
     try {
-      const data = await listMatches("my", {
-        perPage: 50,
-        includeHidden: true,
-      });
+      let data;
+      try {
+        data = await listAttentionMatches({
+          limit: 3,
+          withinHours: 48,
+        });
+      } catch (error) {
+        const status = Number(error?.status ?? error?.response?.status);
+        if (status && ![404, 405].includes(status)) {
+          throw error;
+        }
+        data = await listMatches("my", {
+          perPage: 50,
+          includeHidden: true,
+        });
+      }
       const rawMatches = Array.isArray(data?.matches) ? data.matches : [];
       const now = Date.now();
       const memberIds = memberIdentityIds;
