@@ -5,7 +5,6 @@ import {
   createMatch,
   updateMatch,
   cancelMatch,
-  joinMatch,
   leaveMatch,
   removeParticipant,
   searchPlayers,
@@ -20,12 +19,9 @@ import NotificationsFeed, {
   buildNotificationPresentation,
   buildInviteNotification,
 } from "./components/NotificationsFeed";
-import ActivityFeed from "./components/ActivityFeed";
 import {
   getInviteByToken,
   listInvites,
-  acceptInvite,
-  rejectInvite,
 } from "./services/invites";
 import { login, signup, forgotPassword, getPersonalDetails } from "./services/auth";
 import {
@@ -50,7 +46,6 @@ import {
   Menu,
   Bell,
   BellRing,
-  Star,
   TrendingUp,
   Award,
   Edit3,
@@ -76,11 +71,13 @@ import {
   Trophy,
   Sparkles,
   Target,
+  RefreshCw,
 } from "lucide-react";
 import Autocomplete from "react-google-autocomplete";
 import AppHeader from "./components/AppHeader";
 import InviteScreen from "./components/InviteScreen";
 import MatchDetailsModal from "./components/MatchDetailsModal";
+import MatchCreatorFlow from "./components/MatchCreatorFlow";
 import LandingPage from "./pages/LandingPage.jsx";
 import PlayerConnectionsPage from "./pages/PlayerConnectionsPage.jsx";
 import {
@@ -96,7 +93,6 @@ import {
 } from "./utils/archive";
 import {
   countUniqueMatchOccupants,
-  getParticipantPhone,
   idsMatch,
   pruneParticipantFromMatchData,
   uniqueAcceptedInvitees,
@@ -105,16 +101,14 @@ import {
 } from "./utils/participants";
 import {
   collectMemberIds,
-  collectMatchHostIds,
   memberIsMatchHost,
   memberMatchesAnyId,
   memberMatchesInvite,
   memberMatchesParticipant,
 } from "./utils/memberIdentity";
-import { getMatchPrivacy, isOpenMatch } from "./utils/matchPrivacy";
+import { getMatchPrivacy } from "./utils/matchPrivacy";
 import {
   deriveListingVisibility,
-  isLinkOnlyVisibility,
   normalizeListingVisibility,
 } from "./utils/listingVisibility";
 import { getAvatarInitials, getAvatarUrlFromPlayer } from "./utils/avatar";
@@ -126,6 +120,27 @@ import {
 } from "./utils/recentLocations";
 
 const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
+
+const NTRP_LEVELS = ["2.5", "3.0", "3.5", "4.0", "4.5+"];
+const DISCOVERY_SCOPE_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "my", label: "My matches" },
+  { id: "discover", label: "Discover" },
+];
+const DISCOVERY_FORMAT_FILTERS = [
+  "Any",
+  "Singles",
+  "Doubles",
+  "Round Robin",
+  "Dingles",
+  "Other",
+];
+const DISCOVERY_GENDER_FILTERS = ["Any", "Men's", "Women's", "Mixed"];
+const FALLBACK_DAY_MATCH_COUNTS = {
+  today: "today",
+  tomorrow: "tomorrow",
+  weekend: "weekend",
+};
 
 const matchFormatOptions = [
   "Singles",
@@ -160,6 +175,128 @@ const deriveInviteMatchId = (path) => {
   if (!match) return null;
   const numeric = Number(match[1]);
   return Number.isFinite(numeric) ? numeric : null;
+};
+
+const normalizeNtrpLevel = (value) => {
+  if (value === undefined || value === null) return "";
+  const trimmed = String(value).trim();
+  if (!trimmed) return "";
+  if (trimmed === "4.5") return "4.5+";
+  return trimmed.replace(/\s*-\s*.*$/, "");
+};
+
+const getLevelIndex = (value) => {
+  const normalized = normalizeNtrpLevel(value);
+  return NTRP_LEVELS.findIndex((level) => level === normalized);
+};
+
+const pickMatchSkillRange = (match = {}) => {
+  const min = normalizeNtrpLevel(
+    match.skill_level_min ??
+      match.skillLevelMin ??
+      match.levelMin ??
+      match.skill_level ??
+      match.skillLevel,
+  );
+  const max = normalizeNtrpLevel(
+    match.skill_level_max ??
+      match.skillLevelMax ??
+      match.levelMax ??
+      match.skill_level ??
+      match.skillLevel,
+  );
+  return {
+    min,
+    max: max || min,
+  };
+};
+
+const formatSkillRange = (match = {}) => {
+  const { min, max } = pickMatchSkillRange(match);
+  if (min && max && min !== max) return `${min} - ${max}`;
+  return min || max || "";
+};
+
+const pickMatchGender = (match = {}) =>
+  (
+    match.gender ??
+    match.category ??
+    match.match_gender ??
+    match.matchGender ??
+    "Any"
+  )
+    .toString()
+    .trim() || "Any";
+
+const pickMatchBalls = (match = {}) =>
+  (
+    match.balls ??
+    match.ball_policy ??
+    match.ballPolicy ??
+    match.balls_policy ??
+    match.ballsPolicy ??
+    ""
+  )
+    .toString()
+    .trim();
+
+const matchRequiresVerifiedRating = (match = {}) =>
+  Boolean(
+    match.verifiedOnly ??
+      match.verified_only ??
+      match.require_verified_rating ??
+      match.requireVerifiedRating ??
+      match.verified_rating_required ??
+      match.verifiedRatingRequired,
+  );
+
+const formatDayKey = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+const getMatchStartDate = (match = {}) => {
+  const value =
+    match.dateTime ??
+    match.start_date_time ??
+    match.startDateTime ??
+    match.startsAt;
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const buildDayStripOptions = () => {
+  const today = new Date();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + index);
+    const fallbackCountKey =
+      index === 0
+        ? FALLBACK_DAY_MATCH_COUNTS.today
+        : index === 1
+        ? FALLBACK_DAY_MATCH_COUNTS.tomorrow
+        : index === 2 || index === 3
+        ? FALLBACK_DAY_MATCH_COUNTS.weekend
+        : null;
+    return {
+      key: formatDayKey(date),
+      fallbackCountKey,
+      eyebrow:
+        index === 0
+          ? "Today"
+          : index === 1
+          ? "Tomorrow"
+          : date.toLocaleDateString("en-US", { weekday: "short" }),
+      label: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+    };
+  });
 };
 
 const buildMapsUrl = (lat, lng, address) => {
@@ -710,7 +847,11 @@ const TennisMatchApp = () => {
   const [currentScreen, setCurrentScreen] = useState(() =>
     deriveScreenFromPath(initialPath),
   );
-  const [activeFilter, setActiveFilter] = useState("my");
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [selectedDayKey, setSelectedDayKey] = useState("");
+  const [selectedLevelFilter, setSelectedLevelFilter] = useState("Any");
+  const [selectedFormatFilter, setSelectedFormatFilter] = useState("Any");
+  const [selectedGenderFilter, setSelectedGenderFilter] = useState("Any");
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showToast, setShowToast] = useState(null);
   const [showProfileManager, setShowProfileManager] = useState(false);
@@ -725,7 +866,6 @@ const TennisMatchApp = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [participantsMatchId, setParticipantsMatchId] = useState(null);
-  const [showMatchMenu, setShowMatchMenu] = useState(null);
   const [signInStep, setSignInStep] = useState("initial");
   const [password, setPassword] = useState("");
   const [formData, setFormData] = useState({
@@ -755,6 +895,7 @@ const TennisMatchApp = () => {
   });
 
   const [matches, setMatches] = useState([]);
+  const [attentionMatches, setAttentionMatches] = useState([]);
   const [matchCounts, setMatchCounts] = useState({
     my: 0,
     open: 0,
@@ -764,7 +905,7 @@ const TennisMatchApp = () => {
     draft: 0,
     archived: 0,
   });
-  const [matchPagination, setMatchPagination] = useState(null);
+  const [, setMatchPagination] = useState(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchSearch, setMatchSearch] = useState("");
   // Track players already part of the match (participants or previously invited)
@@ -798,12 +939,11 @@ const TennisMatchApp = () => {
   });
   const [notificationsSupported, setNotificationsSupported] = useState(true);
   const [lastSeenNotificationAt, setLastSeenNotificationAt] = useState(null);
-  const [invitesLoading, setInvitesLoading] = useState(false);
-  const [invitesError, setInvitesError] = useState("");
-  const [homeFeedNotifications, setHomeFeedNotifications] = useState([]);
-  const [homeFeedLoading, setHomeFeedLoading] = useState(false);
-  const [homeFeedError, setHomeFeedError] = useState("");
-  const [sharingMatchIds, setSharingMatchIds] = useState(() => new Set());
+  const [, setInvitesLoading] = useState(false);
+  const [, setInvitesError] = useState("");
+  const [, setHomeFeedNotifications] = useState([]);
+  const [, setHomeFeedLoading] = useState(false);
+  const [, setHomeFeedError] = useState("");
   const [locationFilter, setLocationFilter] = useState(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -819,13 +959,6 @@ const TennisMatchApp = () => {
     const stored = Number(window.localStorage.getItem("matchDistanceFilter"));
     return Number.isFinite(stored) && stored > 0 ? stored : 5;
   });
-  const [showLocationPicker, setShowLocationPicker] = useState(false);
-  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-  const [geoError, setGeoError] = useState("");
-  const [locationSearchTerm, setLocationSearchTerm] = useState(
-    () => locationFilter?.label || "",
-  );
-
   const totalSelectedInvitees = useMemo(() => {
     const normalizedExistingIds =
       existingPlayerIds instanceof Set
@@ -979,10 +1112,6 @@ const TennisMatchApp = () => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("matchDistanceFilter", String(distanceFilter));
   }, [distanceFilter]);
-
-  useEffect(() => {
-    setLocationSearchTerm(locationFilter?.label || "");
-  }, [locationFilter]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -1395,12 +1524,8 @@ const TennisMatchApp = () => {
 
   const detectCurrentLocation = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeoError("Geolocation is not supported in this browser.");
       return;
     }
-
-    setIsDetectingLocation(true);
-    setGeoError("");
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -1416,38 +1541,9 @@ const TennisMatchApp = () => {
             lat: latitude,
             lng: longitude,
           });
-          setShowLocationPicker(false);
-        } else {
-          setGeoError("Could not determine your location. Try searching manually.");
         }
-        setIsDetectingLocation(false);
       },
-      (error) => {
-        const defaultMessage =
-          "We couldn't access your location. Please enable location permissions or search manually.";
-        const messageFromCode = (() => {
-          if (!error || typeof error !== "object") return "";
-          const numericCode = Number.isFinite(error.code)
-            ? error.code
-            : Number.parseInt(error.code, 10);
-          switch (numericCode) {
-            case 1:
-              return "Please enable location permissions for your browser to use this feature.";
-            case 2:
-              return "We couldn't determine your location right now. Please try again or search manually.";
-            case 3:
-              return "Locating timed out. Try again or search for a location manually.";
-            default:
-              return "";
-          }
-        })();
-        const fallbackMessage =
-          typeof error?.message === "string" && error.message.trim()
-            ? error.message.trim()
-            : "";
-        setGeoError(messageFromCode || fallbackMessage || defaultMessage);
-        setIsDetectingLocation(false);
-      },
+      () => {},
       {
         enableHighAccuracy: true,
         timeout: 10000,
@@ -1480,6 +1576,8 @@ const TennisMatchApp = () => {
 
     try {
       const apiFilter = (() => {
+        if (activeFilter === "all") return undefined;
+        if (activeFilter === "discover") return "open";
         if (activeFilter === "draft") return "my";
         if (activeFilter === "archived") return ARCHIVE_FILTER_VALUE;
         return activeFilter;
@@ -1817,6 +1915,28 @@ const TennisMatchApp = () => {
           rosterSpotsRemaining > 0 &&
           (m.status || "upcoming")?.toString().toLowerCase() === "upcoming";
 
+        const hostParticipant = activeParticipants.find((participant) => {
+          if (typeof participant?.status === "string") {
+            const status = participant.status.trim().toLowerCase();
+            if (status === "hosting" || status === "host") return true;
+          }
+          return memberIsMatchHost(participant?.profile, m);
+        });
+        const hostProfile =
+          m.host ||
+          m.host_profile ||
+          m.hostProfile ||
+          hostParticipant?.profile ||
+          {};
+        const hostName =
+          hostProfile.full_name ||
+          hostProfile.fullName ||
+          hostProfile.name ||
+          m.host_name ||
+          m.hostName ||
+          "Host";
+        const skillRange = pickMatchSkillRange(m);
+
         return {
           id: matchId,
           type: isHost ? "hosted" : isJoined ? "joined" : "available",
@@ -1844,12 +1964,25 @@ const TennisMatchApp = () => {
               m.distanceMiles ??
               m.distance_miles ??
               m.distance;
-            const numeric =
-              typeof raw === "string" ? Number.parseFloat(raw) : raw;
-            return Number.isFinite(numeric) ? numeric : null;
-          })(),
+          const numeric =
+            typeof raw === "string" ? Number.parseFloat(raw) : raw;
+          return Number.isFinite(numeric) ? numeric : null;
+        })(),
           format: m.match_format,
-          skillLevel: m.skill_level_min,
+          skillLevel: formatSkillRange(m),
+          skillLevelMin: skillRange.min,
+          skillLevelMax: skillRange.max,
+          gender: pickMatchGender(m),
+          balls: pickMatchBalls(m),
+          verifiedOnly: matchRequiresVerifiedRating(m),
+          hostName,
+          hostProfile,
+          hostNtrp:
+            hostProfile.usta_rating ||
+            hostProfile.uta_rating ||
+            hostProfile.ntrp ||
+            hostProfile.rating ||
+            "",
           notes: m.notes,
           listingVisibility,
           isLinkOnly,
@@ -1937,6 +2070,138 @@ const TennisMatchApp = () => {
     memberIdentityIds,
     currentUser,
   ]);
+
+  const fetchAttentionMatches = useCallback(async () => {
+    if (!currentUser) {
+      setAttentionMatches([]);
+      return;
+    }
+
+    try {
+      const data = await listMatches("my", {
+        perPage: 50,
+        includeHidden: true,
+      });
+      const rawMatches = Array.isArray(data?.matches) ? data.matches : [];
+      const now = Date.now();
+      const memberIds = memberIdentityIds;
+
+      const attentionItems = rawMatches
+        .map((match) => {
+          const isHost = memberIsMatchHost(currentUser, match, memberIds);
+          const status = (match?.status || "upcoming")
+            .toString()
+            .trim()
+            .toLowerCase();
+          const startDate = match?.start_date_time
+            ? new Date(match.start_date_time)
+            : null;
+          const startTimestamp =
+            startDate && !Number.isNaN(startDate.getTime())
+              ? startDate.getTime()
+              : null;
+          const hoursUntilStartRaw =
+            startTimestamp !== null
+              ? (startTimestamp - now) / (1000 * 60 * 60)
+              : null;
+          const isUpcomingSoon =
+            hoursUntilStartRaw !== null &&
+            hoursUntilStartRaw >= 0 &&
+            hoursUntilStartRaw <= 48;
+
+          if (!isHost || status !== "upcoming" || !isUpcomingSoon) {
+            return null;
+          }
+
+          const capacityInfo =
+            match && typeof match.capacity === "object" ? match.capacity : {};
+          const limitFromCapacity = Number(
+            capacityInfo.limit ?? capacityInfo.max ?? capacityInfo.capacity,
+          );
+          const confirmedFromCapacity = Number(
+            capacityInfo.confirmed ?? capacityInfo.players,
+          );
+          const openFromCapacity = Number(capacityInfo.open);
+          const activeParticipants = uniqueActiveParticipants(match.participants);
+          const playerLimit = Number.isFinite(limitFromCapacity) && limitFromCapacity > 0
+            ? limitFromCapacity
+            : (() => {
+                const raw = match.player_limit ?? match.playerLimit;
+                const numeric =
+                  typeof raw === "string" ? Number.parseInt(raw, 10) : Number(raw);
+                return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+              })();
+          const rosterCount =
+            Number.isFinite(confirmedFromCapacity) && confirmedFromCapacity >= 0
+              ? confirmedFromCapacity
+              : activeParticipants.length;
+          const spotsNeeded =
+            Number.isFinite(openFromCapacity) && openFromCapacity >= 0
+              ? openFromCapacity
+              : playerLimit !== null
+              ? Math.max(playerLimit - rosterCount, 0)
+              : 0;
+
+          if (spotsNeeded <= 0) {
+            return null;
+          }
+
+          const skillRange = pickMatchSkillRange(match);
+          const matchId = match.match_id || match.id;
+
+          return {
+            id: matchId,
+            type: "hosted",
+            status: match.status || "upcoming",
+            privacy: getMatchPrivacy(match),
+            dateTime: match.start_date_time,
+            location: match.location_text,
+            format: match.match_format,
+            skillLevel: formatSkillRange(match),
+            skillLevelMin: skillRange.min,
+            skillLevelMax: skillRange.max,
+            gender: pickMatchGender(match),
+            balls: pickMatchBalls(match),
+            verifiedOnly: matchRequiresVerifiedRating(match),
+            notes: match.notes,
+            invitees: match.invitees || [],
+            participants: match.participants || [],
+            playerLimit,
+            occupied: rosterCount,
+            rosterCount,
+            rosterSpotsRemaining: spotsNeeded,
+            spotsAvailable: spotsNeeded,
+            capacity: capacityInfo,
+            alerts: {
+              lowOccupancy: {
+                active: true,
+                spotsNeeded,
+                rosterCount,
+                playerLimit,
+                hoursUntilStart:
+                  hoursUntilStartRaw !== null
+                    ? Math.max(Math.round(hoursUntilStartRaw * 10) / 10, 0)
+                    : null,
+                startTime: startDate ? startDate.toISOString() : null,
+              },
+            },
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aTime = new Date(a.dateTime).getTime();
+          const bTime = new Date(b.dateTime).getTime();
+          return (Number.isFinite(aTime) ? aTime : Infinity) -
+            (Number.isFinite(bTime) ? bTime : Infinity);
+        })
+        .slice(0, 3);
+
+      setAttentionMatches(attentionItems);
+    } catch (error) {
+      console.error("Failed to load attention matches", error);
+      setAttentionMatches([]);
+    }
+  }, [currentUser, memberIdentityIds]);
 
   const deriveInviteStatus = useCallback((invite = {}) => {
     if (invite?.accepted) return "accepted";
@@ -2249,56 +2514,24 @@ const TennisMatchApp = () => {
   const refreshMatchesAndInvites = useCallback(async () => {
     await Promise.all([
       fetchMatches(),
+      fetchAttentionMatches(),
       fetchPendingInvites(),
       fetchNotificationSummary(),
     ]);
-  }, [fetchMatches, fetchPendingInvites, fetchNotificationSummary]);
-
-  const respondToInvite = useCallback(
-    async (token, action) => {
-      if (!token) return;
-      try {
-        if (action === "accept") {
-          await acceptInvite(token);
-          displayToast("Invite accepted! See you on the court. 🎾");
-        } else {
-          await rejectInvite(token);
-          displayToast("Invite declined", "info");
-        }
-        fetchPendingInvites();
-        fetchMatches();
-        fetchNotificationSummary();
-      } catch (err) {
-        const errorCode = err?.response?.data?.error || err?.data?.error;
-        if (isMatchArchivedError(err) || errorCode === MATCH_ARCHIVED_ERROR) {
-          displayToast(
-            "This match has been archived. Invites can no longer be updated.",
-            "error",
-          );
-          fetchPendingInvites();
-          fetchMatches();
-          fetchNotificationSummary();
-        } else {
-          displayToast(
-            err?.response?.data?.message ||
-              err?.message ||
-              "Failed to update invite",
-            "error",
-          );
-        }
-      }
-    },
-    [
-      displayToast,
-      fetchMatches,
-      fetchPendingInvites,
-      fetchNotificationSummary,
-    ],
-  );
+  }, [
+    fetchMatches,
+    fetchAttentionMatches,
+    fetchPendingInvites,
+    fetchNotificationSummary,
+  ]);
 
   useEffect(() => {
     fetchMatches();
   }, [fetchMatches]);
+
+  useEffect(() => {
+    fetchAttentionMatches();
+  }, [fetchAttentionMatches]);
 
   useEffect(() => {
     fetchPendingInvites();
@@ -2578,78 +2811,6 @@ const TennisMatchApp = () => {
       }
     },
     [displayToast, goToBrowse, navigate],
-  );
-
-  const handleShareMatch = useCallback(
-    async (matchId) => {
-      const numericMatchId = Number(matchId);
-      if (!Number.isFinite(numericMatchId) || numericMatchId <= 0) {
-        displayToast("Match not found", "error");
-        return;
-      }
-
-      const shareKey = String(matchId);
-      let shouldFetch = false;
-      setSharingMatchIds((previous) => {
-        if (previous.has(shareKey)) {
-          return previous;
-        }
-        shouldFetch = true;
-        const next = new Set(previous);
-        next.add(shareKey);
-        return next;
-      });
-
-      if (!shouldFetch) return;
-
-      try {
-        const { shareUrl } = await getShareLink(numericMatchId);
-        const link = typeof shareUrl === "string" ? shareUrl.trim() : "";
-        if (!link) {
-          displayToast("Share link unavailable right now", "error");
-          return;
-        }
-
-        const clipboard =
-          typeof navigator !== "undefined" ? navigator.clipboard : null;
-        if (clipboard?.writeText) {
-          try {
-            await clipboard.writeText(link);
-            displayToast("Share link copied!");
-            return;
-          } catch (clipboardError) {
-            console.warn("Failed to copy share link", clipboardError);
-          }
-        }
-
-        if (typeof window !== "undefined") {
-          try {
-            window.prompt("Copy this share link:", link);
-          } catch (promptError) {
-            console.warn("Prompt for share link failed", promptError);
-          }
-        }
-
-        displayToast("Share link ready to send.", "success");
-      } catch (error) {
-        console.error("Failed to generate share link", error);
-        const message =
-          error?.response?.data?.message ||
-          error?.message ||
-          "Failed to generate share link";
-        displayToast(message, "error");
-      } finally {
-        setSharingMatchIds((previous) => {
-          if (!previous.has(shareKey)) {
-            return previous;
-          }
-          const next = new Set(previous);
-          next.delete(shareKey);
-          return next;
-        });
-      }
-    },
-    [displayToast],
   );
 
   const closeMatchDetailsModal = useCallback(() => {
@@ -2953,18 +3114,82 @@ const TennisMatchApp = () => {
         })
       : matchesWithDistance;
 
-    return sortMatchesByRecency(baseMatches);
+    const filteredMatches = baseMatches.filter((match) => {
+      if (selectedDayKey) {
+        const startDate = getMatchStartDate(match);
+        if (!startDate || formatDayKey(startDate) !== selectedDayKey) {
+          return false;
+        }
+      }
+
+      if (selectedLevelFilter !== "Any") {
+        const selectedIndex = getLevelIndex(selectedLevelFilter);
+        const minIndex = getLevelIndex(match.skillLevelMin || match.skillLevel);
+        const maxIndex = getLevelIndex(match.skillLevelMax || match.skillLevelMin || match.skillLevel);
+        if (selectedIndex < 0) return false;
+        if (minIndex >= 0 && selectedIndex < minIndex) return false;
+        if (maxIndex >= 0 && selectedIndex > maxIndex) return false;
+      }
+
+      if (selectedFormatFilter !== "Any") {
+        const normalizedFormat = (match.format || "").toString().trim();
+        if (normalizedFormat !== selectedFormatFilter) return false;
+      }
+
+      if (selectedGenderFilter !== "Any") {
+        const gender = (match.gender || "Any").toString().trim();
+        if (gender !== "Any" && gender !== selectedGenderFilter) return false;
+      }
+
+      return true;
+    });
+
+    return sortMatchesByRecency(filteredMatches);
   }, [
     distanceFilter,
     hasLocationFilter,
     matchesWithDistance,
+    selectedDayKey,
+    selectedFormatFilter,
+    selectedGenderFilter,
+    selectedLevelFilter,
     sortMatchesByRecency,
   ]);
 
   const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
-  const activeLocationLabel = hasLocationFilter
-    ? locationFilter?.label || "Saved location"
-    : "";
+  const dayStripOptions = useMemo(() => buildDayStripOptions(), []);
+  const matchCountsByDay = useMemo(() => {
+    const counts = new Map();
+    matchesWithDistance.forEach((match) => {
+      const date = getMatchStartDate(match);
+      const key = formatDayKey(date);
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+  }, [matchesWithDistance]);
+  const groupedDisplayedMatches = useMemo(() => {
+    const groups = [];
+    const groupMap = new Map();
+    displayedMatches.forEach((match) => {
+      const date = getMatchStartDate(match);
+      const key = formatDayKey(date) || "unscheduled";
+      if (!groupMap.has(key)) {
+        const label = date
+          ? date.toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "short",
+              day: "numeric",
+            })
+          : "Date TBA";
+        const group = { key, label, matches: [] };
+        groupMap.set(key, group);
+        groups.push(group);
+      }
+      groupMap.get(key).matches.push(match);
+    });
+    return groups;
+  }, [displayedMatches]);
 
   const matchesNeedingAttention = useMemo(() => {
     const getTimestamp = (match) => {
@@ -2982,391 +3207,10 @@ const TennisMatchApp = () => {
       return Number.POSITIVE_INFINITY;
     };
 
-    return matches
+    return attentionMatches
       .filter((match) => match?.alerts?.lowOccupancy?.active)
       .sort((a, b) => getTimestamp(a) - getTimestamp(b));
-  }, [matches]);
-
-  const parseDateValue = useCallback((value) => {
-    if (!value) return null;
-    if (value instanceof Date) {
-      return Number.isNaN(value.getTime()) ? null : value;
-    }
-    if (typeof value === "number") {
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? null : date;
-    }
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (!trimmed) return null;
-      const date = new Date(trimmed);
-      if (!Number.isNaN(date.getTime())) return date;
-    }
-    return null;
-  }, []);
-
-  const formatRelativeTimeFromNow = useCallback((date) => {
-    if (!(date instanceof Date)) return "";
-    const now = Date.now();
-    const diffSeconds = Math.round((date.getTime() - now) / 1000);
-    const absSeconds = Math.abs(diffSeconds);
-    const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-    const units = [
-      { limit: 60, unit: "second", divisor: 1 },
-      { limit: 3600, unit: "minute", divisor: 60 },
-      { limit: 86400, unit: "hour", divisor: 3600 },
-      { limit: 604800, unit: "day", divisor: 86400 },
-      { limit: 2629800, unit: "week", divisor: 604800 },
-      { limit: 31557600, unit: "month", divisor: 2629800 },
-    ];
-
-    for (const { limit, unit, divisor } of units) {
-      if (absSeconds < limit) {
-        const value = Math.round(diffSeconds / divisor);
-        return formatter.format(value, unit);
-      }
-    }
-
-    const years = Math.round(diffSeconds / 31557600);
-    return formatter.format(years, "year");
-  }, []);
-
-  const activityFeedItems = useMemo(() => {
-    if (!currentUser) return [];
-
-    const items = [];
-
-    const pickString = (...candidates) => {
-      for (const candidate of candidates) {
-        if (!candidate) continue;
-        if (typeof candidate === "string") {
-          const trimmed = candidate.trim();
-          if (trimmed) return trimmed;
-        }
-      }
-      return "";
-    };
-
-    const pickNumber = (...candidates) => {
-      for (const candidate of candidates) {
-        if (candidate === undefined || candidate === null) continue;
-        const numeric = Number(candidate);
-        if (Number.isFinite(numeric)) return numeric;
-      }
-      return null;
-    };
-
-    pendingInvites.forEach((invite) => {
-      const match = invite?.match || {};
-      const matchId =
-        match?.id ?? match?.match_id ?? match?.matchId ?? invite?.match_id ?? invite?.matchId;
-      const formatLabel =
-        pickString(
-          match.match_format,
-          match.matchFormat,
-          match.format,
-          match.title,
-          match.name,
-        ) || "Match invite";
-      const locationLabel = pickString(
-        match.location_text,
-        match.locationText,
-        match.location,
-        match.venue,
-        match.court_name,
-        match.courtName,
-      );
-      const hostLabel = pickString(
-        match.host_name,
-        match.hostName,
-        invite?.inviter?.full_name,
-        invite?.inviter?.fullName,
-        invite?.inviter?.name,
-      );
-      const startDate =
-        parseDateValue(match.start_date_time) ||
-        parseDateValue(match.startDateTime) ||
-        parseDateValue(match.start_time) ||
-        parseDateValue(match.dateTime);
-      const updatedAt =
-        parseDateValue(invite?.updated_at) ||
-        parseDateValue(invite?.updatedAt) ||
-        parseDateValue(invite?.created_at) ||
-        parseDateValue(invite?.createdAt) ||
-        parseDateValue(invite?.sent_at) ||
-        startDate;
-      const relativeTime = formatRelativeTimeFromNow(updatedAt || startDate);
-      const playerLimit = pickNumber(
-        match.player_limit,
-        match.playerLimit,
-        match.player_cap,
-        match.max_players,
-        match.capacity,
-      );
-      const rosterCount = pickNumber(
-        match.roster_count,
-        match.rosterCount,
-        match.player_count,
-        match.playerCount,
-        match.occupied,
-      );
-      const capacityLabel = (() => {
-        if (Number.isFinite(playerLimit) && Number.isFinite(rosterCount)) {
-          return `${rosterCount}/${playerLimit} players`;
-        }
-        if (Number.isFinite(playerLimit)) {
-          return `${playerLimit} player cap`;
-        }
-        return "";
-      })();
-
-      const meta = [];
-      if (startDate) {
-        meta.push({ icon: Calendar, label: formatDateTime(startDate) });
-      }
-      if (locationLabel) {
-        meta.push({ icon: MapPin, label: locationLabel });
-      }
-      if (capacityLabel) {
-        meta.push({ icon: Users, label: capacityLabel });
-      }
-
-      const inviteStatus = deriveInviteStatus(invite) || "pending";
-      const tone = inviteStatus === "pending" || inviteStatus === "sent" ? "pending" : "info";
-      const statusLabel = inviteStatus === "sent" ? "Invite Sent" : "Pending Invite";
-
-      const actions = [
-        {
-          label: "Accept",
-          onClick: () => respondToInvite(invite.token, "accept"),
-          variant: "success",
-        },
-        {
-          label: "Decline",
-          onClick: () => respondToInvite(invite.token, "reject"),
-          variant: "danger",
-        },
-      ];
-
-      if (matchId) {
-        actions.push({
-          label: "View match",
-          onClick: () => handleViewDetails(matchId, { pendingInvite: invite }),
-          variant: "outline",
-        });
-      } else {
-        actions.push({
-          label: "Review invites",
-          onClick: () => goToInvites(),
-          variant: "outline",
-        });
-      }
-
-      const title = formatLabel || locationLabel || "Match invite";
-
-      items.push({
-        id: `invite-${invite.token || invite.id}`,
-        statusLabel,
-        tone,
-        icon: Mail,
-        title,
-        description: hostLabel ? `Hosted by ${hostLabel}` : "Respond to secure your spot.",
-        meta,
-        timestamp: updatedAt || startDate || null,
-        timestampLabel:
-          (updatedAt || startDate)?.toLocaleString?.() ||
-          (startDate ? startDate.toLocaleString() : ""),
-        relativeTime,
-        actions,
-      });
-    });
-
-    const notificationTypeMap = {
-      invite_accepted: { statusLabel: "Player Accepted", tone: "success", icon: UserCheck },
-      invite_declined: { statusLabel: "Invite Declined", tone: "danger", icon: UserX },
-      invite_sent: { statusLabel: "Invite Sent", tone: "info", icon: CheckCircle2 },
-      match_created: { statusLabel: "Match Created", tone: "info", icon: Sparkles },
-      match_updated: { statusLabel: "Match Updated", tone: "info", icon: Edit3 },
-      match_full: { statusLabel: "Match Full", tone: "warning", icon: Users },
-      match_cancelled: { statusLabel: "Match Cancelled", tone: "danger", icon: AlertCircle },
-      player_joined: { statusLabel: "Player Joined", tone: "success", icon: UserPlus },
-      player_left: { statusLabel: "Player Left", tone: "neutral", icon: UserMinus },
-      general: { statusLabel: "Update", tone: "neutral", icon: BellRing },
-    };
-
-    homeFeedNotifications.forEach((notification) => {
-      if (
-        isLinkOnlyVisibility(
-          notification.listingVisibility,
-          notification.raw?.match,
-          notification.raw,
-          notification.raw?.context,
-          notification.raw?.meta,
-        )
-      ) {
-        return;
-      }
-      const styles = notificationTypeMap[notification.canonicalType] || notificationTypeMap.general;
-      const meta = [];
-      if (notification.matchLabel) {
-        meta.push({ icon: Calendar, label: notification.matchLabel });
-      }
-      if (notification.startLabel) {
-        meta.push({ icon: Clock, label: notification.startLabel });
-      }
-      if (Array.isArray(notification.tags)) {
-        notification.tags
-          .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
-          .filter(Boolean)
-          .forEach((tag) => {
-            meta.push({ icon: null, label: tag });
-          });
-      }
-
-      const actions = [];
-      if (notification.matchId) {
-        actions.push({
-          label: "View match",
-          onClick: () => handleViewDetails(notification.matchId),
-          variant: "outline",
-        });
-      }
-
-      items.push({
-        id: `notification-${notification.id}`,
-        statusLabel: styles.statusLabel,
-        tone: styles.tone,
-        icon: styles.icon,
-        title: notification.title || styles.statusLabel,
-        description: notification.body || "",
-        meta,
-        timestamp: notification.createdAt || null,
-        timestampLabel: notification.createdAtLabel || "",
-        relativeTime: notification.relativeTime || "",
-        actions,
-      });
-    });
-
-    matchesNeedingAttention.forEach((match) => {
-      const lowOccupancy = match?.alerts?.lowOccupancy || {};
-      const spotsNeeded = Number(lowOccupancy.spotsNeeded ?? match.rosterSpotsRemaining ?? 0);
-      const matchId = match?.id;
-      const formatLabel =
-        pickString(
-          match.match_format,
-          match.matchFormat,
-          match.format,
-          match.title,
-          match.name,
-        ) || "Match";
-      const locationLabel = pickString(
-        match.location,
-        match.location_text,
-        match.locationText,
-        match.venue,
-        match.court_name,
-        match.courtName,
-      ) || "Location TBA";
-      const startDate = parseDateValue(match.dateTime);
-      const alertStart = parseDateValue(lowOccupancy.startTime);
-      const timestamp = alertStart || startDate || null;
-      const relativeTime = (() => {
-        if (Number.isFinite(lowOccupancy.hoursUntilStart)) {
-          return formatHoursUntilStart(lowOccupancy.hoursUntilStart);
-        }
-        return formatRelativeTimeFromNow(timestamp);
-      })();
-
-      const playerLimit = pickNumber(lowOccupancy.playerLimit, match.playerLimit);
-      const rosterCount = pickNumber(lowOccupancy.rosterCount, match.rosterCount, match.occupied);
-      const capacityLabel = (() => {
-        if (Number.isFinite(playerLimit) && Number.isFinite(rosterCount)) {
-          return `${rosterCount}/${playerLimit} confirmed`;
-        }
-        if (Number.isFinite(rosterCount)) {
-          return `${rosterCount} confirmed`;
-        }
-        return "";
-      })();
-
-      const meta = [];
-      if (startDate) {
-        meta.push({ icon: Calendar, label: formatDateTime(startDate) });
-      }
-      if (locationLabel) {
-        meta.push({ icon: MapPin, label: locationLabel });
-      }
-      if (capacityLabel) {
-        meta.push({ icon: Users, label: capacityLabel });
-      }
-
-      const actions = [];
-      if (matchId) {
-        const shareKey = String(matchId);
-        const shareInProgress = sharingMatchIds.has(shareKey);
-        if (isOpenMatch(match)) {
-          actions.push({
-            label: shareInProgress ? "Copying..." : "Share match",
-            onClick: () => handleShareMatch(matchId),
-            variant: "success",
-            disabled: shareInProgress,
-          });
-        } else {
-          actions.push({
-            label: "Manage invites",
-            onClick: () => openInviteScreen(matchId),
-            variant: "danger",
-          });
-        }
-        actions.push({
-          label: "View match",
-          onClick: () => handleViewDetails(matchId),
-          variant: "outline",
-        });
-      }
-
-      items.push({
-        id: `attention-${matchId}`,
-        statusLabel: "Needs Players",
-        tone: "danger",
-        icon: Users,
-        title:
-          Number.isFinite(spotsNeeded) && spotsNeeded > 0
-            ? `Need ${spotsNeeded} more ${spotsNeeded === 1 ? "player" : "players"}`
-            : "Help fill this match",
-        description: `${formatLabel} at ${locationLabel}`,
-        meta,
-        timestamp,
-        timestampLabel: timestamp?.toLocaleString?.() || "",
-        relativeTime,
-        actions,
-      });
-    });
-
-    return items
-      .sort((a, b) => {
-        const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : -Infinity;
-        const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : -Infinity;
-        return bTime - aTime;
-      })
-      .slice(0, HOME_FEED_ITEM_LIMIT);
-  }, [
-    currentUser,
-    deriveInviteStatus,
-    formatDateTime,
-    formatHoursUntilStart,
-    formatRelativeTimeFromNow,
-    goToInvites,
-    handleViewDetails,
-    handleShareMatch,
-    homeFeedNotifications,
-    matchesNeedingAttention,
-    openInviteScreen,
-    sharingMatchIds,
-    parseDateValue,
-    pendingInvites,
-    respondToInvite,
-  ]);
+  }, [attentionMatches]);
 
   const getMatchCount = useCallback(
     (filterId) => {
@@ -3384,1203 +3228,468 @@ const TennisMatchApp = () => {
     [matchCounts],
   );
 
-  const BrowseScreen = () => (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-green-50/30">
-      {/* Hero Section with Action Button */}
-      <div className="border-b border-gray-100 bg-white/90 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-xl sm:text-3xl font-black text-gray-900">
-                {currentUser ? "Browse Local Matches" : "Find Your Next Match"}
-              </h2>
-              <p className="mt-1 text-xs font-semibold text-gray-500 sm:text-base sm:font-medium">
-                {currentUser
-                  ? "See what's nearby and jump back in."
-                  : "Discover active players around North County."}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!currentUser) {
-                    setShowSignInModal(true);
-                  } else {
-                    navigate("/create");
-                  }
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-transform hover:-translate-y-0.5 hover:shadow-lg sm:text-base"
-              >
-                <Sparkles className="h-4 w-4" />
-                <span>Create Match</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/courts")}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:text-base"
-              >
-                <MapPin className="h-4 w-4" />
-                <span>Find Courts</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+  const BrowseScreen = () => {
+    const topAttentionMatches = matchesNeedingAttention.slice(0, 3);
 
-      {currentUser ? (
-        <>
-          <div className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
-            <section className="bg-white/80 border border-gray-100 rounded-3xl shadow-sm p-5 space-y-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-semibold shadow ${
-                      hasLocationFilter
-                        ? "bg-gradient-to-r from-purple-500 to-indigo-500 text-white"
-                        : "bg-gray-100 text-gray-600"
+    const renderFilterChip = ({ key, active, onClick, children, disabled = false }) => (
+      <button
+        key={key}
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={`relative inline-flex min-h-9 items-center justify-center rounded-full border px-4 text-sm font-black transition-colors ${
+          active
+            ? "border-violet-500 bg-violet-500 text-white"
+            : disabled
+            ? "border-slate-200 bg-white text-slate-300"
+            : "border-slate-200 bg-white text-slate-700 hover:border-violet-200"
+        }`}
+      >
+        {children}
+      </button>
+    );
+
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {currentUser ? (
+          <main className="mx-auto max-w-[1420px] px-4 pb-16 pt-7 sm:px-6 lg:px-8">
+            <section className="mb-7 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.28em] text-violet-500">
+                  Match Play
+                </p>
+                <h1 className="text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
+                  Find a match. Host a match.
+                </h1>
+                <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-slate-500 sm:text-lg">
+                  Create a private or open match, invite players, and get on court.
+                  The Tennis Plan keeps your roster, messages, and groups in one place.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileManager(true)}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:border-violet-200 hover:text-violet-700"
+                >
+                  <Users className="h-4 w-4 text-violet-500" />
+                  My groups
+                </button>
+                {distanceOptions.map((distance) => (
+                  <button
+                    key={distance}
+                    type="button"
+                    onClick={() => setDistanceFilter(distance)}
+                    className={`h-10 rounded-full border px-4 text-sm font-black transition-colors ${
+                      distanceFilter === distance
+                        ? "border-violet-500 bg-violet-500 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-700"
                     }`}
                   >
-                    <MapPin className="w-4 h-4" />
-                    <span className="truncate max-w-[220px] sm:max-w-[320px]">
-                      {hasLocationFilter
-                        ? activeLocationLabel
-                        : "Showing matches from every location"}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowLocationPicker((prev) => !prev);
-                      setGeoError("");
-                    }}
-                    className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold shadow hover:bg-gray-700 transition-colors"
-                  >
-                    {showLocationPicker
-                      ? "Hide location tools"
-                      : hasLocationFilter
-                      ? "Change location"
-                      : "Set location"}
+                    {distance} mi
                   </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {distanceOptions.map((distance) => (
-                    <button
-                      key={distance}
-                      onClick={() => setDistanceFilter(distance)}
-                      disabled={!hasLocationFilter && distance !== distanceFilter}
-                      className={`px-3 py-1.5 text-sm font-bold rounded-full border transition-colors ${
-                        distanceFilter === distance
-                          ? "bg-green-500 text-white border-green-500 shadow"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600"
-                      } ${
-                        !hasLocationFilter && distance !== distanceFilter
-                          ? "opacity-50 cursor-not-allowed"
-                          : ""
-                      }`}
-                      type="button"
-                    >
-                      {distance} mi
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
-              {hasLocationFilter && (
-                <p className="text-xs font-semibold text-gray-500">
-                  Showing matches within {distanceFilter} miles of your selected location.
-                </p>
-              )}
-              {showLocationPicker && (
-                <div className="pt-4 border-t border-gray-100 space-y-4">
-                  <Autocomplete
-                    apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
-                    placeholder="Search for a city, club, or court"
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm font-semibold text-gray-700"
-                    value={locationSearchTerm}
-                    onChange={(event) => setLocationSearchTerm(event.target.value)}
-                    onPlaceSelected={(place) => {
-                      if (!place) {
-                        setGeoError("Please choose a location from the suggestions.");
-                        return;
-                      }
-                      const lat = place.geometry?.location?.lat?.();
-                      const lng = place.geometry?.location?.lng?.();
-                      const label =
-                        place.formatted_address || place.name || locationSearchTerm || "Custom location";
-                      if (
-                        typeof lat === "number" &&
-                        !Number.isNaN(lat) &&
-                        typeof lng === "number" &&
-                        !Number.isNaN(lng)
-                      ) {
-                        setLocationFilter({ label, lat, lng });
-                        setGeoError("");
-                        setShowLocationPicker(false);
-                      } else {
-                        setGeoError(
-                          "We couldn't read that location's coordinates. Try another search.",
-                        );
-                      }
-                    }}
-                    options={{
-                    types: ["geocode", "establishment"],
-                    fields: [
-                      "formatted_address",
-                      "geometry",
-                      "name",
-                      "address_components",
-                    ],
-                  }}
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={detectCurrentLocation}
-                      disabled={isDetectingLocation}
-                      className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-sm border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {isDetectingLocation ? "Detecting location..." : "Use my current location"}
-                    </button>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {hasLocationFilter && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLocationFilter(null);
-                            setLocationSearchTerm("");
-                            setShowLocationPicker(false);
-                            setGeoError("");
-                          }}
-                          className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm hover:bg-gray-200 transition-colors"
-                        >
-                          Clear location
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowLocationPicker(false);
-                          setGeoError("");
-                          setLocationSearchTerm(locationFilter?.label || "");
-                        }}
-                        className="px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-sm hover:bg-gray-700 transition-colors"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                  {geoError && (
-                    <p className="text-sm font-semibold text-red-600">{geoError}</p>
-                  )}
-                  {!import.meta.env.VITE_GOOGLE_API_KEY && (
-                    <p className="text-xs text-amber-600 font-semibold">
-                      Tip: Provide a Google Places API key to enable location search suggestions.
-                    </p>
-                  )}
-                </div>
-              )}
             </section>
 
-            <ActivityFeed
-              items={activityFeedItems}
-              loading={homeFeedLoading || invitesLoading}
-              errors={[homeFeedError, invitesError]}
-              onRefresh={() => refreshMatchesAndInvites()}
-              onViewAll={goToInvites}
-              pendingInviteCount={pendingInvites.length}
-              unreadUpdateCount={Number(notificationSummary.unread ?? 0)}
-            />
-          </div>
-
-      {/* Filter Tabs */}
-      <div className="bg-white sticky top-[65px] z-40 border-b border-gray-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex gap-2 py-4 overflow-x-auto scrollbar-hide">
-            {[
-              {
-                id: "my",
-                label: "My Matches",
-                count: getMatchCount("my"),
-                color: "violet",
-                icon: "⭐",
-              },
-              {
-                id: "open",
-                label: "Open Matches",
-                count: getMatchCount("open"),
-                color: "green",
-                icon: "🔥",
-              },
-              {
-                id: "today",
-                label: "Today",
-                count: getMatchCount("today"),
-                color: "blue",
-                icon: "📅",
-              },
-              {
-                id: "tomorrow",
-                label: "Tomorrow",
-                count: getMatchCount("tomorrow"),
-                color: "amber",
-                icon: "⏰",
-              },
-              {
-                id: "weekend",
-                label: "Weekend",
-                count: getMatchCount("weekend"),
-                color: "purple",
-                icon: "🎉",
-              },
-              {
-                id: "draft",
-                label: "Drafts",
-                count: getMatchCount("draft"),
-                color: "gray",
-                icon: "📝",
-              },
-              {
-                id: "archived",
-                label: "Archived",
-                count: getMatchCount("archived"),
-                color: "slate",
-                icon: "🗂️",
-              },
-            ].map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
-                className={`px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-                  activeFilter === filter.id
-                    ? "text-white shadow-lg scale-105"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-                style={
-                  activeFilter === filter.id
-                  ? {
-                      background:
-                        filter.color === "violet"
-                          ? "linear-gradient(135deg, rgb(139 92 246), rgb(124 58 237))"
-                          : filter.color === "green"
-                          ? "linear-gradient(135deg, rgb(34 197 94), rgb(16 185 129))"
-                          : filter.color === "blue"
-                          ? "linear-gradient(135deg, rgb(59 130 246), rgb(37 99 235))"
-                          : filter.color === "amber"
-                          ? "linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6))"
-                          : filter.color === "slate"
-                          ? "linear-gradient(135deg, rgb(148 163 184), rgb(100 116 139))"
-                          : "linear-gradient(135deg, rgb(168 85 247), rgb(147 51 234))",
-                    }
-                  : {}
-              }
-              >
-                <span className="text-base">{filter.icon}</span>
-                {filter.label}
-                {filter.count > 0 && (
-                  <span
-                    className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${
-                      activeFilter === filter.id
-                        ? "bg-white/25 text-white"
-                        : "bg-white text-gray-600"
-                    }`}
+            {topAttentionMatches.length > 0 && (
+              <section className="mb-7">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                    Needs your attention
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refreshMatchesAndInvites()}
+                    className="inline-flex items-center gap-1.5 text-sm font-black text-violet-500 transition hover:text-violet-700"
                   >
-                    {filter.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </button>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {topAttentionMatches.map((match) => {
+                    const lowOccupancy = match.alerts?.lowOccupancy || {};
+                    const spotsNeeded = Number(
+                      lowOccupancy.spotsNeeded ?? match.rosterSpotsRemaining ?? 0,
+                    );
+                    const rosterCount =
+                      lowOccupancy.rosterCount ?? match.rosterCount ?? match.occupied;
+                    const playerLimit = lowOccupancy.playerLimit ?? match.playerLimit;
+                    return (
+                      <article
+                        key={`attention-${match.id}`}
+                        className="rounded-2xl border border-amber-200 border-l-4 border-l-amber-500 bg-white p-5 shadow-sm"
+                      >
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase text-amber-700">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            Needs players
+                          </span>
+                          <span className="text-xs font-black text-slate-500">
+                            {formatHoursUntilStart(lowOccupancy.hoursUntilStart) || "Soon"}
+                          </span>
+                        </div>
+                        <h3 className="text-lg font-black text-slate-950">
+                          Need {spotsNeeded} more {spotsNeeded === 1 ? "player" : "players"}
+                        </h3>
+                        <p className="mt-2 text-sm font-semibold text-slate-500">
+                          {match.format || "Match"} at {match.location || "Location TBA"}
+                        </p>
+                        <div className="mt-3 space-y-1 text-sm font-semibold text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4" />
+                            {formatDateTime(match.dateTime)}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            {rosterCount}
+                            {playerLimit ? `/${playerLimit}` : ""} confirmed
+                          </div>
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openInviteScreen(match.id)}
+                            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-black text-white transition hover:bg-amber-600"
+                          >
+                            Manage invites
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleViewDetails(match.id)}
+                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                          >
+                            View match
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
-      {/* Match Cards */}
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8">
-        <div className="mb-6">
-          <input
-            type="search"
-            placeholder="Search matches..."
-            value={matchSearch}
-            onChange={(e) => setMatchSearch(e.target.value)}
-            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 font-semibold text-gray-800"
-          />
-        </div>
+            <section className="mb-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="inline-flex rounded-xl bg-slate-100 p-1">
+                  {DISCOVERY_SCOPE_FILTERS.map((filter) => {
+                    const isActive = activeFilter === filter.id;
+                    return (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveFilter(filter.id);
+                          setMatchPage(1);
+                        }}
+                        className={`h-9 min-w-[126px] rounded-lg px-4 text-sm font-black transition-colors ${
+                          isActive
+                            ? "bg-white text-slate-950 shadow-sm"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        {filter.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
-        {hasLocationFilter && displayedMatches.length === 0 && (
-          <div className="bg-white border border-dashed border-emerald-200 rounded-2xl p-8 text-center text-sm font-semibold text-emerald-700 mb-6">
-            No matches within {distanceFilter} miles of your location yet. Try expanding the distance filter or check back soon!
+                <div className="relative w-full lg:w-[360px]">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    placeholder="Search matches by location, format..."
+                    value={matchSearch}
+                    onChange={(e) => setMatchSearch(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">When</p>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDayKey("")}
+                      className={`min-h-[52px] min-w-[112px] rounded-xl border px-4 text-center text-sm font-black transition-colors ${
+                        !selectedDayKey
+                          ? "border-violet-500 bg-violet-500 text-white"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      <span className="block text-xs uppercase">All</span>
+                      Upcoming
+                    </button>
+                    {dayStripOptions.map((day, index) => {
+                      const count =
+                        matchCountsByDay.get(day.key) ??
+                        (day.fallbackCountKey ? getMatchCount(day.fallbackCountKey) : 0);
+                      const isActive = selectedDayKey === day.key;
+                      const disabled = index > 3 && count === 0;
+                      return (
+                        <button
+                          key={day.key}
+                          type="button"
+                          onClick={() => setSelectedDayKey(day.key)}
+                          disabled={disabled}
+                          className={`relative min-h-[52px] min-w-[108px] rounded-xl border px-4 text-center text-sm font-black transition-colors ${
+                            isActive
+                              ? "border-violet-500 bg-violet-500 text-white"
+                              : disabled
+                              ? "border-slate-100 bg-white text-slate-300"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-violet-200"
+                          }`}
+                        >
+                          {count > 0 && (
+                            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-500 px-1 text-[11px] font-black text-white">
+                              {count}
+                            </span>
+                          )}
+                          <span className="block text-xs uppercase">{day.eyebrow}</span>
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-7 gap-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="mr-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Level</span>
+                    {["Any", ...NTRP_LEVELS].map((level) =>
+                      renderFilterChip({
+                        key: `level-${level}`,
+                        active: selectedLevelFilter === level,
+                        onClick: () => setSelectedLevelFilter(level),
+                        children: level,
+                      }),
+                    )}
+                  </div>
+                  <div className="hidden h-9 w-px bg-slate-200 lg:block" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="mr-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Format</span>
+                    {DISCOVERY_FORMAT_FILTERS.map((format) =>
+                      renderFilterChip({
+                        key: `format-${format}`,
+                        active: selectedFormatFilter === format,
+                        onClick: () => setSelectedFormatFilter(format),
+                        children: format,
+                      }),
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mr-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Gender</span>
+                  {DISCOVERY_GENDER_FILTERS.map((gender) =>
+                    renderFilterChip({
+                      key: `gender-${gender}`,
+                      active: selectedGenderFilter === gender,
+                      onClick: () => setSelectedGenderFilter(gender),
+                      children: gender,
+                    }),
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {hasLocationFilter && displayedMatches.length === 0 && (
+              <div className="mb-6 rounded-2xl border border-dashed border-emerald-200 bg-white p-8 text-center text-sm font-semibold text-emerald-700">
+                No matches within {distanceFilter} miles of your location yet. Try expanding the distance filter or check back soon.
+              </div>
+            )}
+
+            <div className="space-y-10">
+              {groupedDisplayedMatches.map((group) => (
+                <section key={group.key} className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-base font-black uppercase tracking-[0.18em] text-slate-800">
+                      {group.label.split(",")[0]}
+                    </h3>
+                    <span className="text-sm font-black text-slate-400">
+                      {group.label.includes(",") ? `· ${group.label.split(",").slice(1).join(",").trim()}` : ""}
+                    </span>
+                    <div className="h-px flex-1 bg-slate-200" />
+                    <span className="text-xs font-black text-slate-400">
+                      {group.matches.length} {group.matches.length === 1 ? "match" : "matches"}
+                    </span>
+                  </div>
+                  <div className="grid max-w-[980px] gap-4 md:grid-cols-2">
+                    {group.matches.map((match) => (
+                      <MatchCard key={match.id} match={match} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </main>
+        ) : (
+          <div className="mx-auto max-w-7xl px-4 py-10 text-center">
+            <p className="mb-6 font-semibold text-slate-600">
+              Sign up or log in to view available matches.
+            </p>
+            <button
+              onClick={() => setShowSignInModal(true)}
+              className="rounded-xl bg-violet-600 px-6 py-3 font-bold text-white shadow-lg transition hover:bg-violet-700"
+            >
+              Sign Up / Log In
+            </button>
           </div>
         )}
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {displayedMatches.map((match) => (
-            <MatchCard key={match.id} match={match} />
-          ))}
-        </div>
-
-        {matchPagination && !hasLocationFilter && (
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              onClick={() => setMatchPage((p) => Math.max(1, p - 1))}
-              disabled={matchPage === 1}
-              className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            >
-              Previous
-            </button>
-            <span className="text-sm font-semibold text-gray-600">
-              Page {matchPagination.page} of
-              {" "}
-              {Math.max(
-                1,
-                Math.ceil(
-                  getMatchCount(activeFilter) /
-                    matchPagination.perPage
-                )
-              )}
-            </span>
-            <button
-              onClick={() => setMatchPage((p) => p + 1)}
-              disabled={
-                matchPagination.page >=
-                Math.ceil(
-                  getMatchCount(activeFilter) /
-                    matchPagination.perPage
-                )
-              }
-              className="w-full rounded-lg border-2 border-gray-200 px-3 py-1.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            >
-              Next
-            </button>
-          </div>
-        )}
       </div>
-        </>
-      ) : (
-        <div className="max-w-7xl mx-auto px-4 py-10 text-center">
-          <p className="text-gray-600 font-semibold mb-6">
-            Sign up or log in to view available matches.
-          </p>
-          <button
-            onClick={() => setShowSignInModal(true)}
-            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
-          >
-            Sign Up / Log In
-          </button>
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   const MatchCard = ({ match }) => {
     const isHosted = match.type === "hosted";
     const isJoined = match.type === "joined";
-    const isLinkOnly =
-      match.listingVisibility === "link_only" ||
-      match.isLinkOnly === true ||
-      match.isHidden === true ||
-      match.is_hidden === true ||
-      match.hidden === true;
-    const isHiddenListing = isLinkOnly && match.privacy === "open";
-    const statusValue = typeof match.status === "string" ? match.status.toLowerCase() : match.status;
+    const statusValue =
+      typeof match.status === "string" ? match.status.toLowerCase() : match.status;
     const isArchived = statusValue === "archived";
-    const isUpcoming = statusValue === "upcoming";
+    const isPrivate = match.privacy === "private";
+    const skillRangeLabel = match.skillLevel || "All levels";
+    const genderLabel = match.gender || "Any";
     const playerCapacityLabel = Number.isFinite(match.playerLimit)
       ? `${match.occupied}/${match.playerLimit} players`
       : `${match.occupied} players`;
-
-    const lowOccupancy = match?.alerts?.lowOccupancy;
-    const hasLowOccupancyAlert = Boolean(lowOccupancy?.active);
-    const rosterCount = lowOccupancy?.rosterCount ?? match.rosterCount ?? match.occupied;
-    const playerLimit = lowOccupancy?.playerLimit ?? match.playerLimit ?? null;
-    const spotsNeeded = lowOccupancy?.spotsNeeded ?? match.rosterSpotsRemaining ?? 0;
-    const hoursUntilStart = lowOccupancy?.hoursUntilStart ?? null;
-    const timeUntilStartLabel = useMemo(
-      () => formatHoursUntilStart(hoursUntilStart),
-      [formatHoursUntilStart, hoursUntilStart],
-    );
-
-    const existingPlayerIds = useMemo(() => {
-      const ids = new Set();
-      uniqueActiveParticipants(match.participants || []).forEach((participant) => {
-        const candidate = Number(
-          participant?.player_id ??
-            participant?.user_id ??
-            participant?.id ??
-            participant?.profile?.player_id ??
-            participant?.profile?.id,
-        );
-        if (Number.isFinite(candidate) && candidate > 0) {
-          ids.add(candidate);
-        }
+    const rosterStatusLabel = (() => {
+      if (Number.isFinite(match.spotsAvailable)) {
+        if (match.spotsAvailable <= 0) return "Full";
+        return `${match.spotsAvailable} ${match.spotsAvailable === 1 ? "spot" : "spots"}`;
+      }
+      return playerCapacityLabel;
+    })();
+    const timeLabel = (() => {
+      const date = getMatchStartDate(match);
+      if (!date) return "";
+      return date.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
       });
-      uniqueInvitees(match.invitees || []).forEach((invite) => {
-        const candidate = Number(
-          invite?.invitee_id ??
-            invite?.player_id ??
-            invite?.user_id ??
-            invite?.id ??
-            invite?.profile?.player_id ??
-            invite?.profile?.id,
-        );
-        if (Number.isFinite(candidate) && candidate > 0) {
-          ids.add(candidate);
-        }
+    })();
+    const distanceLabel = Number.isFinite(match.distanceMiles)
+      ? `${Number.isInteger(match.distanceMiles) ? match.distanceMiles : match.distanceMiles.toFixed(1)} mi`
+      : "";
+    const participantStack = uniqueActiveParticipants(match.participants || [])
+      .slice(0, 5)
+      .map((participant, index) => {
+        const profile = participant?.profile || {};
+        const name =
+          profile.full_name ||
+          profile.fullName ||
+          participant.full_name ||
+          participant.fullName ||
+          profile.name ||
+          participant.name ||
+          `Player ${index + 1}`;
+        return {
+          key:
+            participant.id ||
+            participant.player_id ||
+            participant.user_id ||
+            `${match.id}-participant-${index}`,
+          name,
+        };
       });
-      return ids;
-    }, [match.invitees, match.participants]);
-
-    const hostIdentityIds = useMemo(() => {
-      if (!isHosted) return [];
-      try {
-        return collectMatchHostIds(match) || [];
-      } catch (error) {
-        console.error("Failed to collect host identity ids", error);
-        return [];
-      }
-    }, [isHosted, match]);
-
-    const participantPhoneRecipients = useMemo(() => {
-      if (!isHosted) return [];
-      const hostIds = Array.isArray(hostIdentityIds) ? hostIdentityIds : [];
-      const recipients = [];
-      const seen = new Set();
-      const participants = uniqueActiveParticipants(match.participants || []);
-
-      const participantIdentityCandidates = (participant) => {
-        if (!participant || typeof participant !== "object") return [];
-        const profile = participant.profile || {};
-        const player = participant.player || {};
-        const user = participant.user || {};
-        const member = participant.member || {};
-        const contact = participant.contact || {};
-        return [
-          participant.match_participant_id,
-          participant.matchParticipantId,
-          participant.participant_id,
-          participant.participantId,
-          participant.player_id,
-          participant.playerId,
-          participant.invitee_id,
-          participant.inviteeId,
-          participant.user_id,
-          participant.userId,
-          participant.member_id,
-          participant.memberId,
-          participant.id,
-          profile.id,
-          profile.user_id,
-          profile.userId,
-          profile.player_id,
-          profile.playerId,
-          profile.member_id,
-          profile.memberId,
-          player.id,
-          player.user_id,
-          player.userId,
-          player.player_id,
-          player.playerId,
-          player.member_id,
-          player.memberId,
-          user.id,
-          user.user_id,
-          user.userId,
-          user.player_id,
-          user.playerId,
-          user.member_id,
-          user.memberId,
-          member.id,
-          member.user_id,
-          member.userId,
-          member.player_id,
-          member.playerId,
-          member.member_id,
-          member.memberId,
-          contact.id,
-          contact.user_id,
-          contact.userId,
-          contact.player_id,
-          contact.playerId,
-          contact.member_id,
-          contact.memberId,
-        ];
-      };
-
-      for (const participant of participants) {
-        if (!participant || typeof participant !== "object") continue;
-        const isHostParticipant = (() => {
-          if (typeof participant.status === "string") {
-            const status = participant.status.trim().toLowerCase();
-            if (status === "hosting" || status === "host") {
-              return true;
-            }
-          }
-          return participantIdentityCandidates(participant).some((candidate) =>
-            hostIds.some((hostId) => idsMatch(candidate, hostId)),
-          );
-        })();
-        if (isHostParticipant) {
-          continue;
-        }
-
-        const phoneRaw = getParticipantPhone(participant);
-        const normalized = normalizePhoneValue(phoneRaw);
-        if (!normalized || seen.has(normalized)) {
-          continue;
-        }
-        seen.add(normalized);
-        recipients.push(normalized);
-      }
-
-      return recipients;
-    }, [hostIdentityIds, isHosted, match.participants]);
-
-    const canMessageGroup = participantPhoneRecipients.length > 0;
-    const messageGroupLabel = participantPhoneRecipients.length === 1 ? "Message player" : "Message group";
-    const messageGroupDescription = canMessageGroup
-      ? participantPhoneRecipients.length === 1
-        ? "Start a text thread with the confirmed player."
-        : `Start a group text with ${participantPhoneRecipients.length} players.`
-      : "Add player phone numbers to enable group texts.";
-
-    const handleMessageGroup = useCallback(
-      (event) => {
-        event?.stopPropagation?.();
-        if (!canMessageGroup) {
-          displayToast(messageGroupDescription, "info");
-          return;
-        }
-        try {
-          const recipients = participantPhoneRecipients;
-          const ua =
-            typeof navigator !== "undefined" && navigator.userAgent
-              ? navigator.userAgent
-              : "";
-          const isAndroid = /Android/i.test(ua);
-          const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
-
-          let url = "sms:";
-          if (recipients.length > 0) {
-            if (isAndroid) {
-              const path = recipients.map((value) => encodeURIComponent(value)).join(";");
-              const addresses = encodeURIComponent(recipients.join(";"));
-              url = `smsto:${path}?addresses=${addresses}`;
-            } else if (isAppleMobile) {
-              const addresses = encodeURIComponent(recipients.join(","));
-              url = `sms:&addresses=${addresses}`;
-            } else {
-              const path = recipients.map((value) => encodeURIComponent(value)).join(",");
-              url = `sms:${path}`;
-            }
-          }
-
-          const toastMessage = isAppleMobile ? "Opening Messages..." : "Opening messages...";
-          displayToast(toastMessage, "info");
-          if (typeof window !== "undefined") {
-            window.location.href = url;
-          }
-        } catch (error) {
-          console.error(error);
-          displayToast("We couldn't open messages", "error");
-        }
-      },
-      [canMessageGroup, displayToast, messageGroupDescription, participantPhoneRecipients],
-    );
-
-    const [showRecommendations, setShowRecommendations] = useState(false);
-    const [recommendationStatus, setRecommendationStatus] = useState("idle");
-    const [recommendationError, setRecommendationError] = useState("");
-    const [recommendations, setRecommendations] = useState([]);
-    const [inviteProgress, setInviteProgress] = useState({});
-
-    const loadRecommendations = useCallback(async () => {
-      if (!hasLowOccupancyAlert) return;
-      if (!currentUser) {
-        setRecommendationStatus("empty");
-        setRecommendationError("");
-        return;
-      }
-      setRecommendationStatus("loading");
-      setRecommendationError("");
-
-      const suggestionMeta = new Map();
-      let suggestedIds = [];
-
-      try {
-        const history = await listMatches("my", { perPage: 25, includeHidden: true });
-        const matches = Array.isArray(history?.matches) ? history.matches : [];
-        const suggestions = buildRecentPartnerSuggestions({
-          matches,
-          currentUser,
-          memberIdentities: memberIdentityIds,
-        });
-        suggestedIds = suggestions
-          .map((player) => Number(player.user_id))
-          .filter(
-            (id) => Number.isFinite(id) && id > 0 && !existingPlayerIds.has(id),
-          );
-        suggestions.forEach((suggestion) => {
-          const id = Number(suggestion.user_id);
-          if (Number.isFinite(id) && id > 0) {
-            suggestionMeta.set(id, suggestion);
-          }
-        });
-      } catch (historyError) {
-        console.error("Failed to load match history for suggestions", historyError);
-      }
-
-      try {
-        let players = [];
-        if (suggestedIds.length > 0) {
-          const limitedIds = suggestedIds.slice(0, 12);
-          const data = await searchPlayers({ ids: limitedIds, perPage: limitedIds.length });
-          players = Array.isArray(data?.players) ? data.players : [];
-        }
-
-        if (!players.length) {
-          const fallbackTerm = (() => {
-            if (typeof match.skillLevel === "string" && match.skillLevel.trim()) {
-              const [ntrp] = match.skillLevel.split(" - ");
-              return ntrp || match.skillLevel;
-            }
-            if (typeof match.format === "string" && match.format.trim()) {
-              return match.format;
-            }
-            return "tennis";
-          })();
-          const fallback = await searchPlayers({ search: fallbackTerm, perPage: 12 });
-          players = Array.isArray(fallback?.players) ? fallback.players : [];
-        }
-
-        const filtered = players.filter((player) => {
-          const pid = Number(
-            player?.user_id ??
-              player?.id ??
-              player?.player_id ??
-              player?.playerId ??
-              player?.profile?.player_id ??
-              player?.profile?.id,
-          );
-          if (!Number.isFinite(pid) || pid <= 0) return false;
-          if (existingPlayerIds.has(pid)) return false;
-          if (currentUser && memberMatchesAnyId(currentUser, pid, memberIdentityIds)) {
-            return false;
-          }
-          return true;
-        });
-
-        if (filtered.length === 0) {
-          setRecommendations([]);
-          setRecommendationStatus("empty");
-          return;
-        }
-
-        const limitedFiltered = filtered.slice(0, 6).map((player) => {
-          const pid = Number(
-            player?.user_id ??
-              player?.id ??
-              player?.player_id ??
-              player?.playerId ??
-              player?.profile?.player_id ??
-              player?.profile?.id,
-          );
-          const meta = Number.isFinite(pid) ? suggestionMeta.get(pid) : null;
-          if (meta && meta.lastPlayedAt) {
-            return { ...player, lastPlayedAt: meta.lastPlayedAt };
-          }
-          return player;
-        });
-
-        setRecommendations(limitedFiltered);
-        setRecommendationStatus("ready");
-      } catch (error) {
-        console.error("Failed to load recommendations", error);
-        setRecommendationError(
-          error?.response?.data?.message ||
-            error?.message ||
-            "Failed to load recommendations",
-        );
-        setRecommendationStatus("error");
-      }
-    }, [
-      currentUser,
-      existingPlayerIds,
-      hasLowOccupancyAlert,
-      match.format,
-      match.skillLevel,
-      memberIdentityIds,
-    ]);
-
-    useEffect(() => {
-      if (showRecommendations && recommendationStatus === "idle") {
-        loadRecommendations();
-      }
-    }, [loadRecommendations, recommendationStatus, showRecommendations]);
-
-    useEffect(() => {
-      setShowRecommendations(false);
-      setRecommendationStatus("idle");
-      setRecommendationError("");
-      setRecommendations([]);
-      setInviteProgress({});
-    }, [match.id]);
-
-    const handleQuickInvite = useCallback(
-      async (player) => {
-        const pid = Number(
-          player?.user_id ??
-            player?.id ??
-            player?.player_id ??
-            player?.playerId ??
-            player?.profile?.player_id ??
-            player?.profile?.id,
-        );
-        if (!Number.isFinite(pid) || pid <= 0) {
-          displayToast("We couldn't determine this player's account", "error");
-          return;
-        }
-
-        setInviteProgress((prev) => ({ ...prev, [pid]: "sending" }));
-
-        try {
-          await sendInvites(match.id, { playerIds: [pid] });
-          setInviteProgress((prev) => ({ ...prev, [pid]: "sent" }));
-          setRecommendations((prev) =>
-            prev.filter((candidate) => {
-              const candidateId = Number(
-                candidate?.user_id ??
-                  candidate?.id ??
-                  candidate?.player_id ??
-                  candidate?.playerId ??
-                  candidate?.profile?.player_id ??
-                  candidate?.profile?.id,
-              );
-              return candidateId !== pid;
-            }),
-          );
-          displayToast(
-            `Invite sent to ${
-              player?.full_name || player?.name || `Player ${pid}`
-            }!`,
-          );
-          fetchMatches();
-        } catch (error) {
-          console.error("Failed to send invite", error);
-          setInviteProgress((prev) => ({ ...prev, [pid]: "error" }));
-          displayToast(
-            error?.response?.data?.message ||
-              error?.message ||
-              "Failed to send invite",
-            "error",
-          );
-        }
-      },
-      [displayToast, fetchMatches, match.id],
-    );
-
-    const getNTRPDisplay = (skillLevel) => {
-      if (!skillLevel || skillLevel === "Any Level") return null;
-      const ntrp = skillLevel.split(" - ")[0];
-      return ntrp;
-    };
-
-    const formatDistance = (value) => {
-      if (!Number.isFinite(value)) return null;
-      const normalized = Math.round(value * 10) / 10;
-      const display = Number.isInteger(normalized)
-        ? normalized.toString()
-        : normalized.toFixed(1);
-      const plural = Math.abs(normalized - 1) < 0.05 ? "" : "s";
-      return `${display} mile${plural} away`;
-    };
-
-    const distanceLabel = formatDistance(match.distanceMiles);
-    const locationSubtitle = distanceLabel
-      ? distanceLabel
-      : hasLocationFilter
-      ? "Distance unavailable"
-      : match.mapUrl
-      ? "Tap for directions"
-      : "Location details coming soon";
 
     return (
-      <div
-        className={`bg-white rounded-2xl shadow-sm transition-all p-6 border border-gray-100 group ${
-          isArchived ? "opacity-90" : "hover:shadow-2xl hover:scale-[1.02]"
+      <button
+        type="button"
+        onClick={() => handleViewDetails(match.id)}
+        className={`relative min-h-[158px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+          isArchived ? "opacity-80" : ""
         }`}
       >
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <span
+          className={`absolute inset-y-0 left-0 w-1 ${
+            isPrivate ? "bg-violet-500" : "bg-emerald-500"
+          }`}
+          aria-hidden="true"
+        />
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            {match.privacy === "open" && (
-              <span className="px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 rounded-full text-xs font-black flex items-center gap-1.5">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                OPEN
-              </span>
-            )}
-            {match.privacy === "private" && (
-              <span className="px-3 py-1.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-full text-xs font-black">
-                PRIVATE
-              </span>
-            )}
-            {isHiddenListing && (
-              <span className="px-3 py-1.5 bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-xs font-black flex items-center gap-1.5">
-                <EyeOff className="h-3.5 w-3.5" />
-                LINK-ONLY
-              </span>
-            )}
-            {statusValue === "draft" && (
-              <span className="px-3 py-1.5 bg-gradient-to-r from-yellow-50 to-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-black">
-                DRAFT
-              </span>
-            )}
-            {statusValue === "cancelled" && (
-              <span className="px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border border-red-200 rounded-full text-xs font-black">
-                CANCELLED
-              </span>
-            )}
-            {isArchived && (
-              <span className="px-3 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300 rounded-full text-xs font-black">
-                ARCHIVED
-              </span>
-            )}
+            <span
+              className={`inline-flex h-6 items-center rounded-full px-3 text-xs font-black uppercase ${
+                isPrivate
+                  ? "bg-violet-100 text-violet-700"
+                  : "bg-emerald-100 text-emerald-700"
+              }`}
+            >
+              {isPrivate ? "Private" : "Open"}
+            </span>
             {isHosted && (
-              <span className="px-3 py-1.5 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border border-violet-200 rounded-full text-xs font-black">
-                HOSTING
+              <span className="inline-flex h-6 items-center rounded-full bg-violet-100 px-3 text-xs font-black uppercase text-violet-700">
+                Hosting
               </span>
             )}
-            {isJoined && (
-              <span className="px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200 rounded-full text-xs font-black">
-                PLAYING
+            {isJoined && !isHosted && (
+              <span className="inline-flex h-6 items-center rounded-full bg-slate-100 px-3 text-xs font-black uppercase text-slate-700">
+                Joined
+              </span>
+            )}
+            {match.verifiedOnly && (
+              <span className="inline-flex h-6 items-center rounded-full bg-blue-100 px-3 text-xs font-black uppercase text-blue-700">
+                Verified
               </span>
             )}
           </div>
-          {(isHosted || isJoined) && !isArchived && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowMatchMenu(showMatchMenu === match.id ? null : match.id);
-              }}
-              className="relative rounded-lg p-2 transition-colors hover:bg-gray-100"
-            >
-              <MoreVertical className="w-4 h-4 text-gray-400" />
-              {showMatchMenu === match.id && (
-                <MatchMenu
-                  type={isHosted ? "host" : "player"}
-                  matchId={match.id}
-                  onClose={() => setShowMatchMenu(null)}
-                />
-              )}
-            </button>
+          {timeLabel && (
+            <span className="text-sm font-black text-slate-500">{timeLabel}</span>
           )}
         </div>
 
-        {hasLowOccupancyAlert && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-black text-amber-900">
-                    Need {spotsNeeded}{" "}
-                    {spotsNeeded === 1 ? "player" : "players"}{" "}
-                    {timeUntilStartLabel || "soon"}
-                  </p>
-                  <p className="text-xs font-semibold text-amber-700">
-                    Roster: {rosterCount}
-                    {playerLimit ? ` / ${playerLimit}` : ""} players confirmed
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => openInviteScreen(match.id)}
-                    className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50"
-                  >
-                    Manage invites
-                  </button>
-                  <button
-                    onClick={() => setShowRecommendations((prev) => !prev)}
-                    className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-amber-600"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    {showRecommendations ? "Hide recommendations" : "Smart invite suggestions"}
-                  </button>
-                </div>
-                {showRecommendations && (
-                  <div className="space-y-3 rounded-lg bg-white/80 p-3">
-                    {recommendationStatus === "loading" ? (
-                      <p className="flex items-center gap-2 text-xs font-semibold text-amber-700">
-                        <Sparkles className="h-4 w-4 animate-spin" /> Finding likely substitutes…
-                      </p>
-                    ) : recommendationStatus === "error" ? (
-                      <p className="text-xs font-semibold text-red-600">{recommendationError}</p>
-                    ) : recommendationStatus === "empty" ? (
-                      <p className="text-xs font-semibold text-amber-700">
-                        We couldn't find ready-made recommendations. Try the full invite tool for more options.
-                      </p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {recommendations.map((player) => {
-                          const pid = Number(
-                            player?.user_id ??
-                              player?.id ??
-                              player?.player_id ??
-                              player?.playerId ??
-                              player?.profile?.player_id ??
-                              player?.profile?.id,
-                          );
-                          const inviteState = inviteProgress[pid];
-                          return (
-                            <li
-                              key={`${match.id}-${pid}`}
-                              className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-100 bg-white/70 px-3 py-2"
-                            >
-                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-xs font-black text-amber-800">
-                                {getAvatarInitials(player).slice(0, 2)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-bold text-amber-900">
-                                  {player?.full_name || player?.name || (Number.isFinite(pid) ? `Player ${pid}` : "Unknown player")}
-                                </p>
-                                {player?.lastPlayedAt && (
-                                  <p className="text-[11px] font-semibold text-amber-600">
-                                    Last played {formatDateTime(player.lastPlayedAt)}
-                                  </p>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => handleQuickInvite(player)}
-                                disabled={inviteState === "sending" || inviteState === "sent"}
-                                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
-                                  inviteState === "sent"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : inviteState === "sending"
-                                    ? "bg-amber-100 text-amber-700"
-                                    : "bg-amber-500 text-white hover:bg-amber-600"
-                                }`}
-                              >
-                                {inviteState === "sent" ? (
-                                  <>
-                                    <Check className="h-3.5 w-3.5" /> Sent
-                                  </>
-                                ) : inviteState === "sending" ? (
-                                  "Sending…"
-                                ) : (
-                                  <>
-                                    <Send className="h-3.5 w-3.5" /> Invite
-                                  </>
-                                )}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3 mb-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-gray-900">
-                {formatDateTime(match.dateTime)}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-pink-100 rounded-xl flex items-center justify-center">
-              <MapPin className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-gray-900">
-                {match.location ? (
-                  match.mapUrl ? (
-                    <a
-                      href={match.mapUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline"
-                    >
-                      {match.location}
-                    </a>
-                  ) : (
-                    match.location
-                  )
-                ) : (
-                  <span className="text-gray-500">Location details coming soon</span>
-                )}
-              </p>
-              <p className="text-xs font-semibold text-gray-500">{locationSubtitle}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex items-center justify-center">
-              <Users className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-gray-900">{playerCapacityLabel}</p>
-              {match.spotsAvailable !== null && (
-                <p className="text-xs font-semibold text-gray-500">
-                  {match.spotsAvailable > 0
-                    ? `${match.spotsAvailable} spot${
-                        match.spotsAvailable === 1 ? "" : "s"
-                      } available`
-                    : "Roster is full"}
-                </p>
-              )}
-            </div>
-          </div>
-          {match.skillLevel && (
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl flex items-center justify-center">
-                <Star className="w-5 h-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm font-black text-gray-900">
-                  Skill level: {match.skillLevel}
-                </p>
-                {getNTRPDisplay(match.skillLevel) && (
-                  <p className="text-xs font-semibold text-gray-500">
-                    Suggested NTRP {getNTRPDisplay(match.skillLevel)}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-gray-100 pt-4 mt-4">
-          <p className="text-sm font-semibold text-gray-600 mb-3">Actions</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => handleViewDetails(match.id)}
-              className="w-full rounded-xl border-2 border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 sm:w-auto"
-            >
-              View & manage
-            </button>
-            {isHosted && !isArchived && (
-              <button
-                type="button"
-                onClick={handleMessageGroup}
-                title={messageGroupDescription}
-                className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-colors sm:w-auto ${
-                  canMessageGroup
-                    ? "border-2 border-purple-200 text-purple-700 hover:border-purple-300 hover:bg-purple-50"
-                    : "border-2 border-gray-200 text-gray-400 cursor-not-allowed opacity-60"
-                }`}
-              >
-                <MessageCircle
-                  className={`h-4 w-4 ${
-                    canMessageGroup ? "text-purple-500" : "text-gray-400"
-                  }`}
-                />
-                {messageGroupLabel}
-              </button>
-            )}
-            {match.type === "available" && isUpcoming && !isArchived && (
-              <button
-                onClick={async () => {
-                  if (!currentUser) {
-                    setShowSignInModal(true);
-                  } else {
-                    try {
-                      await joinMatch(match.id);
-
-                      try {
-                        const data = await fetchMatchDetailsWithArchivedFallback(
-                          match.id,
-                        );
-                        if (data) {
-                          setMatchDetailsOrigin(currentScreen);
-                          const viewerInvite = pendingInvites.find((invite) => {
-                            const inviteMatchId =
-                              invite?.match?.id ?? invite?.match_id ?? invite?.matchId;
-                            return matchIdsEqual(inviteMatchId, match.id);
-                          });
-                          const nextData =
-                            viewerInvite && data && typeof data === "object"
-                              ? { ...data, viewerInvite }
-                              : data;
-                          setViewMatch(nextData);
-                          setShowMatchDetailsModal(true);
-                        }
-                      } catch (detailsError) {
-                        console.error(detailsError);
-                        displayToast(
-                          "Joined the match, but we couldn't load the details. Try again in a moment.",
-                          "info",
-                        );
-                      }
-
-                      await Promise.all([
-                        fetchMatches(),
-                        fetchPendingInvites(),
-                      ]);
-                    } catch (err) {
-                      if (isMatchArchivedError(err)) {
-                        displayToast(
-                          "This match has been archived. You can't join.",
-                          "error",
-                        );
-                        fetchMatches();
-                        return;
-                      }
-
-                      const errorCodeRaw =
-                        err?.response?.data?.error ||
-                        err?.data?.error ||
-                        err?.message ||
-                        "";
-                      const errorCode = errorCodeRaw.toString().trim().toLowerCase();
-                      const responseMessage = err?.response?.data?.message || "";
-                      const normalizedMessage = responseMessage
-                        .toString()
-                        .trim()
-                        .toLowerCase();
-
-                      if (
-                        errorCode === "match_full" ||
-                        errorCode === "full" ||
-                        normalizedMessage.includes("full")
-                      ) {
-                        displayToast(
-                          "This match is already full. We'll let you know if a spot opens up.",
-                          "error",
-                        );
-                      } else if (
-                        errorCode === "already_joined" ||
-                        normalizedMessage.includes("already joined")
-                      ) {
-                        displayToast(
-                          "You're already on the roster for this match.",
-                          "info",
-                        );
-                      } else {
-                        displayToast(
-                          responseMessage || err?.message || "Failed to join match",
-                          "error",
-                        );
-                      }
-                    }
-                  }
-                }}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-black text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl sm:w-auto"
-              >
-                <Zap className="w-4 h-4" />
-                Join match
-              </button>
-            )}
-            {isArchived && (
-              <span className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600">
-                Archived matches are read-only
+        <div>
+          <p className="text-xl font-black leading-tight text-slate-950">
+            {match.format || "Match"}
+            <span className="font-semibold text-slate-500"> · {skillRangeLabel}</span>
+            {genderLabel !== "Any" && (
+              <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 align-middle text-xs font-black text-slate-700">
+                {genderLabel}
               </span>
             )}
-          </div>
+          </p>
+          <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-500">
+            <MapPin className="h-4 w-4" />
+            <span className="truncate">{match.location || "Location TBA"}</span>
+            {distanceLabel && <span>· {distanceLabel}</span>}
+          </p>
         </div>
-      </div>
+
+        <div className="mt-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex -space-x-2">
+              {participantStack.map((player) => (
+                <span
+                  key={player.key}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-violet-500 text-[11px] font-black text-white"
+                  title={player.name}
+                >
+                  {getAvatarInitials(player.name).slice(0, 2)}
+                </span>
+              ))}
+            </div>
+            <span className="text-sm font-semibold text-slate-500">
+              {playerCapacityLabel}
+            </span>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+              rosterStatusLabel === "Full"
+                ? "bg-slate-100 text-slate-500"
+                : rosterStatusLabel.startsWith("1 ")
+                ? "bg-amber-100 text-amber-600"
+                : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {rosterStatusLabel}
+          </span>
+        </div>
+      </button>
     );
   };
   const MatchMenu = ({ type, matchId, onClose }) => {
@@ -7870,7 +6979,20 @@ const TennisMatchApp = () => {
           />
 
           {currentScreen === "browse" && BrowseScreen()}
-          {currentScreen === "create" && CreateMatchScreen()}
+          {currentScreen === "create" && (
+            <MatchCreatorFlow
+              currentUser={currentUser}
+              onCancel={() => goToBrowse()}
+              onReturnHome={() => {
+                goToBrowse();
+                fetchMatches();
+              }}
+              onMatchCreated={() => {
+                fetchMatches();
+                fetchPendingInvites();
+              }}
+            />
+          )}
           {currentScreen === "invite" && (
             <InviteScreen
               matchId={inviteMatchId}

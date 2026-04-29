@@ -18,7 +18,6 @@ import {
   Plus,
   Search,
   Share2,
-  Sun,
   Trophy,
   Users,
   Zap,
@@ -54,6 +53,7 @@ import {
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 30;
+const MAX_MATCH_PLAYERS = 16;
 
 const pad = (value) => String(value).padStart(2, "0");
 
@@ -84,7 +84,12 @@ const initialMatchData = () => {
     longitude: null,
     totalPlayers: 4,
     skillLevel: "4.0",
+    skillLevelMin: "3.0",
+    skillLevelMax: "4.0",
     format: "Doubles",
+    gender: "Any",
+    balls: "Host provides",
+    verifiedOnly: false,
     notes: "",
     invitedPlayers: [],
     manualInvitees: [],
@@ -102,6 +107,8 @@ const durations = [
 
 const skillLevels = SKILL_LEVEL_OPTIONS;
 const matchFormatOptions = MATCH_FORMAT_OPTIONS;
+const genderOptions = ["Any", "Men's", "Women's", "Mixed"];
+const ballsOptions = ["Host provides", "BYO", "Rotate"];
 
 const MIN_START_TIME = "06:00";
 const MAX_START_TIME = "22:00";
@@ -233,14 +240,14 @@ const ProgressBar = ({ currentStep }) => (
       <React.Fragment key={step}>
         <div
           className={`w-12 h-12 rounded-full flex items-center justify-center font-bold ${
-            step <= currentStep ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"
+            step <= currentStep ? "bg-violet-600 text-white" : "bg-gray-200 text-gray-500"
           }`}
         >
           {step < currentStep ? <Check size={20} /> : step}
         </div>
         {step < 3 && (
           <div
-            className={`w-16 h-1 mx-2 ${step < currentStep ? "bg-green-500" : "bg-gray-200"}`}
+            className={`w-16 h-1 mx-2 ${step < currentStep ? "bg-violet-600" : "bg-gray-200"}`}
           />
         )}
       </React.Fragment>
@@ -262,7 +269,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [toast, setToast] = useState(null);
   const [quickDates] = useState(() => quickDateOptions());
-  const [contactName, setContactName] = useState("");
+  const [contactFirstName, setContactFirstName] = useState("");
+  const [contactLastName, setContactLastName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactError, setContactError] = useState("");
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
@@ -334,7 +342,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setCreatedMatchId(null);
     setIsEditingExisting(false);
     setCurrentStep(1);
-    setContactName("");
+    setContactFirstName("");
+    setContactLastName("");
     setContactPhone("");
     setContactError("");
     setIsFormatManuallySelected(false);
@@ -456,6 +465,16 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
   const handleAddManualInvite = () => {
     setContactError("");
+    const firstName = contactFirstName.trim();
+    const lastName = contactLastName.trim();
+    if (!firstName || !lastName) {
+      setContactError("First name and last name are required for SMS invites.");
+      return;
+    }
+    if (/\s/.test(firstName)) {
+      setContactError("Use the first-name field for first name only.");
+      return;
+    }
     const normalized = normalizePhoneValue(contactPhone);
     if (!normalized) {
       setContactError("Enter a valid phone number with country code or 10 digits.");
@@ -465,7 +484,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       setContactError("That phone number is already on your invite list.");
       return;
     }
-    const name = contactName.trim();
+    const name = `${firstName} ${lastName}`;
     setMatchData((prev) => ({
       ...prev,
       manualInvitees: [
@@ -475,10 +494,13 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
           phone: normalized,
           displayPhone: formatPhoneDisplay(normalized),
           name,
+          firstName,
+          lastName,
         },
       ],
     }));
-    setContactName("");
+    setContactFirstName("");
+    setContactLastName("");
     setContactPhone("");
   };
 
@@ -500,8 +522,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         return;
       }
     }
-    if (currentStep === 2 && matchData.type === "open" && !matchData.skillLevel) {
-      showToast("Select a skill level", "error");
+    if (
+      currentStep === 2 &&
+      matchData.type === "open" &&
+      (!matchData.skillLevelMin || !matchData.skillLevelMax)
+    ) {
+      showToast("Select a skill range", "error");
       return;
     }
     if (currentStep === 2 && matchData.type === "private" && invitedCount === 0) {
@@ -532,8 +558,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       notes: matchData.notes || undefined,
     };
 
-    if (matchData.type === "open" && matchData.skillLevel) {
-      payload.skill_level_min = matchData.skillLevel;
+    if (matchData.type === "open") {
+      payload.skill_level_min = matchData.skillLevelMin || matchData.skillLevel;
+      payload.skill_level_max =
+        matchData.skillLevelMax || matchData.skillLevelMin || matchData.skillLevel;
+      payload.gender = matchData.gender;
+      payload.category = matchData.gender;
+      payload.balls = matchData.balls;
+      payload.verifiedOnly = Boolean(matchData.verifiedOnly);
+      payload.verified_only = Boolean(matchData.verifiedOnly);
     }
 
     if (matchData.type === "open") {
@@ -578,11 +611,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         const ids = invitedPlayers
           .map((p) => Number(p.id))
           .filter((id) => Number.isFinite(id));
-        const phoneNumbers = manualInvitees.map((invite) =>
-          invite.name
-            ? { phone: invite.phone, fullName: invite.name }
-            : invite.phone
-        );
+        const phoneNumbers = manualInvitees.map((invite) => ({
+          phone: invite.phone,
+          firstName: invite.firstName,
+          lastName: invite.lastName,
+          fullName: invite.name,
+        }));
         if (ids.length || phoneNumbers.length) {
           try {
             const response = await sendInvites(matchId, {
@@ -716,8 +750,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     const end = new Date(start.getTime() + durationHours * HOURS_IN_MS);
     const title = `Tennis Match - ${matchData.format}`;
     let description = `${matchData.format} match at ${matchData.location}.`;
-    if (matchData.type === "open" && matchData.skillLevel) {
-      description += ` Skill level: NTRP ${matchData.skillLevel}.`;
+    if (matchData.type === "open" && matchData.skillLevelMin) {
+      const max = matchData.skillLevelMax || matchData.skillLevelMin;
+      description += ` Skill level: NTRP ${matchData.skillLevelMin}${
+        max !== matchData.skillLevelMin ? `-${max}` : ""
+      }.`;
     }
     if (matchData.notes) description += ` ${matchData.notes}`;
 
@@ -831,14 +868,14 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 }
                 className={`p-6 rounded-2xl border-2 transition-all ${
                   matchData.type === "open"
-                    ? "border-green-500 bg-green-50"
+                    ? "border-violet-500 bg-violet-50"
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div className="flex flex-col items-center gap-3">
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      matchData.type === "open" ? "bg-green-500" : "bg-gray-400"
+                      matchData.type === "open" ? "bg-violet-600" : "bg-gray-400"
                     }`}
                   >
                     <Globe size={20} className="text-white" />
@@ -855,14 +892,14 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 }
                 className={`p-6 rounded-2xl border-2 transition-all ${
                   matchData.type === "private"
-                    ? "border-green-500 bg-green-50"
+                    ? "border-violet-500 bg-violet-50"
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div className="flex flex-col items-center gap-3">
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      matchData.type === "private" ? "bg-green-500" : "bg-gray-400"
+                      matchData.type === "private" ? "bg-violet-600" : "bg-gray-400"
                     }`}
                   >
                     <Lock size={20} className="text-white" />
@@ -889,7 +926,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     onClick={() => setMatchData((prev) => ({ ...prev, date: day.date }))}
                     className={`px-4 py-2 rounded-lg whitespace-nowrap transition-colors text-sm flex-shrink-0 ${
                       matchData.date === day.date
-                        ? "bg-green-500 text-white"
+                        ? "bg-violet-600 text-white"
                         : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >
@@ -905,7 +942,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   type="date"
                   value={matchData.date}
                   onChange={(e) => setMatchData((prev) => ({ ...prev, date: e.target.value }))}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
                 />
               </div>
               <div>
@@ -917,7 +954,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   value={matchData.startTime}
                   onChange={(e) => handleTimeChange(e.target.value)}
                   onBlur={(e) => handleTimeChange(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
                 />
               </div>
               <div>
@@ -925,7 +962,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 <select
                   value={matchData.duration}
                   onChange={(e) => setMatchData((prev) => ({ ...prev, duration: e.target.value }))}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
                 >
                   {durations.map((duration) => (
                     <option key={duration.value} value={duration.value}>
@@ -970,7 +1007,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                         onClick={() => handleUseRecentLocation(location)}
                         className={`px-3 py-2 rounded-lg text-sm border transition-colors whitespace-nowrap flex items-center gap-2 ${
                           isActive
-                            ? "bg-green-500 text-white border-green-500"
+                            ? "bg-violet-600 text-white border-violet-600"
                             : "bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200"
                         }`}
                         title={`Use ${location.label}`}
@@ -1021,7 +1058,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   types: ["establishment"],
                   fields: ["formatted_address", "geometry", "name"],
                 }}
-                className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                 placeholder="e.g., Oceanside Tennis Center"
               />
             </div>
@@ -1048,7 +1085,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 −
               </button>
               <div className="text-center min-w-[8rem]">
-                <div className="text-5xl sm:text-6xl font-bold text-green-500 mb-2">
+                <div className="text-5xl sm:text-6xl font-bold text-violet-600 mb-2">
                   {matchData.totalPlayers}
                 </div>
                 <div className="text-sm font-medium text-gray-700">Total Players</div>
@@ -1060,10 +1097,10 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 onClick={() =>
                   setMatchData((prev) => ({
                     ...prev,
-                    totalPlayers: Math.min(30, prev.totalPlayers + 1),
+                    totalPlayers: Math.min(MAX_MATCH_PLAYERS, prev.totalPlayers + 1),
                   }))
                 }
-                disabled={matchData.totalPlayers >= 30}
+                disabled={matchData.totalPlayers >= MAX_MATCH_PLAYERS}
                 className="w-14 h-14 rounded-full border-2 border-gray-300 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-xl font-semibold text-gray-600 transition-colors"
               >
                 +
@@ -1080,7 +1117,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             </button>
             <button
               onClick={nextStep}
-              className="flex-1 px-6 py-4 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+              className="flex-1 px-6 py-4 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 transition-colors flex items-center justify-center gap-2"
             >
               Next <ArrowRight size={20} />
             </button>
@@ -1095,29 +1132,151 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                NTRP Skill Level
+                NTRP Skill Range
               </h3>
               <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-medium">
                 REQUIRED
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-              {skillLevels.map((level) => (
-                <button
-                  key={level.value}
-                  onClick={() => setMatchData((prev) => ({ ...prev, skillLevel: level.value }))}
-                  className={`p-4 rounded-xl border-2 transition-all text-center ${
-                    matchData.skillLevel === level.value
-                      ? "border-green-500 bg-green-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-xs font-black uppercase tracking-wide text-gray-500">
+                  Min
+                </span>
+                <select
+                  value={matchData.skillLevelMin}
+                  onChange={(e) => {
+                    const nextMin = e.target.value;
+                    setMatchData((prev) => {
+                      const minIndex = skillLevels.findIndex((level) => level.value === nextMin);
+                      const maxIndex = skillLevels.findIndex((level) => level.value === prev.skillLevelMax);
+                      const nextMax = maxIndex >= 0 && maxIndex < minIndex ? nextMin : prev.skillLevelMax;
+                      return {
+                        ...prev,
+                        skillLevel: nextMin,
+                        skillLevelMin: nextMin,
+                        skillLevelMax: nextMax,
+                      };
+                    });
+                  }}
+                  className="w-full rounded-xl border border-gray-300 p-3 text-sm font-semibold focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
                 >
-                  <div className="text-xl font-bold text-gray-900 mb-1">{level.label}</div>
-                  <div className="text-xs text-gray-600">{level.desc}</div>
-                </button>
-              ))}
+                  {skillLevels.map((level) => (
+                    <option key={level.value} value={level.value}>
+                      {level.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-black uppercase tracking-wide text-gray-500">
+                  Max
+                </span>
+                <select
+                  value={matchData.skillLevelMax}
+                  onChange={(e) => {
+                    const nextMax = e.target.value;
+                    setMatchData((prev) => {
+                      const minIndex = skillLevels.findIndex((level) => level.value === prev.skillLevelMin);
+                      const maxIndex = skillLevels.findIndex((level) => level.value === nextMax);
+                      const nextMin = minIndex > maxIndex ? nextMax : prev.skillLevelMin;
+                      return {
+                        ...prev,
+                        skillLevel: nextMin,
+                        skillLevelMin: nextMin,
+                        skillLevelMax: nextMax,
+                      };
+                    });
+                  }}
+                  className="w-full rounded-xl border border-gray-300 p-3 text-sm font-semibold focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
+                >
+                  {skillLevels.map((level) => (
+                    <option key={level.value} value={level.value}>
+                      {level.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <p className="text-sm text-gray-500">Helps players find appropriate skill matches</p>
+            <p className="mt-3 text-sm text-gray-500">Players can filter open matches by whether their NTRP falls inside this range.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-600">
+                Category
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {genderOptions.map((gender) => (
+                  <button
+                    key={gender}
+                    type="button"
+                    onClick={() => setMatchData((prev) => ({ ...prev, gender }))}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                      matchData.gender === gender
+                        ? "border-violet-500 bg-violet-50 text-violet-700"
+                        : "border-gray-200 text-gray-600 hover:border-violet-200"
+                    }`}
+                  >
+                    {gender}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-600">
+                Balls
+              </h3>
+              <div className="grid gap-2">
+                {ballsOptions.map((balls) => (
+                  <button
+                    key={balls}
+                    type="button"
+                    onClick={() => setMatchData((prev) => ({ ...prev, balls }))}
+                    className={`rounded-xl border px-3 py-2 text-left text-sm font-bold transition-colors ${
+                      matchData.balls === balls
+                        ? "border-violet-500 bg-violet-50 text-violet-700"
+                        : "border-gray-200 text-gray-600 hover:border-violet-200"
+                    }`}
+                  >
+                    {balls}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
+            <label className="flex items-start justify-between gap-4">
+              <span>
+                <span className="block text-base font-semibold text-gray-900">
+                  Require verified rating
+                </span>
+                <span className="mt-1 block text-sm text-violet-700">
+                  Only players with a verified UTR, USTA, or league-confirmed rating should join.
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setMatchData((prev) => ({
+                    ...prev,
+                    verifiedOnly: !prev.verifiedOnly,
+                  }))
+                }
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                  matchData.verifiedOnly ? "bg-violet-600" : "bg-gray-300"
+                }`}
+                aria-pressed={matchData.verifiedOnly}
+                aria-label="Require verified rating"
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    matchData.verifiedOnly ? "translate-x-5" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </label>
           </div>
 
           <div>
@@ -1154,7 +1313,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               onChange={(e) => setMatchData((prev) => ({ ...prev, notes: e.target.value }))}
               placeholder="Any special instructions, what to bring, parking info..."
               rows={4}
-              className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+              className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
             />
           </div>
 
@@ -1164,7 +1323,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                   isLinkOnlyListing
                     ? "bg-amber-100 text-amber-600"
-                    : "bg-emerald-100 text-emerald-600"
+                    : "bg-violet-100 text-violet-600"
                 }`}
               >
                 {isLinkOnlyListing ? <EyeOff size={20} /> : <Globe size={20} />}
@@ -1175,7 +1334,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                     <h3 className="text-base font-semibold text-gray-900">
                       Share by link only
                     </h3>
-                    <p className="text-xs font-semibold text-emerald-600">
+                    <p className="text-xs font-semibold text-violet-600">
                       {isLinkOnlyListing ? "Hidden from the public feed" : "Visible in the public feed"}
                     </p>
                   </div>
@@ -1187,8 +1346,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                         listingVisibility: prev.listingVisibility === "link_only" ? "listed" : "link_only",
                       }))
                     }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
-                      isLinkOnlyListing ? "bg-emerald-600" : "bg-gray-300"
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500 ${
+                      isLinkOnlyListing ? "bg-violet-600" : "bg-gray-300"
                     }`}
                     aria-pressed={isLinkOnlyListing}
                     aria-label="Toggle link-only visibility"
@@ -1216,7 +1375,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             </button>
             <button
               onClick={nextStep}
-              className="flex-1 px-6 py-4 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+              className="flex-1 px-6 py-4 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 transition-colors flex items-center justify-center gap-2"
             >
               Next <ArrowRight size={20} />
             </button>
@@ -1389,7 +1548,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                           {isDisabled ? (
                             <Check size={18} className="text-gray-300" />
                           ) : (
-                            <Plus size={18} className="text-green-500" />
+                            <Plus size={18} className="text-violet-500" />
                           )}
                         </button>
                       );
@@ -1407,7 +1566,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by name or email..."
-                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                 />
               </div>
               {searchQuery && (
@@ -1450,7 +1609,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                               Played {player.lastPlayed}
                             </div>
                           </div>
-                          <Plus size={20} className="text-green-500" />
+                          <Plus size={20} className="text-violet-500" />
                         </button>
                       ))}
                   {!searchLoading && !searchError && searchResults.length === 0 && (
@@ -1468,20 +1627,29 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   <div className="text-sm text-gray-600">
                     <p className="font-semibold text-gray-800">Invite by phone number</p>
                     <p>
-                      We'll text your contact a magic link so they can join even if they
-                      haven't set up email yet.
+                      We'll text your contact a magic link. First name, last name, and mobile number are required.
                     </p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <input
                     type="text"
-                    value={contactName}
+                    value={contactFirstName}
                     onChange={(e) => {
-                      setContactName(e.target.value);
+                      setContactFirstName(e.target.value);
                       setContactError("");
                     }}
-                    placeholder="Full name (optional)"
+                    placeholder="First name"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={contactLastName}
+                    onChange={(e) => {
+                      setContactLastName(e.target.value);
+                      setContactError("");
+                    }}
+                    placeholder="Last name"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                   />
                   <input
@@ -1504,7 +1672,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                   </p>
                   <button
                     onClick={handleAddManualInvite}
-                    disabled={!contactPhone.trim()}
+                    disabled={
+                      !contactFirstName.trim() ||
+                      !contactLastName.trim() ||
+                      !contactPhone.trim()
+                    }
                     className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
                   >
                     <Plus size={16} /> Add contact
@@ -1545,7 +1717,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               onChange={(e) => setMatchData((prev) => ({ ...prev, notes: e.target.value }))}
               placeholder="Any special instructions, what to bring, parking info..."
               rows={3}
-              className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+              className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
             />
           </div>
 
@@ -1595,9 +1767,32 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                 <Trophy size={16} className="text-gray-500" />
                 <span className="text-gray-700">
                   {matchData.format}
-                  {matchData.type === "open" && matchData.skillLevel && ` • NTRP ${matchData.skillLevel}`}
+                  {matchData.type === "open" &&
+                    matchData.skillLevelMin &&
+                    ` • NTRP ${matchData.skillLevelMin}${
+                      matchData.skillLevelMax &&
+                      matchData.skillLevelMax !== matchData.skillLevelMin
+                        ? `-${matchData.skillLevelMax}`
+                        : ""
+                    }`}
                 </span>
               </div>
+              {matchData.type === "open" && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <Users size={16} className="text-gray-500" />
+                    <span className="text-gray-700">
+                      {matchData.gender} category • {matchData.balls}
+                    </span>
+                  </div>
+                  {matchData.verifiedOnly && (
+                    <div className="flex items-center gap-3">
+                      <Check size={16} className="text-gray-500" />
+                      <span className="text-gray-700">Verified rating required</span>
+                    </div>
+                  )}
+                </>
+              )}
               {matchData.type === "open" && isLinkOnlyListing && (
                 <div className="flex items-center gap-3">
                   <EyeOff size={16} className="text-gray-500" />
@@ -1672,12 +1867,12 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
           <div
             className={`rounded-xl p-6 text-center ${
-              matchData.type === "private" ? "bg-blue-50" : "bg-green-50"
+              matchData.type === "private" ? "bg-blue-50" : "bg-violet-50"
             }`}
           >
             <div
               className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                matchData.type === "private" ? "bg-blue-500" : "bg-green-500"
+                matchData.type === "private" ? "bg-blue-500" : "bg-violet-600"
               }`}
             >
               {matchData.type === "private" ? (
@@ -1709,7 +1904,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               className={`flex-1 px-6 py-4 text-white rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 ${
                 matchData.type === "private"
                   ? "bg-blue-600 hover:bg-blue-700"
-                  : "bg-green-600 hover:bg-green-700"
+                  : "bg-violet-600 hover:bg-violet-700"
               } ${creating ? "opacity-70 cursor-not-allowed" : ""}`}
             >
               {creating
@@ -1729,7 +1924,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
           <div className="text-center mb-8">
             <div
               className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse ${
-                matchData.type === "private" ? "bg-blue-500" : "bg-green-500"
+                matchData.type === "private" ? "bg-blue-500" : "bg-violet-600"
               }`}
             >
               <Check size={40} className="text-white" />
@@ -1859,7 +2054,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               className={`w-full px-6 py-4 text-white rounded-xl font-semibold transition-colors ${
                 matchData.type === "private"
                   ? "bg-blue-600 hover:bg-blue-700"
-                  : "bg-green-600 hover:bg-green-700"
+                  : "bg-violet-600 hover:bg-violet-700"
               }`}
             >
               View Match Details
@@ -1936,19 +2131,18 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
                       : `${totalPlayers} players total`}
                   </span>
                 </div>
-                {matchData.type === "open" && matchData.skillLevel && (
+                {matchData.type === "open" && matchData.skillLevelMin && (
                   <div className="flex items-center gap-3">
                     <Trophy size={16} className="text-gray-500" />
-                    <span className="text-gray-700">NTRP {matchData.skillLevel}</span>
+                    <span className="text-gray-700">
+                      NTRP {matchData.skillLevelMin}
+                      {matchData.skillLevelMax &&
+                      matchData.skillLevelMax !== matchData.skillLevelMin
+                        ? `-${matchData.skillLevelMax}`
+                        : ""}
+                    </span>
                   </div>
                 )}
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sun size={20} className="text-yellow-500" />
-                  <span className="font-medium text-gray-700">Perfect tennis weather</span>
-                </div>
-                <span className="text-xs text-gray-500">72°F • Sunny</span>
               </div>
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <p className="text-sm text-gray-600 mb-1">Hosted by</p>

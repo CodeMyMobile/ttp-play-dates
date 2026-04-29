@@ -320,6 +320,37 @@ const getSkillLevelDisplay = (match) => {
   return minDisplay || maxDisplay || "";
 };
 
+const getMatchGenderDisplay = (match) => {
+  const value =
+    match?.gender ??
+    match?.category ??
+    match?.match_gender ??
+    match?.matchGender ??
+    "";
+  return typeof value === "string" ? value.trim() : value ? String(value) : "";
+};
+
+const getMatchBallsDisplay = (match) => {
+  const value =
+    match?.balls ??
+    match?.ball_policy ??
+    match?.ballPolicy ??
+    match?.balls_policy ??
+    match?.ballsPolicy ??
+    "";
+  return typeof value === "string" ? value.trim() : value ? String(value) : "";
+};
+
+const getVerifiedOnlyFlag = (match) =>
+  Boolean(
+    match?.verifiedOnly ??
+      match?.verified_only ??
+      match?.require_verified_rating ??
+      match?.requireVerifiedRating ??
+      match?.verified_rating_required ??
+      match?.verifiedRatingRequired,
+  );
+
 const buildMatchDescription = ({ match, hostName }) => {
   if (!match) return "Tennis match";
   const parts = [];
@@ -857,6 +888,9 @@ const MatchDetailsModal = ({
     return isLinkOnlyVisibility(match);
   }, [listingVisibility, match]);
   const suggestedSkillLevel = useMemo(() => getSkillLevelDisplay(match), [match]);
+  const genderDisplay = useMemo(() => getMatchGenderDisplay(match), [match]);
+  const ballsDisplay = useMemo(() => getMatchBallsDisplay(match), [match]);
+  const verifiedOnly = useMemo(() => getVerifiedOnlyFlag(match), [match]);
   const participants = useMemo(() => {
     if (Array.isArray(matchData?.participants)) {
       return uniqueParticipants(matchData.participants);
@@ -2119,7 +2153,7 @@ const MatchDetailsModal = ({
         const canRemove =
           isHost && !player.isHost && !isArchived && !isCancelled;
         const phoneLink =
-          player.phoneDisplay && player.phoneHref ? (
+          isHost && player.phoneDisplay && player.phoneHref ? (
             <a
               href={player.phoneHref}
               aria-label={`Call ${player.name}`}
@@ -2308,7 +2342,17 @@ const MatchDetailsModal = ({
       )}
       {isOpenMatch && suggestedSkillLevel && (
         <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700">
-          Suggested level: {suggestedSkillLevel}
+          NTRP {suggestedSkillLevel}
+        </span>
+      )}
+      {isOpenMatch && genderDisplay && genderDisplay !== "Any" && (
+        <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">
+          {genderDisplay}
+        </span>
+      )}
+      {isOpenMatch && verifiedOnly && (
+        <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700">
+          Verified-only
         </span>
       )}
       {Number.isFinite(capacityLimit) && (
@@ -2618,22 +2662,41 @@ const MatchDetailsModal = ({
           </section>
 
           <section className="rounded-2xl bg-gray-50 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
-                <Trophy className="h-5 w-5 text-amber-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-black text-gray-900">Match Type</p>
-                <p className="text-sm font-semibold text-gray-700">
-                  {match.match_format || match.format || "Details coming soon"}
+            <div className="mb-3 flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-violet-600" />
+              <p className="text-sm font-black text-gray-900">Match info</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-gray-400">Format</p>
+                <p className="font-semibold text-gray-800">
+                  {match.match_format || match.format || "TBA"}
                 </p>
-                {suggestedSkillLevel && (
-                  <p className="text-xs font-semibold text-gray-500">
-                    {isOpenMatch ? "Suggested level" : "Skill level"}: {suggestedSkillLevel}
-                  </p>
-                )}
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-gray-400">Level</p>
+                <p className="font-semibold text-gray-800">
+                  {suggestedSkillLevel || "All levels"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-gray-400">Category</p>
+                <p className="font-semibold text-gray-800">
+                  {genderDisplay || "Any"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-gray-400">Balls</p>
+                <p className="font-semibold text-gray-800">
+                  {ballsDisplay || "Not specified"}
+                </p>
               </div>
             </div>
+            {verifiedOnly && (
+              <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+                Verified rating required
+              </div>
+            )}
           </section>
 
           <section className="space-y-3">
