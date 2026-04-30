@@ -81,6 +81,8 @@ import MatchDetailsModal from "./components/MatchDetailsModal";
 import MatchCreatorFlow from "./components/MatchCreatorFlow";
 import LandingPage from "./pages/LandingPage.jsx";
 import PlayerConnectionsPage from "./pages/PlayerConnectionsPage.jsx";
+import MyGroupsPage from "./pages/MyGroupsPage.jsx";
+import GroupDetailPage from "./pages/GroupDetailPage.jsx";
 import {
   formatPhoneNumber,
   normalizePhoneValue,
@@ -167,6 +169,8 @@ const getInitialPath = () => {
 const deriveScreenFromPath = (path) => {
   if (path === "/invites") return "invites";
   if (path === "/players") return "players";
+  if (path === "/groups") return "groups";
+  if (/^\/groups\/[^/]+$/.test(path)) return "group-detail";
   if (/^\/matches\/[^/]+\/invite$/.test(path)) return "invite";
   return "browse";
 };
@@ -176,6 +180,11 @@ const deriveInviteMatchId = (path) => {
   if (!match) return null;
   const numeric = Number(match[1]);
   return Number.isFinite(numeric) ? numeric : null;
+};
+
+const deriveGroupIdFromPath = (path) => {
+  const match = path.match(/^\/groups\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
 };
 
 const normalizeNtrpLevel = (value) => {
@@ -897,6 +906,7 @@ const TennisMatchApp = () => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showToast, setShowToast] = useState(null);
   const [showProfileManager, setShowProfileManager] = useState(false);
+  const [profileManagerSection, setProfileManagerSection] = useState("profile");
   const [createStep, setCreateStep] = useState(1);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState(new Map());
@@ -2652,6 +2662,30 @@ const TennisMatchApp = () => {
     }
   }, [location.pathname, navigate]);
 
+  const goToGroups = useCallback(() => {
+    setCurrentScreen("groups");
+    if (location.pathname !== "/groups") {
+      navigate("/groups");
+    }
+  }, [location.pathname, navigate]);
+
+  const openGroupDetail = useCallback(
+    (groupId = "new") => {
+      const normalizedGroupId = String(groupId || "new").trim() || "new";
+      const path = `/groups/${encodeURIComponent(normalizedGroupId)}`;
+      setCurrentScreen("group-detail");
+      if (location.pathname !== path) {
+        navigate(path);
+      }
+    },
+    [location.pathname, navigate],
+  );
+
+  const openProfileManager = useCallback((section = "profile") => {
+    setProfileManagerSection(section);
+    setShowProfileManager(true);
+  }, []);
+
   useEffect(() => {
     if (currentScreen !== "invites") return;
     if (!notificationSummary.latest) return;
@@ -2931,6 +2965,22 @@ const TennisMatchApp = () => {
       return;
     }
 
+    if (path === "/groups") {
+      lastInviteLoadRef.current = null;
+      if (currentScreen !== "groups") {
+        setCurrentScreen("groups");
+      }
+      return;
+    }
+
+    if (/^\/groups\/[^/]+$/.test(path)) {
+      lastInviteLoadRef.current = null;
+      if (currentScreen !== "group-detail") {
+        setCurrentScreen("group-detail");
+      }
+      return;
+    }
+
     const inviteRouteMatch = path.match(/^\/matches\/(\d+)\/invite$/);
     if (inviteRouteMatch) {
       const matchIdFromPath = Number(inviteRouteMatch[1]);
@@ -2948,7 +2998,12 @@ const TennisMatchApp = () => {
     lastInviteLoadRef.current = null;
     // Do not override other in-app screens (e.g., create) when the URL
     // doesn't explicitly target a special route.
-    if (currentScreen !== "browse" && currentScreen !== "create") {
+    if (
+      currentScreen !== "browse" &&
+      currentScreen !== "create" &&
+      currentScreen !== "groups" &&
+      currentScreen !== "group-detail"
+    ) {
       setCurrentScreen("browse");
     }
   }, [currentScreen, location.pathname, openInviteScreen]);
@@ -3343,7 +3398,7 @@ const TennisMatchApp = () => {
               <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowProfileManager(true)}
+                  onClick={goToGroups}
                   className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-violet-200 hover:text-violet-700"
                 >
                   <Users className="h-4 w-4 text-violet-500" />
@@ -7110,7 +7165,7 @@ const TennisMatchApp = () => {
             goToInvites={goToInvites}
             goToBrowse={() => goToBrowse()}
             goToPlayers={goToPlayers}
-            onOpenProfile={() => setShowProfileManager(true)}
+            onOpenProfile={() => openProfileManager("profile")}
             onLogout={handleLogout}
             onOpenSignIn={() => setShowSignInModal(true)}
             setShowPreview={setShowPreview}
@@ -7169,6 +7224,20 @@ const TennisMatchApp = () => {
               formatDateTime={formatDateTime}
             />
           )}
+          {currentScreen === "groups" && (
+            <MyGroupsPage
+              onBack={goToBrowse}
+              onCreateGroup={() => openGroupDetail("new")}
+              onOpenGroup={openGroupDetail}
+            />
+          )}
+          {currentScreen === "group-detail" && (
+            <GroupDetailPage
+              groupId={deriveGroupIdFromPath(location.pathname) || "new"}
+              onBack={goToGroups}
+              onSaved={goToGroups}
+            />
+          )}
         </>
       )}
 
@@ -7194,8 +7263,12 @@ const TennisMatchApp = () => {
       {Toast()}
       <ProfileManager
         isOpen={showProfileManager}
-        onClose={() => setShowProfileManager(false)}
+        onClose={() => {
+          setShowProfileManager(false);
+          setProfileManagerSection("profile");
+        }}
         onProfileUpdate={mergeProfileDetails}
+        initialSection={profileManagerSection}
       />
     </div>
   );

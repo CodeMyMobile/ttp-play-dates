@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Loader2, UserRound, Info, Users, Plus, Trash2 } from "lucide-react";
 import { getPersonalDetails } from "../services/auth";
 import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
@@ -59,7 +59,12 @@ const formatRatingOptionValue = (value) => {
   return normalized;
 };
 
-const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
+const ProfileManager = ({
+  isOpen,
+  onClose,
+  onProfileUpdate,
+  initialSection = "profile",
+}) => {
   const [details, setDetails] = useState(emptyDetails);
   const [phoneInput, setPhoneInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,6 +81,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
   const [groupPlayerResults, setGroupPlayerResults] = useState([]);
   const [selectedGroupPlayers, setSelectedGroupPlayers] = useState([]);
   const [savingGroup, setSavingGroup] = useState(false);
+  const groupsSectionRef = useRef(null);
   const accessToken = localStorage.getItem("authToken");
 
   useEffect(() => {
@@ -100,6 +106,19 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
     if (!isOpen) return;
     fetchGroups();
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || initialSection !== "groups") return undefined;
+
+    const timeout = window.setTimeout(() => {
+      groupsSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+
+    return () => window.clearTimeout(timeout);
+  }, [initialSection, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -395,7 +414,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
                       full_name: e.target.value,
                     }))
                   }
-                  autoFocus
+                  autoFocus={initialSection !== "groups"}
                 />
               </div>
 
@@ -587,7 +606,10 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
           )}
 
           {!loading && (
-            <section className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+            <section
+              ref={groupsSectionRef}
+              className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"
+            >
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -617,6 +639,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
                   value={groupName}
                   onChange={(event) => setGroupName(event.target.value)}
                   maxLength={60}
+                  autoFocus={initialSection === "groups"}
                 />
                 <input
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
