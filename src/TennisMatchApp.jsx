@@ -195,11 +195,6 @@ const normalizeNtrpLevel = (value) => {
   return trimmed.replace(/\s*-\s*.*$/, "");
 };
 
-const getLevelIndex = (value) => {
-  const normalized = normalizeNtrpLevel(value);
-  return NTRP_LEVELS.findIndex((level) => level === normalized);
-};
-
 const pickMatchSkillRange = (match = {}) => {
   const min = normalizeNtrpLevel(
     match.skill_level_min ??
@@ -225,6 +220,16 @@ const formatSkillRange = (match = {}) => {
   const { min, max } = pickMatchSkillRange(match);
   if (min && max && min !== max) return `${min} - ${max}`;
   return min || max || "";
+};
+
+const getMatchWhenParam = (selectedDayKey) => {
+  if (!selectedDayKey) return "upcoming";
+  return selectedDayKey;
+};
+
+const getMatchLevelParam = (selectedLevelFilter) => {
+  if (!selectedLevelFilter || selectedLevelFilter === "Any") return undefined;
+  return selectedLevelFilter === "4.5+" ? "4.5" : selectedLevelFilter;
 };
 
 const pickMatchGender = (match = {}) =>
@@ -1657,11 +1662,25 @@ const TennisMatchApp = () => {
           : {};
       const includeHidden =
         apiFilter === "my" || activeFilter === "archived" || activeFilter === "draft";
+      const when = getMatchWhenParam(selectedDayKey);
+      const level = getMatchLevelParam(selectedLevelFilter);
+      const format =
+        selectedFormatFilter && selectedFormatFilter !== "Any"
+          ? selectedFormatFilter
+          : undefined;
+      const gender =
+        selectedGenderFilter && selectedGenderFilter !== "Any"
+          ? selectedGenderFilter
+          : undefined;
       const data = await listMatches(apiFilter, {
         status,
         search: matchSearch,
         page: matchPage,
         perPage: 10,
+        when,
+        level,
+        format,
+        gender,
         includeHidden,
         ...locationParams,
       });
@@ -2121,6 +2140,10 @@ const TennisMatchApp = () => {
     matchSearch,
     memberIdentityIds,
     currentUser,
+    selectedDayKey,
+    selectedFormatFilter,
+    selectedGenderFilter,
+    selectedLevelFilter,
   ]);
 
   const fetchAttentionMatches = useCallback(async () => {
@@ -3252,54 +3275,8 @@ const TennisMatchApp = () => {
   }, [hasLocationFilter, locationFilter, matches]);
 
   const displayedMatches = useMemo(() => {
-    const baseMatches = hasLocationFilter
-      ? matchesWithDistance.filter((match) => {
-          if (!Number.isFinite(match.distanceMiles)) return false;
-          return match.distanceMiles <= distanceFilter;
-        })
-      : matchesWithDistance;
-
-    const filteredMatches = baseMatches.filter((match) => {
-      if (selectedDayKey) {
-        const startDate = getMatchStartDate(match);
-        if (!startDate || formatDayKey(startDate) !== selectedDayKey) {
-          return false;
-        }
-      }
-
-      if (selectedLevelFilter !== "Any") {
-        const selectedIndex = getLevelIndex(selectedLevelFilter);
-        const minIndex = getLevelIndex(match.skillLevelMin || match.skillLevel);
-        const maxIndex = getLevelIndex(match.skillLevelMax || match.skillLevelMin || match.skillLevel);
-        if (selectedIndex < 0) return false;
-        if (minIndex >= 0 && selectedIndex < minIndex) return false;
-        if (maxIndex >= 0 && selectedIndex > maxIndex) return false;
-      }
-
-      if (selectedFormatFilter !== "Any") {
-        const normalizedFormat = (match.format || "").toString().trim();
-        if (normalizedFormat !== selectedFormatFilter) return false;
-      }
-
-      if (selectedGenderFilter !== "Any") {
-        const gender = (match.gender || "Any").toString().trim();
-        if (gender !== "Any" && gender !== selectedGenderFilter) return false;
-      }
-
-      return true;
-    });
-
-    return sortMatchesByRecency(filteredMatches);
-  }, [
-    distanceFilter,
-    hasLocationFilter,
-    matchesWithDistance,
-    selectedDayKey,
-    selectedFormatFilter,
-    selectedGenderFilter,
-    selectedLevelFilter,
-    sortMatchesByRecency,
-  ]);
+    return sortMatchesByRecency(matchesWithDistance);
+  }, [matchesWithDistance, sortMatchesByRecency]);
 
   const distanceOptions = useMemo(() => [5, 10, 20, 50], []);
   const dayStripOptions = useMemo(() => buildDayStripOptions(), []);
@@ -3419,7 +3396,10 @@ const TennisMatchApp = () => {
                   <button
                     key={distance}
                     type="button"
-                    onClick={() => setDistanceFilter(distance)}
+                    onClick={() => {
+                      setDistanceFilter(distance);
+                      setMatchPage(1);
+                    }}
                     className={`h-8 rounded-full border px-3 text-xs font-black transition-colors ${
                       distanceFilter === distance
                         ? "border-violet-500 bg-violet-500 text-white shadow-sm"
@@ -3557,7 +3537,10 @@ const TennisMatchApp = () => {
                     type="search"
                     placeholder="Search matches by location, format..."
                     value={matchSearch}
-                    onChange={(e) => setMatchSearch(e.target.value)}
+                    onChange={(e) => {
+                      setMatchSearch(e.target.value);
+                      setMatchPage(1);
+                    }}
                     className="h-10 w-full rounded-[10px] border border-slate-200 bg-white pl-11 pr-4 text-xs font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
                   />
                 </div>
@@ -3569,7 +3552,10 @@ const TennisMatchApp = () => {
                   <div className="scrollbar-hide flex gap-1.5 overflow-x-auto pb-1">
                     <button
                       type="button"
-                      onClick={() => setSelectedDayKey("")}
+                      onClick={() => {
+                        setSelectedDayKey("");
+                        setMatchPage(1);
+                      }}
                       className={`min-h-[54px] min-w-[112px] rounded-[10px] border px-4 text-center text-sm font-black transition-colors ${
                         !selectedDayKey
                           ? "border-violet-500 bg-violet-500 text-white"
@@ -3589,7 +3575,10 @@ const TennisMatchApp = () => {
                         <button
                           key={day.key}
                           type="button"
-                          onClick={() => setSelectedDayKey(day.key)}
+                          onClick={() => {
+                            setSelectedDayKey(day.key);
+                            setMatchPage(1);
+                          }}
                           disabled={disabled}
                           className={`relative min-h-[54px] min-w-[64px] rounded-[10px] border px-3 text-center text-sm font-black transition-colors ${
                             isActive
@@ -3619,7 +3608,10 @@ const TennisMatchApp = () => {
                       renderFilterChip({
                         key: `level-${level}`,
                         active: selectedLevelFilter === level,
-                        onClick: () => setSelectedLevelFilter(level),
+                        onClick: () => {
+                          setSelectedLevelFilter(level);
+                          setMatchPage(1);
+                        },
                         children: level,
                       }),
                     )}
@@ -3631,7 +3623,10 @@ const TennisMatchApp = () => {
                       renderFilterChip({
                         key: `format-${format}`,
                         active: selectedFormatFilter === format,
-                        onClick: () => setSelectedFormatFilter(format),
+                        onClick: () => {
+                          setSelectedFormatFilter(format);
+                          setMatchPage(1);
+                        },
                         children: format,
                       }),
                     )}
@@ -3644,7 +3639,10 @@ const TennisMatchApp = () => {
                     renderFilterChip({
                       key: `gender-${gender}`,
                       active: selectedGenderFilter === gender,
-                      onClick: () => setSelectedGenderFilter(gender),
+                      onClick: () => {
+                        setSelectedGenderFilter(gender);
+                        setMatchPage(1);
+                      },
                       children: gender,
                     }),
                   )}

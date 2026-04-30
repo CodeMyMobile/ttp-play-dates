@@ -173,6 +173,11 @@ export const listMatches = (
     search = "",
     page = 1,
     perPage = 10,
+    when,
+    level,
+    format,
+    gender,
+    category,
     latitude,
     longitude,
     distance,
@@ -188,6 +193,11 @@ export const listMatches = (
   if (filter) params.filter = filter;
   if (status) params.status = status;
   if (search) params.search = search;
+  if (when) params.when = when;
+  if (level) params.level = level;
+  if (format) params.format = format;
+  if (gender) params.gender = gender;
+  if (category) params.category = category;
   const includeHiddenFlag =
     includeHidden ||
     include_hidden === true ||
