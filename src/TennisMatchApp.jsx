@@ -124,7 +124,7 @@ const DEFAULT_SKILL_LEVEL = "2.5 - Beginner";
 
 const NTRP_LEVELS = ["2.5", "3.0", "3.5", "4.0", "4.5+"];
 const DISCOVERY_SCOPE_FILTERS = [
-  { id: "all", label: "All" },
+  { id: "all", label: "All matches" },
   { id: "my", label: "My matches" },
   { id: "discover", label: "Discover" },
 ];
@@ -298,6 +298,47 @@ const buildDayStripOptions = () => {
       }),
     };
   });
+};
+
+const formatMatchTimeLabel = (match = {}) => {
+  const date = getMatchStartDate(match);
+  if (!date) return "";
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+const formatMatchDayHeading = (match = {}) => {
+  const date = getMatchStartDate(match);
+  if (!date) return { dayLabel: "DATE TBA", dateLabel: "" };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((target - today) / (24 * 60 * 60 * 1000));
+  const dayLabel =
+    diffDays === 0
+      ? "TODAY"
+      : diffDays === 1
+      ? "TOMORROW"
+      : date
+          .toLocaleDateString("en-US", { weekday: "long" })
+          .toUpperCase();
+
+  return {
+    dayLabel,
+    dateLabel: date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    }),
+  };
+};
+
+const formatDistanceLabel = (distanceMiles) => {
+  if (!Number.isFinite(distanceMiles)) return "";
+  return `${Number.isInteger(distanceMiles) ? distanceMiles : distanceMiles.toFixed(1)} mi`;
 };
 
 const buildMapsUrl = (lat, lng, address) => {
@@ -3213,14 +3254,8 @@ const TennisMatchApp = () => {
       const date = getMatchStartDate(match);
       const key = formatDayKey(date) || "unscheduled";
       if (!groupMap.has(key)) {
-        const label = date
-          ? date.toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "short",
-              day: "numeric",
-            })
-          : "Date TBA";
-        const group = { key, label, matches: [] };
+        const heading = formatMatchDayHeading(match);
+        const group = { key, ...heading, matches: [] };
         groupMap.set(key, group);
         groups.push(group);
       }
@@ -3290,16 +3325,16 @@ const TennisMatchApp = () => {
     return (
       <div className="min-h-screen bg-slate-50">
         {currentUser ? (
-          <main className="mx-auto max-w-[1420px] px-4 pb-16 pt-7 sm:px-6 lg:px-8">
-            <section className="mb-7 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+          <main className="mx-auto max-w-[1280px] px-4 pb-16 pt-7 sm:px-6 lg:px-10">
+            <section className="mb-6 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
               <div>
-                <p className="mb-2 text-xs font-black uppercase tracking-[0.28em] text-violet-500">
+                <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.24em] text-violet-500">
                   Match Play
                 </p>
-                <h1 className="text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
+                <h1 className="text-[34px] font-black leading-tight tracking-[-0.025em] text-slate-950">
                   Find a match. Host a match.
                 </h1>
-                <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-slate-500 sm:text-lg">
+                <p className="mt-1.5 max-w-[560px] text-sm font-semibold leading-6 text-slate-500">
                   Create a private or open match, invite players, and get on court.
                   The Tennis Plan keeps your roster, messages, and groups in one place.
                 </p>
@@ -3309,7 +3344,7 @@ const TennisMatchApp = () => {
                 <button
                   type="button"
                   onClick={() => setShowProfileManager(true)}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:border-violet-200 hover:text-violet-700"
+                  className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-violet-200 hover:text-violet-700"
                 >
                   <Users className="h-4 w-4 text-violet-500" />
                   My groups
@@ -3319,7 +3354,7 @@ const TennisMatchApp = () => {
                     key={distance}
                     type="button"
                     onClick={() => setDistanceFilter(distance)}
-                    className={`h-10 rounded-full border px-4 text-sm font-black transition-colors ${
+                    className={`h-8 rounded-full border px-3 text-xs font-black transition-colors ${
                       distanceFilter === distance
                         ? "border-violet-500 bg-violet-500 text-white shadow-sm"
                         : "border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-700"
@@ -3359,46 +3394,61 @@ const TennisMatchApp = () => {
                     return (
                       <article
                         key={`attention-${match.id}`}
-                        className="rounded-2xl border border-amber-200 border-l-4 border-l-amber-500 bg-white p-5 shadow-sm"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleViewDetails(match.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleViewDetails(match.id);
+                          }
+                        }}
+                        className="cursor-pointer rounded-[14px] border border-amber-100 border-l-[3px] border-l-amber-500 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                       >
                         <div className="mb-4 flex items-center justify-between gap-3">
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase text-amber-700">
-                            <AlertCircle className="h-3.5 w-3.5" />
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
+                            <AlertCircle className="h-3 w-3" />
                             Needs players
                           </span>
-                          <span className="text-xs font-black text-slate-500">
+                          <span className="text-[11px] font-bold text-slate-500">
                             {formatHoursUntilStart(lowOccupancy.hoursUntilStart) || "Soon"}
                           </span>
                         </div>
-                        <h3 className="text-lg font-black text-slate-950">
+                        <h3 className="text-[15px] font-black leading-snug text-slate-950">
                           Need {spotsNeeded} more {spotsNeeded === 1 ? "player" : "players"}
                         </h3>
-                        <p className="mt-2 text-sm font-semibold text-slate-500">
+                        <p className="mt-1.5 text-xs font-semibold leading-5 text-slate-500">
                           {match.format || "Match"} at {match.location || "Location TBA"}
                         </p>
-                        <div className="mt-3 space-y-1 text-sm font-semibold text-slate-500">
+                        <div className="mt-2.5 space-y-1 text-xs font-semibold text-slate-500">
                           <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4" />
+                            <Calendar className="h-3.5 w-3.5" />
                             {formatDateTime(match.dateTime)}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Users className="h-4 w-4" />
+                            <Users className="h-3.5 w-3.5" />
                             {rosterCount}
                             {playerLimit ? `/${playerLimit}` : ""} confirmed
                           </div>
                         </div>
-                        <div className="mt-5 flex flex-wrap gap-2">
+                        <div className="mt-4 flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => openInviteScreen(match.id)}
-                            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-black text-white transition hover:bg-amber-600"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openInviteScreen(match.id);
+                            }}
+                            className="rounded-[10px] bg-amber-500 px-3.5 py-2 text-xs font-black text-white transition hover:bg-amber-600"
                           >
                             Manage invites
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleViewDetails(match.id)}
-                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleViewDetails(match.id);
+                            }}
+                            className="rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                           >
                             View match
                           </button>
@@ -3410,8 +3460,8 @@ const TennisMatchApp = () => {
               </section>
             )}
 
-            <section className="mb-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <section className="mb-5 rounded-[14px] border border-slate-200 bg-white p-4 shadow-sm sm:p-[18px]">
+              <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="inline-flex rounded-xl bg-slate-100 p-1">
                   {DISCOVERY_SCOPE_FILTERS.map((filter) => {
                     const isActive = activeFilter === filter.id;
@@ -3423,7 +3473,7 @@ const TennisMatchApp = () => {
                           setActiveFilter(filter.id);
                           setMatchPage(1);
                         }}
-                        className={`h-9 min-w-[126px] rounded-lg px-4 text-sm font-black transition-colors ${
+                        className={`h-9 min-w-[112px] rounded-lg px-4 text-xs font-black transition-colors ${
                           isActive
                             ? "bg-white text-slate-950 shadow-sm"
                             : "text-slate-500 hover:text-slate-800"
@@ -3435,14 +3485,14 @@ const TennisMatchApp = () => {
                   })}
                 </div>
 
-                <div className="relative w-full lg:w-[360px]">
+                <div className="relative w-full lg:w-[280px]">
                   <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     type="search"
                     placeholder="Search matches by location, format..."
                     value={matchSearch}
                     onChange={(e) => setMatchSearch(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                    className="h-10 w-full rounded-[10px] border border-slate-200 bg-white pl-11 pr-4 text-xs font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
                   />
                 </div>
               </div>
@@ -3450,11 +3500,11 @@ const TennisMatchApp = () => {
               <div className="space-y-4">
                 <div>
                   <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">When</p>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
+                  <div className="scrollbar-hide flex gap-1.5 overflow-x-auto pb-1">
                     <button
                       type="button"
                       onClick={() => setSelectedDayKey("")}
-                      className={`min-h-[52px] min-w-[112px] rounded-xl border px-4 text-center text-sm font-black transition-colors ${
+                      className={`min-h-[54px] min-w-[112px] rounded-[10px] border px-4 text-center text-sm font-black transition-colors ${
                         !selectedDayKey
                           ? "border-violet-500 bg-violet-500 text-white"
                           : "border-slate-200 bg-white text-slate-700"
@@ -3475,7 +3525,7 @@ const TennisMatchApp = () => {
                           type="button"
                           onClick={() => setSelectedDayKey(day.key)}
                           disabled={disabled}
-                          className={`relative min-h-[52px] min-w-[108px] rounded-xl border px-4 text-center text-sm font-black transition-colors ${
+                          className={`relative min-h-[54px] min-w-[64px] rounded-[10px] border px-3 text-center text-sm font-black transition-colors ${
                             isActive
                               ? "border-violet-500 bg-violet-500 text-white"
                               : disabled
@@ -3536,28 +3586,48 @@ const TennisMatchApp = () => {
               </div>
             </section>
 
-            {hasLocationFilter && displayedMatches.length === 0 && (
-              <div className="mb-6 rounded-2xl border border-dashed border-emerald-200 bg-white p-8 text-center text-sm font-semibold text-emerald-700">
-                No matches within {distanceFilter} miles of your location yet. Try expanding the distance filter or check back soon.
+            {displayedMatches.length === 0 ? (
+              <div className="rounded-[14px] border border-slate-200 bg-white px-6 py-20 text-center">
+                <Search className="mx-auto h-9 w-9 text-slate-300" />
+                <div className="mt-3 text-[15px] font-bold text-slate-700">
+                  {hasLocationFilter
+                    ? `No matches within ${distanceFilter} miles of your location yet.`
+                    : "No matches found"}
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-500">
+                  Try different filters or create one.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrentScreen("create")}
+                  className="mt-4 rounded-[10px] bg-violet-500 px-5 py-2.5 text-sm font-black text-white transition hover:bg-violet-600"
+                >
+                  Create a match
+                </button>
               </div>
-            )}
-
-            <div className="space-y-10">
+            ) : (
+            <div className="space-y-8">
               {groupedDisplayedMatches.map((group) => (
                 <section key={group.key} className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-base font-black uppercase tracking-[0.18em] text-slate-800">
-                      {group.label.split(",")[0]}
+                  <div className="flex items-baseline gap-3">
+                    <h3
+                      className={`text-[13px] font-black uppercase tracking-[0.16em] ${
+                        group.dayLabel === "TODAY" ? "text-violet-500" : "text-slate-700"
+                      }`}
+                    >
+                      {group.dayLabel}
                     </h3>
-                    <span className="text-sm font-black text-slate-400">
-                      {group.label.includes(",") ? `· ${group.label.split(",").slice(1).join(",").trim()}` : ""}
-                    </span>
+                    {group.dateLabel && (
+                      <span className="text-sm font-bold text-slate-400">
+                        · {group.dateLabel}
+                      </span>
+                    )}
                     <div className="h-px flex-1 bg-slate-200" />
                     <span className="text-xs font-black text-slate-400">
                       {group.matches.length} {group.matches.length === 1 ? "match" : "matches"}
                     </span>
                   </div>
-                  <div className="grid max-w-[980px] gap-4 md:grid-cols-2">
+                  <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
                     {group.matches.map((match) => (
                       <MatchCard key={match.id} match={match} />
                     ))}
@@ -3565,6 +3635,7 @@ const TennisMatchApp = () => {
                 </section>
               ))}
             </div>
+            )}
           </main>
         ) : (
           <div className="mx-auto max-w-7xl px-4 py-10 text-center">
@@ -3590,6 +3661,7 @@ const TennisMatchApp = () => {
       typeof match.status === "string" ? match.status.toLowerCase() : match.status;
     const isArchived = statusValue === "archived";
     const isPrivate = match.privacy === "private";
+    const isMine = isHosted || isJoined;
     const skillRangeLabel = match.skillLevel || "All levels";
     const genderLabel = match.gender || "Any";
     const playerCapacityLabel = Number.isFinite(match.playerLimit)
@@ -3602,17 +3674,15 @@ const TennisMatchApp = () => {
       }
       return playerCapacityLabel;
     })();
-    const timeLabel = (() => {
-      const date = getMatchStartDate(match);
-      if (!date) return "";
-      return date.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    })();
-    const distanceLabel = Number.isFinite(match.distanceMiles)
-      ? `${Number.isInteger(match.distanceMiles) ? match.distanceMiles : match.distanceMiles.toFixed(1)} mi`
-      : "";
+    const timeLabel = formatMatchTimeLabel(match);
+    const distanceLabel = formatDistanceLabel(match.distanceMiles);
+    const hostName =
+      match.hostName ||
+      match.hostProfile?.full_name ||
+      match.hostProfile?.fullName ||
+      match.hostProfile?.name ||
+      "Host";
+    const hostNtrp = match.hostNtrp || match.hostProfile?.usta_rating || "";
     const participantStack = uniqueActiveParticipants(match.participants || [])
       .slice(0, 5)
       .map((participant, index) => {
@@ -3634,25 +3704,40 @@ const TennisMatchApp = () => {
           name,
         };
       });
+    const extraParticipantCount = Math.max((Number(match.occupied) || 0) - participantStack.length, 0);
+    const genderSymbol =
+      genderLabel === "Men's"
+        ? "♂"
+        : genderLabel === "Women's"
+        ? "♀"
+        : genderLabel === "Mixed"
+        ? "⚥"
+        : "";
+    const rosterTone =
+      rosterStatusLabel === "Full"
+        ? "bg-emerald-100 text-emerald-700"
+        : rosterStatusLabel.startsWith("1 ") || rosterStatusLabel.startsWith("2 ")
+        ? "bg-amber-100 text-amber-600"
+        : "bg-slate-100 text-slate-500";
 
     return (
       <button
         type="button"
         onClick={() => handleViewDetails(match.id)}
-        className={`relative min-h-[158px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        className={`relative flex min-h-[188px] flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${
           isArchived ? "opacity-80" : ""
         }`}
       >
         <span
-          className={`absolute inset-y-0 left-0 w-1 ${
+          className={`absolute inset-y-0 left-0 w-[3px] ${
             isPrivate ? "bg-violet-500" : "bg-emerald-500"
           }`}
           aria-hidden="true"
         />
-        <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="mb-2.5 flex items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex h-6 items-center rounded-full px-3 text-xs font-black uppercase ${
+              className={`inline-flex h-5 items-center gap-1 rounded-full px-2.5 text-[10px] font-black uppercase tracking-wide ${
                 isPrivate
                   ? "bg-violet-100 text-violet-700"
                   : "bg-emerald-100 text-emerald-700"
@@ -3661,68 +3746,84 @@ const TennisMatchApp = () => {
               {isPrivate ? "Private" : "Open"}
             </span>
             {isHosted && (
-              <span className="inline-flex h-6 items-center rounded-full bg-violet-100 px-3 text-xs font-black uppercase text-violet-700">
+              <span className="inline-flex h-5 items-center rounded-full bg-violet-100 px-2.5 text-[10px] font-black uppercase tracking-wide text-violet-700">
                 Hosting
               </span>
             )}
             {isJoined && !isHosted && (
-              <span className="inline-flex h-6 items-center rounded-full bg-slate-100 px-3 text-xs font-black uppercase text-slate-700">
+              <span className="inline-flex h-5 items-center rounded-full bg-slate-100 px-2.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
                 Joined
               </span>
             )}
             {match.verifiedOnly && (
-              <span className="inline-flex h-6 items-center rounded-full bg-blue-100 px-3 text-xs font-black uppercase text-blue-700">
+              <span className="inline-flex h-5 items-center rounded-full bg-blue-100 px-2.5 text-[10px] font-black uppercase tracking-wide text-blue-700">
                 Verified
               </span>
             )}
           </div>
           {timeLabel && (
-            <span className="text-sm font-black text-slate-500">{timeLabel}</span>
+            <span className="shrink-0 text-[11px] font-black text-slate-500">{timeLabel}</span>
           )}
         </div>
 
         <div>
-          <p className="text-xl font-black leading-tight text-slate-950">
+          <p className="text-base font-black leading-tight tracking-[-0.01em] text-slate-950">
             {match.format || "Match"}
             <span className="font-semibold text-slate-500"> · {skillRangeLabel}</span>
             {genderLabel !== "Any" && (
-              <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 align-middle text-xs font-black text-slate-700">
+              <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 align-middle text-[11px] font-black text-slate-700">
+                {genderSymbol && `${genderSymbol} `}
                 {genderLabel}
               </span>
             )}
           </p>
-          <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-500">
-            <MapPin className="h-4 w-4" />
+          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <MapPin className="h-3.5 w-3.5" />
             <span className="truncate">{match.location || "Location TBA"}</span>
             {distanceLabel && <span>· {distanceLabel}</span>}
           </p>
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-4">
+        {!isMine && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-violet-500 to-violet-700 text-[10px] font-black text-white">
+              {getAvatarInitials(hostName).slice(0, 2)}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-slate-700">
+              Hosted by {hostName}
+            </span>
+            {hostNtrp && (
+              <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700">
+                NTRP {hostNtrp}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-auto flex items-center justify-between gap-4 pt-4">
           <div className="flex items-center gap-4">
             <div className="flex -space-x-2">
               {participantStack.map((player) => (
                 <span
                   key={player.key}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-violet-500 text-[11px] font-black text-white"
+                  className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-violet-500 to-violet-700 text-[9px] font-black text-white"
                   title={player.name}
                 >
                   {getAvatarInitials(player.name).slice(0, 2)}
                 </span>
               ))}
+              {extraParticipantCount > 0 && (
+                <span className="flex h-[26px] min-w-[26px] items-center justify-center rounded-full border-2 border-white bg-slate-100 px-1 text-[9px] font-black text-slate-700">
+                  +{extraParticipantCount}
+                </span>
+              )}
             </div>
-            <span className="text-sm font-semibold text-slate-500">
+            <span className="text-xs font-semibold text-slate-500">
               {playerCapacityLabel}
             </span>
           </div>
           <span
-            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
-              rosterStatusLabel === "Full"
-                ? "bg-slate-100 text-slate-500"
-                : rosterStatusLabel.startsWith("1 ")
-                ? "bg-amber-100 text-amber-600"
-                : "bg-slate-100 text-slate-500"
-            }`}
+            className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${rosterTone}`}
           >
             {rosterStatusLabel}
           </span>
