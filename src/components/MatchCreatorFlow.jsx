@@ -50,6 +50,7 @@ import {
   recordRecentPlayer as persistRecentPlayer,
   RECENT_PLAYERS_EVENT,
 } from "../utils/recentPlayers";
+import { getMatchGroup, listMatchGroups } from "../services/matchGroups";
 
 const HOURS_IN_MS = 60 * 60 * 1000;
 const MAX_PRIVATE_INVITES = 30;
@@ -276,6 +277,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [isFormatManuallySelected, setIsFormatManuallySelected] = useState(false);
   const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
   const [recentPlayers, setRecentPlayers] = useState(() => loadStoredRecentPlayers());
+  const [matchGroups, setMatchGroups] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
   useEffect(() => {
     const syncRecentLocations = () => {
@@ -316,6 +319,31 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       window.removeEventListener(RECENT_PLAYERS_EVENT, syncRecentPlayers);
     };
   }, [loadStoredRecentPlayers]);
+
+  useEffect(() => {
+    if (matchData.type !== "private") return;
+    let cancelled = false;
+    const loadGroups = async () => {
+      try {
+        setGroupsLoading(true);
+        const data = await listMatchGroups();
+        if (!cancelled) {
+          setMatchGroups(Array.isArray(data?.groups) ? data.groups : []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load match groups", error);
+          setMatchGroups([]);
+        }
+      } finally {
+        if (!cancelled) setGroupsLoading(false);
+      }
+    };
+    loadGroups();
+    return () => {
+      cancelled = true;
+    };
+  }, [matchData.type]);
 
   const currentUserAvatarUrl = useMemo(
     () => getAvatarUrlFromPlayer(currentUser),
@@ -454,6 +482,46 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     setSearchQuery("");
     const nextRecent = persistRecentPlayer(normalized);
     setRecentPlayers(nextRecent);
+  };
+
+  const handleInviteGroup = async (groupId) => {
+    if (!canInviteMore()) return;
+    try {
+      const group = await getMatchGroup(groupId);
+      const members = Array.isArray(group?.members) ? group.members : [];
+      const normalizedMembers = members
+        .map((member) =>
+          normalizePlayer({
+            ...member,
+            id: member.player_id ?? member.user_id ?? member.id,
+          }),
+        )
+        .filter((member) => Number.isFinite(member.id));
+      const existingIds = new Set(invitedPlayers.map((player) => Number(player.id)));
+      const remainingCapacity = Math.max(MAX_PRIVATE_INVITES - invitedCount, 0);
+      const toAdd = normalizedMembers
+        .filter((member) => {
+          if (currentUserId !== null && Number(member.id) === currentUserId) return false;
+          return !existingIds.has(Number(member.id));
+        })
+        .slice(0, remainingCapacity);
+      if (!toAdd.length) {
+        showToast("Everyone in that group is already selected.", "info");
+        return;
+      }
+      setMatchData((prev) => ({
+        ...prev,
+        invitedPlayers: [...(prev.invitedPlayers || []), ...toAdd],
+      }));
+      toAdd.forEach((player) => {
+        persistRecentPlayer(player);
+      });
+      setRecentPlayers(loadStoredRecentPlayers());
+      showToast(`Added ${toAdd.length} player${toAdd.length === 1 ? "" : "s"} from group.`);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "Failed to invite group", "error");
+    }
   };
 
   const handleRemovePlayer = (playerId) => {
@@ -1495,6 +1563,55 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               <p className="text-xs text-blue-600 mb-4">
                 🎯 Smart strategy: Invite more than {totalPlayers - 1} players to guarantee a full match!
               </p>
+              <div className="mb-4 rounded-xl border border-violet-100 bg-violet-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-violet-700">
+                      Your groups
+                    </h4>
+                    <p className="text-xs font-semibold text-violet-600">
+                      Add regular crews from your player profile.
+                    </p>
+                  </div>
+                  {groupsLoading && (
+                    <span className="text-xs font-semibold text-violet-500">
+                      Loading...
+                    </span>
+                  )}
+                </div>
+                {matchGroups.length === 0 && !groupsLoading ? (
+                  <p className="rounded-lg border border-dashed border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700">
+                    No groups yet. Create groups from My groups in your profile.
+                  </p>
+                ) : (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {matchGroups.slice(0, 4).map((group) => (
+                      <div
+                        key={group.id}
+                        className="rounded-lg border border-violet-100 bg-white p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-black text-gray-900">
+                              {group.name}
+                            </p>
+                            <p className="text-xs font-semibold text-gray-500">
+                              {group.member_count || 0} players
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleInviteGroup(group.id)}
+                            className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-black text-white hover:bg-violet-700"
+                          >
+                            Invite all
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               {quickAddPlayers.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">

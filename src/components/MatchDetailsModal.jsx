@@ -15,6 +15,7 @@ import {
   MessageCircle,
   Phone,
   Pencil,
+  Plus,
   Send,
   Share2,
   Sparkles,
@@ -26,10 +27,17 @@ import {
 import PlayerAvatar from "./PlayerAvatar";
 import {
   cancelMatch,
+  createMatchMessage,
+  deleteMatchNotification,
   getShareLink,
   joinMatch,
   leaveMatch,
+  listMatchMessages,
+  listMatchNotifications,
+  notifyMatchPlayers,
   removeParticipant,
+  searchPlayers,
+  sendMatchPlayerDirectMessage,
   updateMatch,
 } from "../services/matches";
 import { rejectInvite } from "../services/invites";
@@ -545,48 +553,6 @@ const getInviteStatus = (invite) => {
   return "";
 };
 
-const openSmsComposer = (recipients, onToast) => {
-  if (!Array.isArray(recipients) || recipients.length === 0) {
-    return;
-  }
-
-  try {
-    const ua =
-      typeof navigator !== "undefined" && navigator.userAgent
-        ? navigator.userAgent
-        : "";
-    const isAndroid = /Android/i.test(ua);
-    const isAppleMobile = /(iPad|iPhone|iPod)/i.test(ua);
-
-    let url = "sms:";
-    if (recipients.length > 0) {
-      if (isAndroid) {
-        const path = recipients.map((value) => encodeURIComponent(value)).join(";");
-        const addresses = encodeURIComponent(recipients.join(";"));
-        url = `smsto:${path}?addresses=${addresses}`;
-      } else if (isAppleMobile) {
-        const addresses = encodeURIComponent(recipients.join(","));
-        url = `sms:&addresses=${addresses}`;
-      } else {
-        const path = recipients.map((value) => encodeURIComponent(value)).join(",");
-        url = `sms:${path}`;
-      }
-    }
-
-    const toastMessage = isAppleMobile
-      ? "Opening Messages..."
-      : "Opening messages...";
-    onToast?.(toastMessage);
-
-    if (typeof window !== "undefined") {
-      window.location.href = url;
-    }
-  } catch (error) {
-    console.error(error);
-    onToast?.("We couldn't open messages", "error");
-  }
-};
-
 const ACCEPTED_INVITE_STATUSES = new Set([
   "accepted",
   "confirmed",
@@ -836,6 +802,16 @@ const MatchDetailsModal = ({
   const [decliningInvite, setDecliningInvite] = useState(false);
   const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
   const [showSavedLocations, setShowSavedLocations] = useState(false);
+  const [matchNotifications, setMatchNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notifySearch, setNotifySearch] = useState("");
+  const [notifyResults, setNotifyResults] = useState([]);
+  const [notifySelected, setNotifySelected] = useState([]);
+  const [notifySending, setNotifySending] = useState(false);
+  const [messageText, setMessageText] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageSending, setMessageSending] = useState(false);
   const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
   const shareCopyTimeoutRef = useRef(null);
 
@@ -1192,6 +1168,217 @@ const MatchDetailsModal = ({
     if (!canManageInvites || !matchId) return;
     onManageInvites(matchId);
   }, [canManageInvites, matchId, onManageInvites]);
+
+  const normalizePlayerId = useCallback(
+    (player) => Number(player?.user_id ?? player?.player_id ?? player?.playerId ?? player?.id),
+    [],
+  );
+
+  const loadMatchNotifications = useCallback(async () => {
+    if (!matchId || !isHost || !isOpenMatch) {
+      setMatchNotifications([]);
+      return;
+    }
+    try {
+      setNotificationsLoading(true);
+      const data = await listMatchNotifications(matchId);
+      setMatchNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
+    } catch (error) {
+      console.error("Failed to load match notifications", error);
+      setMatchNotifications([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [isHost, isOpenMatch, matchId]);
+
+  const loadMatchMessages = useCallback(async () => {
+    if (!matchId || !isJoined) {
+      setMessages([]);
+      return;
+    }
+    try {
+      setMessagesLoading(true);
+      const data = await listMatchMessages(matchId);
+      setMessages(Array.isArray(data?.messages) ? data.messages : []);
+    } catch (error) {
+      console.error("Failed to load match messages", error);
+      setMessages([]);
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, [isJoined, matchId]);
+
+  useEffect(() => {
+    loadMatchNotifications();
+  }, [loadMatchNotifications]);
+
+  useEffect(() => {
+    loadMatchMessages();
+  }, [loadMatchMessages]);
+
+  useEffect(() => {
+    if (!isOpen || !isHost || !isOpenMatch) return undefined;
+    const query = notifySearch.trim();
+    if (query.length < 2) {
+      setNotifyResults([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      try {
+        const data = await searchPlayers({ search: query, perPage: 8 });
+        if (cancelled) return;
+        const selectedIds = new Set(notifySelected.map(normalizePlayerId));
+        const notifiedIds = new Set(
+          matchNotifications.map((item) => Number(item.player_id)),
+        );
+        const participantIds = new Set(
+          participants.map((item) => Number(item.player_id ?? item.playerId)),
+        );
+        const players = (Array.isArray(data?.players) ? data.players : []).filter((player) => {
+          const id = normalizePlayerId(player);
+          return (
+            Number.isFinite(id) &&
+            !selectedIds.has(id) &&
+            !notifiedIds.has(id) &&
+            !participantIds.has(id)
+          );
+        });
+        setNotifyResults(players);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to search players to notify", error);
+          setNotifyResults([]);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [
+    isHost,
+    isOpen,
+    isOpenMatch,
+    matchNotifications,
+    normalizePlayerId,
+    notifySearch,
+    notifySelected,
+    participants,
+  ]);
+
+  const handleAddNotifyPlayer = useCallback(
+    (player) => {
+      const id = normalizePlayerId(player);
+      if (!Number.isFinite(id)) return;
+      setNotifySelected((prev) => {
+        if (prev.some((item) => normalizePlayerId(item) === id)) return prev;
+        return [...prev, player];
+      });
+      setNotifySearch("");
+      setNotifyResults([]);
+    },
+    [normalizePlayerId],
+  );
+
+  const handleSendNotifications = useCallback(async () => {
+    if (!matchId || notifySelected.length === 0) return;
+    const playerIds = notifySelected
+      .map(normalizePlayerId)
+      .filter((id) => Number.isFinite(id));
+    if (!playerIds.length) return;
+    try {
+      setNotifySending(true);
+      const response = await notifyMatchPlayers(matchId, { playerIds });
+      setNotifySelected([]);
+      setNotifySearch("");
+      setNotifyResults([]);
+      setMatchNotifications(Array.isArray(response?.notifications) ? response.notifications : []);
+      onToast?.(response?.message || `Notified ${playerIds.length} player(s).`);
+      onMatchRefresh?.();
+    } catch (error) {
+      console.error(error);
+      onToast?.(
+        error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          "Failed to notify players",
+        "error",
+      );
+    } finally {
+      setNotifySending(false);
+    }
+  }, [matchId, normalizePlayerId, notifySelected, onMatchRefresh, onToast]);
+
+  const handleDeleteNotification = useCallback(
+    async (notificationId) => {
+      if (!matchId || !notificationId) return;
+      try {
+        await deleteMatchNotification(matchId, notificationId);
+        setMatchNotifications((prev) =>
+          prev.filter((item) => Number(item.id) !== Number(notificationId)),
+        );
+      } catch (error) {
+        console.error(error);
+        onToast?.("Failed to remove notification", "error");
+      }
+    },
+    [matchId, onToast],
+  );
+
+  const handleSendGroupMessage = useCallback(async () => {
+    const body = messageText.trim();
+    if (!matchId || !body) return;
+    try {
+      setMessageSending(true);
+      const response = await createMatchMessage(matchId, { body });
+      setMessageText("");
+      if (response?.message) {
+        setMessages((prev) => [...prev, response.message]);
+      } else {
+        await loadMatchMessages();
+      }
+      onToast?.("Message posted.");
+    } catch (error) {
+      console.error(error);
+      onToast?.(
+        error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          "Failed to send message",
+        "error",
+      );
+    } finally {
+      setMessageSending(false);
+    }
+  }, [loadMatchMessages, matchId, messageText, onToast]);
+
+  const handleSendDm = useCallback(
+    async (player) => {
+      if (!matchId || !player?.playerId) return;
+      const body = window.prompt(`Message ${player.name}`);
+      if (!body || !body.trim()) return;
+      try {
+        await sendMatchPlayerDirectMessage(matchId, player.playerId, {
+          body: body.trim(),
+        });
+        onToast?.(`Message sent to ${player.name}.`);
+        loadMatchMessages();
+      } catch (error) {
+        console.error(error);
+        onToast?.(
+          error?.response?.data?.message ||
+            error?.response?.data?.error ||
+            error?.message ||
+            "Failed to send direct message",
+          "error",
+        );
+      }
+    },
+    [loadMatchMessages, matchId, onToast],
+  );
 
   useEffect(() => {
     if ((!isHost || isArchived || isCancelled) && isEditing) {
@@ -1775,31 +1962,10 @@ const MatchDetailsModal = ({
     return Math.max(remainingSpots, 0);
   }, [remainingSpots]);
 
-  const participantPhoneRecipients = useMemo(() => {
-    if (!isHost) return [];
-    const seen = new Set();
-    return committedParticipants.reduce((numbers, participant) => {
-      if (!participant) return numbers;
-      if (match?.host_id && participantMatchesMember(participant, match.host_id)) {
-        return numbers;
-      }
-      const phoneRaw = getParticipantPhone(participant);
-      const normalized = normalizePhoneValue(phoneRaw);
-      if (!normalized || seen.has(normalized)) {
-        return numbers;
-      }
-      seen.add(normalized);
-      numbers.push(normalized);
-      return numbers;
-    }, []);
-  }, [committedParticipants, isHost, match?.host_id]);
-
-  const canMessageParticipants = participantPhoneRecipients.length > 0;
+  const canMessageParticipants = committedParticipants.length > 1;
   const messageParticipantsDescription = canMessageParticipants
-    ? participantPhoneRecipients.length === 1
-      ? "Start a group text with the confirmed player."
-      : "Start a group text with your confirmed players."
-    : "Add player phone numbers to enable group texts.";
+    ? "Post a group update to confirmed players."
+    : "Add another confirmed player to enable group messages.";
 
   const pendingInvitesList = useMemo(() => {
     if (pendingInvitees.length === 0) return [];
@@ -2152,6 +2318,12 @@ const MatchDetailsModal = ({
           typeof onViewPlayerProfile === "function" || Boolean(player.profileUrl);
         const canRemove =
           isHost && !player.isHost && !isArchived && !isCancelled;
+        const canDm =
+          isJoined &&
+          !player.isHost &&
+          !idsMatch(player.playerId, currentUser?.id) &&
+          !isArchived &&
+          !isCancelled;
         const phoneLink =
           isHost && player.phoneDisplay && player.phoneHref ? (
             <a
@@ -2202,9 +2374,19 @@ const MatchDetailsModal = ({
                 )}
               </div>
             </button>
-            {(phoneLink || canRemove) && (
+            {(phoneLink || canDm || canRemove) && (
               <div className="flex items-center gap-2 sm:ml-4">
                 {phoneLink}
+                {canDm && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendDm(player)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-violet-500 transition-colors hover:bg-violet-50"
+                    aria-label={`Message ${player.name}`}
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </button>
+                )}
                 {canRemove && (
                   <button
                     type="button"
@@ -2713,27 +2895,185 @@ const MatchDetailsModal = ({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-black text-emerald-900">
-                      Message participants
+                      Message group
                     </p>
                     <p className="text-xs font-semibold text-emerald-700">
-                      {messageParticipantsDescription}
+                      Post a match-scoped update for everyone confirmed on this roster.
                     </p>
                   </div>
+                </div>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={messageText}
+                    onChange={(event) => setMessageText(event.target.value)}
+                    placeholder={canMessageParticipants ? "Write a group update..." : messageParticipantsDescription}
+                    disabled={!canMessageParticipants || messageSending}
+                    className="min-h-10 flex-1 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100 disabled:opacity-60"
+                  />
                   <button
                     type="button"
-                    onClick={() =>
-                      openSmsComposer(participantPhoneRecipients, onToast)
-                    }
-                    disabled={!canMessageParticipants}
+                    onClick={handleSendGroupMessage}
+                    disabled={!canMessageParticipants || !messageText.trim() || messageSending}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-white shadow-sm transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <MessageCircle className="h-4 w-4" />
-                    Message group
+                    {messageSending ? "Sending" : "Send"}
                   </button>
                 </div>
               </div>
             )}
           </section>
+
+          {isHost && isOpenMatch && !isArchived && !isCancelled && (
+            <section className="space-y-3 rounded-2xl border border-violet-100 bg-violet-50 p-4">
+              <div className="flex items-center gap-2">
+                <UserPlus className="h-4 w-4 text-violet-600" />
+                <p className="text-sm font-black text-violet-900">Notify players</p>
+              </div>
+              <p className="text-xs font-semibold text-violet-700">
+                Send a heads-up SMS. This does not reserve a spot.
+              </p>
+              <div className="relative">
+                <input
+                  value={notifySearch}
+                  onChange={(event) => setNotifySearch(event.target.value)}
+                  placeholder="Search players to notify"
+                  className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                />
+                {notifyResults.length > 0 && (
+                  <div className="absolute z-10 mt-2 max-h-56 w-full overflow-y-auto rounded-xl border border-violet-100 bg-white shadow-xl">
+                    {notifyResults.map((player) => {
+                      const id = Number(player.user_id ?? player.id);
+                      const name = player.full_name || player.name || player.email || `Player ${id}`;
+                      return (
+                        <button
+                          key={id || name}
+                          type="button"
+                          onClick={() => handleAddNotifyPlayer(player)}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-violet-50"
+                        >
+                          <span>{name}</span>
+                          <Plus className="h-4 w-4 text-violet-500" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {notifySelected.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {notifySelected.map((player) => {
+                    const id = Number(player.user_id ?? player.id);
+                    const name = player.full_name || player.name || player.email || `Player ${id}`;
+                    return (
+                      <span
+                        key={id || name}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-bold text-violet-700"
+                      >
+                        {name}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNotifySelected((prev) =>
+                              prev.filter((item) => normalizePlayerId(item) !== id),
+                            )
+                          }
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleSendNotifications}
+                disabled={notifySelected.length === 0 || notifySending}
+                className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Send className="h-4 w-4" />
+                {notifySending ? "Sending" : `Send to ${notifySelected.length || 0}`}
+              </button>
+
+              <div className="space-y-2">
+                <p className="text-xs font-black uppercase tracking-wide text-violet-700">
+                  Notified {matchNotifications.length}
+                </p>
+                {notificationsLoading ? (
+                  <p className="text-xs font-semibold text-violet-700">Loading notified players...</p>
+                ) : matchNotifications.length === 0 ? (
+                  <p className="text-xs font-semibold text-violet-700">No heads-up notifications sent yet.</p>
+                ) : (
+                  matchNotifications.map((notification) => {
+                    const profile = notification.profile || {};
+                    const name = profile.full_name || `Player ${notification.player_id}`;
+                    return (
+                      <div
+                        key={notification.id}
+                        className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-sm font-black text-gray-900">{name}</p>
+                          <p className="text-xs font-semibold text-gray-500">
+                            {notification.status || "delivered"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteNotification(notification.id)}
+                          className="rounded-full p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                          aria-label={`Remove notification for ${name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+          )}
+
+          {isJoined && (
+            <section className="space-y-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-slate-600" />
+                  <p className="text-sm font-black text-gray-900">Match messages</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadMatchMessages}
+                  className="text-xs font-black text-violet-600"
+                >
+                  Refresh
+                </button>
+              </div>
+              {messagesLoading ? (
+                <p className="text-sm font-semibold text-gray-500">Loading messages...</p>
+              ) : messages.length === 0 ? (
+                <p className="text-sm font-semibold text-gray-500">No messages yet.</p>
+              ) : (
+                <div className="max-h-64 space-y-2 overflow-y-auto">
+                  {messages.map((message) => {
+                    const sender = message.sender || {};
+                    return (
+                      <div key={message.id} className="rounded-xl bg-slate-50 px-3 py-2">
+                        <p className="text-xs font-black text-slate-500">
+                          {sender.full_name || sender.name || `Player ${message.sender_id}`}
+                          {message.recipient_id ? " · Direct message" : ""}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                          {message.body}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
           {isHost && matchPrivacy === "private" && pendingInvitesList.length > 0 && (
             renderPendingInvites()

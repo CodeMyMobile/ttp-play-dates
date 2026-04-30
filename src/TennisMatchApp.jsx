@@ -2095,7 +2095,24 @@ const TennisMatchApp = () => {
           includeHidden: true,
         });
       }
-      const rawMatches = Array.isArray(data?.matches) ? data.matches : [];
+      const attentionApiItems = Array.isArray(data?.items) ? data.items : null;
+      const rawMatches = attentionApiItems
+        ? attentionApiItems.map((item) => ({
+            ...(item?.match || {}),
+            alerts: {
+              lowOccupancy: {
+                active: true,
+                spotsNeeded: item?.alert?.spotsNeeded,
+                rosterCount: item?.alert?.confirmed,
+                playerLimit: item?.alert?.limit,
+                hoursUntilStart: item?.alert?.hoursUntilStart,
+                startTime: item?.match?.start_date_time || null,
+              },
+            },
+          }))
+        : Array.isArray(data?.matches)
+        ? data.matches
+        : [];
       const now = Date.now();
       const memberIds = memberIdentityIds;
 
@@ -2122,7 +2139,11 @@ const TennisMatchApp = () => {
             hoursUntilStartRaw >= 0 &&
             hoursUntilStartRaw <= 48;
 
-          if (!isHost || status !== "upcoming" || !isUpcomingSoon) {
+          if (
+            !isHost ||
+            !["upcoming", "open"].includes(status) ||
+            !isUpcomingSoon
+          ) {
             return null;
           }
 
@@ -2148,8 +2169,12 @@ const TennisMatchApp = () => {
             Number.isFinite(confirmedFromCapacity) && confirmedFromCapacity >= 0
               ? confirmedFromCapacity
               : activeParticipants.length;
+          const alertInfo = match?.alerts?.lowOccupancy || {};
+          const openFromAlert = Number(alertInfo.spotsNeeded);
           const spotsNeeded =
-            Number.isFinite(openFromCapacity) && openFromCapacity >= 0
+            Number.isFinite(openFromAlert) && openFromAlert >= 0
+              ? openFromAlert
+              : Number.isFinite(openFromCapacity) && openFromCapacity >= 0
               ? openFromCapacity
               : playerLimit !== null
               ? Math.max(playerLimit - rosterCount, 0)
@@ -2188,14 +2213,14 @@ const TennisMatchApp = () => {
             alerts: {
               lowOccupancy: {
                 active: true,
-                spotsNeeded,
-                rosterCount,
-                playerLimit,
-                hoursUntilStart:
-                  hoursUntilStartRaw !== null
+                    spotsNeeded,
+                    rosterCount: alertInfo.rosterCount ?? rosterCount,
+                    playerLimit: alertInfo.playerLimit ?? playerLimit,
+                    hoursUntilStart:
+                  alertInfo.hoursUntilStart ?? (hoursUntilStartRaw !== null
                     ? Math.max(Math.round(hoursUntilStartRaw * 10) / 10, 0)
-                    : null,
-                startTime: startDate ? startDate.toISOString() : null,
+                    : null),
+                startTime: alertInfo.startTime || (startDate ? startDate.toISOString() : null),
               },
             },
           };

@@ -275,7 +275,7 @@ export const listAttentionMatches = ({
     params.withinHours = normalizedWithinHours;
     params.within_hours = normalizedWithinHours;
   }
-  return unwrap(api(`/matches/attention${qs(params)}`)).then(normalizeMatchesResponse);
+  return unwrap(api(`/matches/attention${qs(params)}`));
 };
 
 export const cancelMatch = async (id) => {
