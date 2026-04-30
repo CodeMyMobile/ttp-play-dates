@@ -41,3 +41,18 @@ export const deleteMatchGroup = (id) =>
       method: "DELETE",
     }),
   );
+
+export const listMatchGroupPlayers = ({
+  search = "",
+  page = 1,
+  perPage = 12,
+} = {}) =>
+  unwrap(
+    api(
+      `/player/match-groups/players?${new URLSearchParams({
+        ...(search ? { search } : {}),
+        page: String(page),
+        perPage: String(perPage),
+      }).toString()}`,
+    ),
+  );

@@ -2572,6 +2572,17 @@ const TennisMatchApp = () => {
           notificationSummaryRetryAtRef.current = 0;
           setNotificationsSupported(true);
           setHomeFeedError("");
+        } else if (statusCode === 404) {
+          const fallbackResult = await loadInviteSummary();
+          if (!fallbackResult.success) {
+            setHomeFeedNotifications([]);
+            setHomeFeedError("");
+          } else {
+            setHomeFeedError("");
+          }
+          notificationSummaryErrorLoggedRef.current = false;
+          setNotificationsSupported(false);
+          notificationSummaryRetryAtRef.current = Date.now() + 60 * 60 * 1000;
         } else {
           const fallbackResult = await loadInviteSummary();
           if (!fallbackResult.success) {
@@ -7233,6 +7244,7 @@ const TennisMatchApp = () => {
           )}
           {currentScreen === "group-detail" && (
             <GroupDetailPage
+              key={deriveGroupIdFromPath(location.pathname) || "new"}
               groupId={deriveGroupIdFromPath(location.pathname) || "new"}
               onBack={goToGroups}
               onSaved={goToGroups}
