@@ -1019,6 +1019,7 @@ const TennisMatchApp = () => {
     const stored = Number(window.localStorage.getItem("matchDistanceFilter"));
     return Number.isFinite(stored) && stored > 0 ? stored : 5;
   });
+  const [recentLocations, setRecentLocations] = useState(() => loadStoredLocations());
   const totalSelectedInvitees = useMemo(() => {
     const normalizedExistingIds =
       existingPlayerIds instanceof Set
@@ -1172,6 +1173,26 @@ const TennisMatchApp = () => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("matchDistanceFilter", String(distanceFilter));
   }, [distanceFilter]);
+
+  useEffect(() => {
+    const syncRecentLocations = () => {
+      setRecentLocations(loadStoredLocations());
+    };
+
+    syncRecentLocations();
+
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    window.addEventListener("storage", syncRecentLocations);
+    window.addEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+
+    return () => {
+      window.removeEventListener("storage", syncRecentLocations);
+      window.removeEventListener(RECENT_LOCATIONS_EVENT, syncRecentLocations);
+    };
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -1624,6 +1645,16 @@ const TennisMatchApp = () => {
     autoDetectAttemptedRef.current = true;
     detectCurrentLocation();
   }, [currentUser, detectCurrentLocation, locationFilter]);
+
+  const handleUseBrowseLocation = useCallback((entry) => {
+    if (!entry?.label) return;
+    setLocationFilter({
+      label: entry.label,
+      lat: typeof entry.latitude === "number" ? entry.latitude : null,
+      lng: typeof entry.longitude === "number" ? entry.longitude : null,
+    });
+    setMatchPage(1);
+  }, []);
 
   // Match loading helpers
   const fetchMatches = useCallback(async () => {
@@ -3519,7 +3550,7 @@ const TennisMatchApp = () => {
             )}
 
             <section className="mb-8 rounded-[20px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-8 sm:py-7">
-              <div className="mb-5 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="mb-5 flex flex-col gap-5">
                 <div className="inline-flex rounded-[18px] bg-slate-100 p-1.5 shadow-inner">
                   {DISCOVERY_SCOPE_FILTERS.map((filter) => {
                     const isActive = activeFilter === filter.id;
@@ -3543,18 +3574,94 @@ const TennisMatchApp = () => {
                   })}
                 </div>
 
-                <div className="relative w-full lg:w-[430px]">
-                  <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="search"
-                    placeholder="Search matches by location, format..."
-                    value={matchSearch}
-                    onChange={(e) => {
-                      setMatchSearch(e.target.value);
-                      setMatchPage(1);
-                    }}
-                    className="h-14 w-full rounded-[18px] border border-slate-200 bg-white pl-14 pr-5 text-[13px] font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
-                  />
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_430px]">
+                  <div>
+                    <p className="mb-3 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                      Location
+                    </p>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-5 top-1/2 z-[1] h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <Autocomplete
+                        apiKey={import.meta.env.VITE_GOOGLE_API_KEY}
+                        value={locationFilter?.label || ""}
+                        onChange={(e) => {
+                          setLocationFilter({
+                            label: e.target.value,
+                            lat: null,
+                            lng: null,
+                          });
+                          setMatchPage(1);
+                        }}
+                        onPlaceSelected={(place) => {
+                          const placeName =
+                            typeof place?.name === "string" ? place.name.trim() : "";
+                          const formattedAddress =
+                            typeof place?.formatted_address === "string"
+                              ? place.formatted_address.trim()
+                              : "";
+                          const locationLabel =
+                            placeName || formattedAddress || locationFilter?.label || "";
+                          const lat = place.geometry?.location?.lat?.();
+                          const lng = place.geometry?.location?.lng?.();
+                          setLocationFilter({
+                            label: locationLabel,
+                            lat: typeof lat === "number" ? lat : null,
+                            lng: typeof lng === "number" ? lng : null,
+                          });
+                          setMatchPage(1);
+                        }}
+                        options={{
+                          types: ["establishment"],
+                          fields: ["formatted_address", "geometry", "name"],
+                        }}
+                        className="h-14 w-full rounded-[18px] border border-slate-200 bg-white pl-14 pr-5 text-[13px] font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                        placeholder="e.g., Oceanside Tennis Center"
+                      />
+                    </div>
+                    {recentLocations.length > 0 && (
+                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                        {recentLocations.slice(0, 4).map((entry) => {
+                          const isActive =
+                            (locationFilter?.label || "").trim().toLowerCase() ===
+                            entry.label.toLowerCase();
+                          return (
+                            <button
+                              key={entry.label}
+                              type="button"
+                              onClick={() => handleUseBrowseLocation(entry)}
+                              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-2 text-xs font-black transition-colors ${
+                                isActive
+                                  ? "border-violet-500 bg-violet-500 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-violet-200 hover:text-violet-700"
+                              }`}
+                            >
+                              <MapPin className="h-3.5 w-3.5" />
+                              {entry.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-3 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                      Search
+                    </p>
+                    <div className="relative w-full">
+                      <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="search"
+                        placeholder="Search matches by format or notes..."
+                        value={matchSearch}
+                        onChange={(e) => {
+                          setMatchSearch(e.target.value);
+                          setMatchPage(1);
+                        }}
+                        className="h-14 w-full rounded-[18px] border border-slate-200 bg-white pl-14 pr-5 text-[13px] font-semibold text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
