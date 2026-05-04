@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Bell,
   Calendar,
   Check,
   Clock,
@@ -29,6 +30,7 @@ import {
   cancelMatch,
   createMatch,
   getShareLink,
+  notifyMatchPlayers,
   searchPlayers,
   sendInvites,
   updateMatch,
@@ -94,6 +96,7 @@ const initialMatchData = () => {
     notes: "",
     invitedPlayers: [],
     manualInvitees: [],
+    notifyPlayers: [],
     listingVisibility: "listed",
   };
 };
@@ -279,6 +282,9 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   const [recentPlayers, setRecentPlayers] = useState(() => loadStoredRecentPlayers());
   const [matchGroups, setMatchGroups] = useState([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  const [notifySearch, setNotifySearch] = useState("");
+  const [notifyResults, setNotifyResults] = useState([]);
+  const [notifyLoading, setNotifyLoading] = useState(false);
 
   useEffect(() => {
     const syncRecentLocations = () => {
@@ -321,7 +327,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
   }, [loadStoredRecentPlayers]);
 
   useEffect(() => {
-    if (matchData.type !== "private") return;
+    if (matchData.type !== "private" && matchData.type !== "open") return;
     let cancelled = false;
     const loadGroups = async () => {
       try {
@@ -382,6 +388,11 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     [matchData.invitedPlayers]
   );
 
+  const notifyPlayers = useMemo(
+    () => matchData.notifyPlayers || [],
+    [matchData.notifyPlayers],
+  );
+
   const manualInvitees = useMemo(
     () => matchData.manualInvitees || [],
     [matchData.manualInvitees]
@@ -427,6 +438,16 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         return true;
       }),
     [recentPlayers, currentUserId],
+  );
+
+  const quickNotifyPlayers = useMemo(
+    () =>
+      quickAddPlayers.filter((player) => {
+        const normalizedId = Number(player?.id);
+        if (!Number.isFinite(normalizedId)) return false;
+        return !notifyPlayers.some((invitee) => invitee.id === normalizedId);
+      }),
+    [notifyPlayers, quickAddPlayers],
   );
 
   const invitedCount = combinedInvitees.length;
@@ -483,6 +504,91 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
     const nextRecent = persistRecentPlayer(normalized);
     setRecentPlayers(nextRecent);
   };
+
+  const handleAddNotifyPlayer = useCallback((player) => {
+    const normalized = normalizePlayer(player);
+    if (!Number.isFinite(normalized.id)) return;
+    setMatchData((prev) => {
+      const existing = prev.notifyPlayers || [];
+      if (existing.some((item) => item.id === normalized.id)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        notifyPlayers: [...existing, normalized],
+      };
+    });
+    setNotifySearch("");
+    setNotifyResults([]);
+    const nextRecent = persistRecentPlayer(normalized);
+    setRecentPlayers(nextRecent);
+  }, []);
+
+  const handleRemoveNotifyPlayer = useCallback((playerId) => {
+    setMatchData((prev) => ({
+      ...prev,
+      notifyPlayers: (prev.notifyPlayers || []).filter((player) => player.id !== playerId),
+    }));
+  }, []);
+
+  const getGroupNotifyCount = useCallback(
+    (group) => {
+      const memberIds = Array.isArray(group?.members)
+        ? group.members
+            .map((member) => Number(member?.player_id ?? member?.user_id ?? member?.id))
+            .filter((id) => Number.isFinite(id))
+        : [];
+      if (memberIds.length === 0) return 0;
+      const selectedIds = new Set(notifyPlayers.map((player) => Number(player.id)));
+      return memberIds.filter((id) => selectedIds.has(id)).length;
+    },
+    [notifyPlayers],
+  );
+
+  const handleNotifyGroup = useCallback(
+    async (groupId) => {
+      try {
+        const group = await getMatchGroup(groupId);
+        const members = Array.isArray(group?.members) ? group.members : [];
+        const existingIds = new Set(notifyPlayers.map((player) => Number(player.id)));
+        const toAdd = members
+          .map((member) =>
+            normalizePlayer({
+              ...member,
+              id: member.player_id ?? member.user_id ?? member.id,
+            }),
+          )
+          .filter((member) => {
+            if (!Number.isFinite(member.id)) return false;
+            if (currentUserId !== null && Number(member.id) === currentUserId) return false;
+            return !existingIds.has(Number(member.id));
+          })
+          .map((member) => ({
+            ...member,
+            fromGroupName: group?.name || "",
+          }));
+
+        if (!toAdd.length) {
+          showToast("Everyone in that group is already selected.", "info");
+          return;
+        }
+
+        setMatchData((prev) => ({
+          ...prev,
+          notifyPlayers: [...(prev.notifyPlayers || []), ...toAdd],
+        }));
+        toAdd.forEach((player) => {
+          persistRecentPlayer(player);
+        });
+        setRecentPlayers(loadStoredRecentPlayers());
+        showToast(`Added ${toAdd.length} player${toAdd.length === 1 ? "" : "s"} to notify.`);
+      } catch (error) {
+        console.error(error);
+        showToast(error.message || "Failed to load group players", "error");
+      }
+    },
+    [currentUserId, notifyPlayers, showToast],
+  );
 
   const handleInviteGroup = async (groupId) => {
     if (!canInviteMore()) return;
@@ -676,6 +782,15 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
       const created = result?.match || result;
       const matchId = created?.id || created?.match_id;
       if (!matchId) throw new Error("Match created but no ID returned");
+
+      if (matchData.type === "open" && notifyPlayers.length > 0) {
+        const playerIds = notifyPlayers
+          .map((player) => Number(player.id))
+          .filter((id) => Number.isFinite(id));
+        if (playerIds.length) {
+          await notifyMatchPlayers(matchId, { playerIds });
+        }
+      }
 
       if (matchData.type === "private" && invitedCount > 0) {
         const ids = invitedPlayers
@@ -910,6 +1025,53 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
 
     return () => clearTimeout(handler);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (currentStep !== 2 || matchData.type !== "open") {
+      setNotifyResults([]);
+      setNotifyLoading(false);
+      return;
+    }
+
+    const query = notifySearch.trim();
+    if (query.length < 2) {
+      setNotifyResults([]);
+      setNotifyLoading(false);
+      return;
+    }
+
+    let alive = true;
+    setNotifyLoading(true);
+    const handler = setTimeout(() => {
+      searchPlayers({ search: query, page: 1, perPage: 8 })
+        .then((data) => {
+          if (!alive) return;
+          const selectedIds = new Set(notifyPlayers.map((player) => Number(player.id)));
+          const players = (data.players || [])
+            .map(normalizePlayer)
+            .filter((player) => {
+              const normalizedId = Number(player.id);
+              if (!Number.isFinite(normalizedId)) return false;
+              if (currentUserId !== null && normalizedId === currentUserId) return false;
+              return !selectedIds.has(normalizedId);
+            });
+          setNotifyResults(players);
+        })
+        .catch((error) => {
+          console.error(error);
+          if (!alive) return;
+          setNotifyResults([]);
+        })
+        .finally(() => {
+          if (alive) setNotifyLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      alive = false;
+      clearTimeout(handler);
+    };
+  }, [currentStep, currentUserId, matchData.type, notifyPlayers, notifySearch]);
   return (
     <div className="w-full max-w-md mx-auto bg-white min-h-screen">
       {toast && (
@@ -1385,6 +1547,238 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
               rows={4}
               className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
             />
+          </div>
+
+          <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-600 text-white">
+                <Bell size={18} />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-gray-900">
+                  Notify specific players
+                </h3>
+                <p className="mt-1 text-sm text-violet-700">
+                  Send a heads-up to players or whole groups. They can still join through the public feed, and no spot is reserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-4">
+                <div className="rounded-xl border border-violet-100 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-violet-700">
+                        From your groups
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        Add your regular crews in one tap.
+                      </p>
+                    </div>
+                    {groupsLoading && (
+                      <span className="text-xs font-semibold text-violet-500">Loading...</span>
+                    )}
+                  </div>
+                  {matchGroups.length === 0 && !groupsLoading ? (
+                    <p className="rounded-lg border border-dashed border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700">
+                      No groups yet. Create groups from My groups in your profile.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {matchGroups.slice(0, 4).map((group) => {
+                        const addedCount = getGroupNotifyCount(group);
+                        const memberCount = group.member_count || group.members?.length || 0;
+                        const allAdded = memberCount > 0 && addedCount >= memberCount;
+                        return (
+                          <div
+                            key={group.id}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-violet-100 px-3 py-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-gray-900">
+                                {group.name}
+                              </p>
+                              <p className="text-xs font-medium text-gray-500">
+                                {memberCount} players
+                                {addedCount > 0 ? ` • ${addedCount} added` : ""}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleNotifyGroup(group.id)}
+                              disabled={allAdded}
+                              className={`rounded-lg px-3 py-1.5 text-xs font-black transition-colors ${
+                                allAdded
+                                  ? "cursor-not-allowed bg-gray-100 text-gray-400"
+                                  : "bg-violet-600 text-white hover:bg-violet-700"
+                              }`}
+                            >
+                              {allAdded ? "Added" : "Notify all"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {quickNotifyPlayers.length > 0 && (
+                  <div className="rounded-xl border border-violet-100 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-violet-700">
+                          Suggested players
+                        </h4>
+                        <p className="text-xs text-gray-500">
+                          Based on your recent teammates.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {quickNotifyPlayers.slice(0, 4).map((player) => (
+                        <button
+                          key={`notify-recent-${player.id}`}
+                          type="button"
+                          onClick={() => handleAddNotifyPlayer(player)}
+                          className="flex w-full items-center gap-3 rounded-xl border border-violet-100 px-3 py-3 text-left transition-colors hover:bg-violet-50"
+                        >
+                          <PlayerAvatar
+                            name={player.name}
+                            imageUrl={player.avatarUrl}
+                            fallback={player.avatar}
+                            variant="violet"
+                            size="sm"
+                            showBadge={false}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-gray-900">
+                              {player.name}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {[player.ntrp ? `NTRP ${player.ntrp}` : "", player.lastPlayed ? `Played ${player.lastPlayed}` : "Recently active"]
+                                .filter(Boolean)
+                                .join(" • ")}
+                            </div>
+                          </div>
+                          <Plus size={16} className="text-violet-500" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-violet-100 bg-white p-4">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-violet-700">
+                    Search players
+                  </label>
+                  <div className="relative">
+                    <Search
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                    <input
+                      type="text"
+                      value={notifySearch}
+                      onChange={(e) => setNotifySearch(e.target.value)}
+                      placeholder="Search by name or email..."
+                      className="w-full rounded-xl border border-violet-100 py-3 pl-10 pr-3 text-sm font-medium text-gray-700 focus:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100"
+                    />
+                  </div>
+                  {notifySearch.trim().length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {notifyLoading && (
+                        <div className="rounded-xl bg-violet-50 px-3 py-3 text-sm font-medium text-violet-700">
+                          Searching...
+                        </div>
+                      )}
+                      {!notifyLoading && notifyResults.length > 0 && (
+                        <div className="space-y-2">
+                          {notifyResults.map((player) => (
+                            <button
+                              key={`notify-search-${player.id}`}
+                              type="button"
+                              onClick={() => handleAddNotifyPlayer(player)}
+                              className="flex w-full items-center gap-3 rounded-xl border border-violet-100 px-3 py-3 text-left transition-colors hover:bg-violet-50"
+                            >
+                              <PlayerAvatar
+                                name={player.name}
+                                imageUrl={player.avatarUrl}
+                                fallback={player.avatar}
+                                variant="sky"
+                                size="sm"
+                                showBadge={false}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold text-gray-900">
+                                  {player.name}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {[player.ntrp ? `NTRP ${player.ntrp}` : "", player.lastPlayed ? `Played ${player.lastPlayed}` : "Recently active"]
+                                    .filter(Boolean)
+                                    .join(" • ")}
+                                </div>
+                              </div>
+                              <Plus size={16} className="text-violet-500" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {!notifyLoading &&
+                        notifySearch.trim().length >= 2 &&
+                        notifyResults.length === 0 && (
+                          <div className="rounded-xl bg-violet-50 px-3 py-3 text-sm font-medium text-violet-700">
+                            No matching players found.
+                          </div>
+                        )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-violet-100 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-violet-700">
+                      Will notify
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      Players selected for the heads-up message.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-black text-violet-700">
+                    {notifyPlayers.length}
+                  </span>
+                </div>
+                {notifyPlayers.length === 0 ? (
+                  <div className="rounded-xl bg-violet-50 px-4 py-8 text-center text-sm font-medium text-violet-700">
+                    No one selected yet. Add a group or pick players above.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {notifyPlayers.map((player) => (
+                      <span
+                        key={`notify-selected-${player.id}`}
+                        className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700"
+                      >
+                        <span className="max-w-[180px] truncate">{player.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveNotifyPlayer(player.id)}
+                          className="rounded-full text-violet-500 hover:text-violet-700"
+                          aria-label={`Remove ${player.name}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-4 text-xs font-medium leading-5 text-gray-500">
+                  Notified players get a heads-up message with a one-tap join link. This does not reserve a spot.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
