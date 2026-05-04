@@ -1,7 +1,13 @@
-import { useEffect, useState } from "react";
-import { X, Loader2, UserRound, Info } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, Loader2, UserRound, Info, Users, Plus, Trash2 } from "lucide-react";
 import { getPersonalDetails } from "../services/auth";
 import { formatPhoneNumber, formatPhoneDisplay } from "../services/phone";
+import { searchPlayers } from "../services/matches";
+import {
+  createMatchGroup,
+  deleteMatchGroup,
+  listMatchGroups,
+} from "../services/matchGroups";
 import ProfilePhotoUploader from "./ProfilePhotoUploader";
 import {
   updatePlayerPersonalDetails,
@@ -53,7 +59,12 @@ const formatRatingOptionValue = (value) => {
   return normalized;
 };
 
-const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
+const ProfileManager = ({
+  isOpen,
+  onClose,
+  onProfileUpdate,
+  initialSection = "profile",
+}) => {
   const [details, setDetails] = useState(emptyDetails);
   const [phoneInput, setPhoneInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,6 +72,16 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState("");
   const [showRatingGuide, setShowRatingGuide] = useState(false);
+  const [groups, setGroups] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupError, setGroupError] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [groupDescription, setGroupDescription] = useState("");
+  const [groupPlayerSearch, setGroupPlayerSearch] = useState("");
+  const [groupPlayerResults, setGroupPlayerResults] = useState([]);
+  const [selectedGroupPlayers, setSelectedGroupPlayers] = useState([]);
+  const [savingGroup, setSavingGroup] = useState(false);
+  const groupsSectionRef = useRef(null);
   const accessToken = localStorage.getItem("authToken");
 
   useEffect(() => {
@@ -72,8 +93,61 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
       setError("");
       setImagePreview("");
       setShowRatingGuide(false);
+      setGroupError("");
+      setGroupName("");
+      setGroupDescription("");
+      setGroupPlayerSearch("");
+      setGroupPlayerResults([]);
+      setSelectedGroupPlayers([]);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchGroups();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || initialSection !== "groups") return undefined;
+
+    const timeout = window.setTimeout(() => {
+      groupsSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+
+    return () => window.clearTimeout(timeout);
+  }, [initialSection, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const query = groupPlayerSearch.trim();
+    if (query.length < 2) {
+      setGroupPlayerResults([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      try {
+        const data = await searchPlayers({ search: query, perPage: 8 });
+        if (cancelled) return;
+        const players = Array.isArray(data?.players) ? data.players : [];
+        setGroupPlayerResults(players);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to search players for group", err);
+          setGroupPlayerResults([]);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [groupPlayerSearch, isOpen]);
 
   const fetchDetails = async ({ showLoader = true } = {}) => {
     try {
@@ -106,6 +180,98 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
       if (showLoader) {
         setLoading(false);
       }
+    }
+  };
+
+  const fetchGroups = async () => {
+    try {
+      setGroupsLoading(true);
+      const data = await listMatchGroups();
+      setGroups(Array.isArray(data?.groups) ? data.groups : []);
+      setGroupError("");
+    } catch (err) {
+      console.error(err);
+      setGroupError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load match groups.",
+      );
+    } finally {
+      setGroupsLoading(false);
+    }
+  };
+
+  const normalizePlayerId = (player) => Number(player?.user_id ?? player?.id);
+
+  const addGroupPlayer = (player) => {
+    const id = normalizePlayerId(player);
+    if (!Number.isFinite(id)) return;
+    setSelectedGroupPlayers((prev) => {
+      if (prev.some((item) => normalizePlayerId(item) === id)) return prev;
+      return [...prev, player];
+    });
+    setGroupPlayerSearch("");
+    setGroupPlayerResults([]);
+  };
+
+  const removeGroupPlayer = (playerId) => {
+    setSelectedGroupPlayers((prev) =>
+      prev.filter((player) => normalizePlayerId(player) !== Number(playerId)),
+    );
+  };
+
+  const handleCreateGroup = async () => {
+    const name = groupName.trim();
+    if (!name) {
+      setGroupError("Enter a group name.");
+      return;
+    }
+    const playerIds = selectedGroupPlayers
+      .map(normalizePlayerId)
+      .filter((id) => Number.isFinite(id));
+    if (!playerIds.length) {
+      setGroupError("Add at least one player to the group.");
+      return;
+    }
+
+    try {
+      setSavingGroup(true);
+      await createMatchGroup({
+        name,
+        description: groupDescription.trim() || null,
+        playerIds,
+        player_ids: playerIds,
+      });
+      setGroupName("");
+      setGroupDescription("");
+      setSelectedGroupPlayers([]);
+      setGroupPlayerSearch("");
+      await fetchGroups();
+    } catch (err) {
+      console.error(err);
+      setGroupError(
+        err?.response?.data?.message ||
+          err?.response?.data?.detail ||
+          err?.message ||
+          "Failed to save group.",
+      );
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId) => {
+    if (!window.confirm("Delete this match group?")) return;
+    try {
+      await deleteMatchGroup(groupId);
+      await fetchGroups();
+    } catch (err) {
+      console.error(err);
+      setGroupError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to delete group.",
+      );
     }
   };
 
@@ -248,7 +414,7 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
                       full_name: e.target.value,
                     }))
                   }
-                  autoFocus
+                  autoFocus={initialSection !== "groups"}
                 />
               </div>
 
@@ -437,6 +603,145 @@ const ProfileManager = ({ isOpen, onClose, onProfileUpdate }) => {
                 </div>
               </div>
             </>
+          )}
+
+          {!loading && (
+            <section
+              ref={groupsSectionRef}
+              className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-violet-600" />
+                    <h3 className="text-sm font-black uppercase tracking-wider text-violet-900">
+                      My Match Groups
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-violet-700">
+                    Private groups help you quickly notify or invite regular players.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchGroups}
+                  disabled={groupsLoading}
+                  className="rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-black text-violet-700 disabled:opacity-60"
+                >
+                  {groupsLoading ? "Loading" : "Refresh"}
+                </button>
+              </div>
+
+              <div className="space-y-3 rounded-xl bg-white p-3">
+                <input
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
+                  placeholder="Group name, e.g. Sat AM 4.0 regulars"
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  maxLength={60}
+                  autoFocus={initialSection === "groups"}
+                />
+                <input
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
+                  placeholder="Description (optional)"
+                  value={groupDescription}
+                  onChange={(event) => setGroupDescription(event.target.value)}
+                  maxLength={160}
+                />
+                <div className="relative">
+                  <input
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
+                    placeholder="Search players to add"
+                    value={groupPlayerSearch}
+                    onChange={(event) => setGroupPlayerSearch(event.target.value)}
+                  />
+                  {groupPlayerResults.length > 0 && (
+                    <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl">
+                      {groupPlayerResults.map((player) => {
+                        const id = normalizePlayerId(player);
+                        const name = player.full_name || player.name || player.email || `Player ${id}`;
+                        return (
+                          <button
+                            key={id || name}
+                            type="button"
+                            onClick={() => addGroupPlayer(player)}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-violet-50"
+                          >
+                            <span>{name}</span>
+                            <Plus className="h-4 w-4 text-violet-500" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {selectedGroupPlayers.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedGroupPlayers.map((player) => {
+                      const id = normalizePlayerId(player);
+                      const name = player.full_name || player.name || player.email || `Player ${id}`;
+                      return (
+                        <span
+                          key={id || name}
+                          className="inline-flex items-center gap-2 rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700"
+                        >
+                          {name}
+                          <button type="button" onClick={() => removeGroupPlayer(id)}>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCreateGroup}
+                  disabled={savingGroup}
+                  className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-violet-700 disabled:opacity-60"
+                >
+                  <Plus className="h-4 w-4" />
+                  {savingGroup ? "Saving group" : "Create group"}
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                {groups.length === 0 && !groupsLoading ? (
+                  <p className="rounded-xl border border-dashed border-violet-200 bg-white px-3 py-3 text-sm font-semibold text-violet-700">
+                    No groups yet.
+                  </p>
+                ) : (
+                  groups.map((group) => (
+                    <div
+                      key={group.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-violet-100 bg-white px-3 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-black text-gray-900">{group.name}</p>
+                        <p className="text-xs font-semibold text-gray-500">
+                          {group.member_count || 0} players
+                          {group.description ? ` • ${group.description}` : ""}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGroup(group.id)}
+                        className="rounded-full p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                        aria-label={`Delete ${group.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
+
+          {groupError && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-700">
+              {groupError}
+            </div>
           )}
 
           {error && (

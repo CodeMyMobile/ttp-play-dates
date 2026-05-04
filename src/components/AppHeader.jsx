@@ -150,6 +150,43 @@ const AppHeader = ({
               />
             )}
           </div>
+        ) : currentScreen === "groups" || currentScreen === "group-detail" ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
+                <span className="text-2xl text-white">🎾</span>
+              </div>
+              <h1 className="text-xl font-black bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent sm:text-2xl">
+                Matchplay
+              </h1>
+            </div>
+            {currentUser && (
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <button
+                  onClick={onOpenProfile}
+                  className="flex items-center gap-2 rounded-full px-2 py-1 transition-all hover:bg-gray-50 sm:rounded-xl sm:px-3 sm:py-2"
+                >
+                  <PlayerAvatar
+                    name={avatarName}
+                    imageUrl={currentUserAvatarUrl}
+                    variant="violet"
+                    size="sm"
+                    className="shadow-lg"
+                  />
+                  <div className="hidden min-w-0 flex-col items-start sm:flex">
+                    <span className="text-sm font-bold text-gray-800">
+                      {currentUser.name.split(" ")[0]}
+                    </span>
+                    {currentUser.skillLevel && (
+                      <span className="text-xs font-semibold text-gray-500">
+                        NTRP {currentUser.skillLevel}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
@@ -182,4 +219,3 @@ const AppHeader = ({
 };
 
 export default AppHeader;
-

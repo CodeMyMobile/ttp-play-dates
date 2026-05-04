@@ -173,6 +173,11 @@ export const listMatches = (
     search = "",
     page = 1,
     perPage = 10,
+    when,
+    level,
+    format,
+    gender,
+    category,
     latitude,
     longitude,
     distance,
@@ -188,6 +193,11 @@ export const listMatches = (
   if (filter) params.filter = filter;
   if (status) params.status = status;
   if (search) params.search = search;
+  if (when) params.when = when;
+  if (level) params.level = level;
+  if (format) params.format = format;
+  if (gender) params.gender = gender;
+  if (category) params.category = category;
   const includeHiddenFlag =
     includeHidden ||
     include_hidden === true ||
@@ -256,6 +266,28 @@ export const updateMatch = (id, updates) =>
     })
   );
 
+export const listAttentionMatches = ({
+  limit,
+  withinHours,
+  within_hours,
+} = {}) => {
+  const params = {};
+  if (limit !== undefined && limit !== null && limit !== "") {
+    params.limit = limit;
+  }
+  const normalizedWithinHours =
+    withinHours ?? within_hours;
+  if (
+    normalizedWithinHours !== undefined &&
+    normalizedWithinHours !== null &&
+    normalizedWithinHours !== ""
+  ) {
+    params.withinHours = normalizedWithinHours;
+    params.within_hours = normalizedWithinHours;
+  }
+  return unwrap(api(`/matches/attention${qs(params)}`));
+};
+
 export const cancelMatch = async (id) => {
   try {
     return await unwrap(
@@ -274,7 +306,7 @@ export const cancelMatch = async (id) => {
   return unwrap(
     api(`/matches/${id}`, {
       method: "DELETE",
-    })
+    }),
   );
 };
 
@@ -313,6 +345,47 @@ export const sendInvites = (matchId, { playerIds = [], phoneNumbers = [] } = {})
 
 export const getShareLink = (matchId) =>
   unwrap(api(`/matches/${matchId}/share-link`));
+
+export const notifyMatchPlayers = (matchId, payload = {}) =>
+  unwrap(
+    api(`/matches/${matchId}/notify`, {
+      method: "POST",
+      json: payload,
+    }),
+  );
+
+export const listMatchNotifications = (matchId) =>
+  unwrap(api(`/matches/${matchId}/notifications`));
+
+export const deleteMatchNotification = (matchId, notificationId) =>
+  unwrap(
+    api(`/matches/${matchId}/notifications/${notificationId}`, {
+      method: "DELETE",
+    }),
+  );
+
+export const listMatchMessages = (matchId) =>
+  unwrap(api(`/matches/${matchId}/messages`));
+
+export const createMatchMessage = (matchId, payload = {}) =>
+  unwrap(
+    api(`/matches/${matchId}/messages`, {
+      method: "POST",
+      json: payload,
+    }),
+  );
+
+export const sendMatchPlayerDirectMessage = (
+  matchId,
+  playerId,
+  payload = {},
+) =>
+  unwrap(
+    api(`/matches/${matchId}/players/${playerId}/dm`, {
+      method: "POST",
+      json: payload,
+    }),
+  );
 
 export const searchPlayers = ({ search = "", page = 1, perPage = 12, ids } = {}) => {
   const params = { search, page, perPage };
