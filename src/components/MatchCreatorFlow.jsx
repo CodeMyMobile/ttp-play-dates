@@ -1138,7 +1138,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
         </div>
       )}
 
-      <div className="mx-auto max-w-[880px] overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.24)]">
+      <div className="mx-auto flex max-h-[92vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[20px] bg-white shadow-[0_24px_60px_rgba(0,0,0,0.3)]">
         <div className="border-b border-slate-100 px-5 py-5 md:px-8 md:py-6">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -1159,6 +1159,8 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
             </button>
           </div>
         </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
 
       {currentStep === 1 && (
         <div className="px-5 py-6 md:px-8 md:py-7">
@@ -2961,6 +2963,7 @@ const MatchCreatorFlow = ({ onCancel, onReturnHome, onMatchCreated, currentUser 
           </div>
         </div>
       )}
+    </div>
     </div>
     </div>
   );
